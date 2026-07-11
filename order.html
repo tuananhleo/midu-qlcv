@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="vi" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MIDU MKT – Gửi Order</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js" defer></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js" defer></script>
+<style>
+:root {
+  --bg: #0a0f1e;
+  --bg2: rgba(255,255,255,.04);
+  --bg3: rgba(255,255,255,.07);
+  --border: rgba(255,255,255,.1);
+  --border-focus: #818cf8;
+  --text: #ffffff;
+  --text2: rgba(255,255,255,.90);
+  --text3: rgba(255,255,255,.72);
+  --label: rgba(255,255,255,.85);
+  --ph: rgba(255,255,255,.45);
+  --card-bg: rgba(255,255,255,.04);
+  --card-border: rgba(255,255,255,.08);
+  --section-body: rgba(0,0,0,.15);
+  --opt-bg: #1a2035;
+}
+[data-theme="light"] {
+  --bg: #f0f4ff;
+  --bg2: rgba(0,0,0,.03);
+  --bg3: rgba(0,0,0,.05);
+  --border: rgba(0,0,0,.12);
+  --border-focus: #6366f1;
+  --text: #000000;
+  --text2: #111111;
+  --text3: #333333;
+  --label: #111111;
+  --ph: #888888;
+  --card-bg: #ffffff;
+  --card-border: rgba(0,0,0,.08);
+  --section-body: rgba(0,0,0,.03);
+  --opt-bg: #ffffff;
+}
+* { box-sizing: border-box; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); min-height: 100vh; color: var(--text); transition: background .25s, color .25s; }
+.inp { width:100%; padding:10px 12px; border-radius:9px; border:1.5px solid var(--border); background:var(--bg3); color:var(--text); font-size:.84rem; outline:none; transition:.18s; }
+.inp:focus { border-color:var(--border-focus); box-shadow:0 0 0 3px rgba(129,140,248,.15); }
+.inp::placeholder { color:var(--ph); }
+.inp option { background:var(--opt-bg); }
+label { display:block; font-size:.67rem; font-weight:800; letter-spacing:.06em; color:var(--label); margin-bottom:4px; text-transform:uppercase; }
+.card { background:var(--card-bg); border:1.5px solid var(--card-border); border-radius:16px; padding:20px; transition:background .25s,border-color .25s; }
+.btn-main { width:100%; padding:14px; border-radius:12px; font-weight:800; font-size:1rem; border:none; cursor:pointer; background:linear-gradient(135deg,#6366f1,#8b5cf6); color:#fff; transition:.2s; }
+.btn-main:hover { filter:brightness(1.1); transform:translateY(-1px); }
+.btn-main:disabled { opacity:.5; cursor:not-allowed; transform:none; }
+.type-card { border-radius:12px; border:2px solid var(--card-border); background:var(--bg2); padding:14px 16px; cursor:pointer; transition:.18s; user-select:none; display:flex; align-items:center; gap:10px; }
+.type-card:hover { border-color:var(--border); background:var(--bg3); }
+.type-card.selected { border-color:var(--tc); background:rgba(var(--tcr),.12); }
+.type-icon { font-size:1.5rem; flex-shrink:0; }
+.type-label { font-weight:700; color:var(--text); font-size:.85rem; }
+.type-sub { font-size:.72rem; color:var(--text3); margin-top:1px; }
+.type-check-dot { width:20px; height:20px; border-radius:6px; border:2px solid var(--border); flex-shrink:0; margin-left:auto; display:flex; align-items:center; justify-content:center; transition:.15s; }
+.type-card.selected .type-check-dot { background:var(--tc); border-color:var(--tc); }
+.type-card.selected .type-check-dot::after { content:'✓'; color:#fff; font-size:.75rem; font-weight:900; }
+.type-section { border-radius:14px; overflow:hidden; border:1.5px solid var(--card-border); margin-bottom:14px; transition:border-color .25s; }
+.type-section-header { padding:14px 18px; display:flex; align-items:center; gap:10px; }
+.type-section-body { padding:18px; background:var(--section-body); }
+.cbg-opt { display:flex; align-items:center; gap:8px; padding:8px 12px; border-radius:8px; background:var(--bg2); border:1.5px solid var(--border); cursor:pointer; transition:.15s; user-select:none; }
+.cbg-opt:hover { border-color:var(--text3); background:var(--bg3); }
+.cbg-opt input[type=checkbox] { display:none; }
+.cbg-dot { width:18px; height:18px; border-radius:5px; border:2px solid var(--border); flex-shrink:0; display:flex; align-items:center; justify-content:center; transition:.15s; }
+.cbg-opt.checked .cbg-dot { background:#6366f1; border-color:#6366f1; }
+.cbg-opt.checked .cbg-dot::after { content:'✓'; color:#fff; font-size:.65rem; font-weight:900; }
+.cbg-opt.checked { border-color:rgba(99,102,241,.4); background:rgba(99,102,241,.1); }
+.cbg-text { font-size:.82rem; color:var(--text2); font-weight:500; }
+.section-title { font-size:.72rem; font-weight:800; letter-spacing:.07em; text-transform:uppercase; margin-bottom:14px; display:flex; align-items:center; gap:6px; }
+.required { color:#f87171; }
+.theme-btn { position:fixed; top:16px; right:16px; z-index:100; width:38px; height:38px; border-radius:10px; border:1.5px solid var(--border); background:var(--card-bg); cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:1.1rem; transition:.2s; box-shadow:0 2px 12px rgba(0,0,0,.2); }
+.theme-btn:hover { transform:scale(1.1); }
+@keyframes slideDown { from{opacity:0;transform:translateY(-8px)} to{opacity:1;transform:none} }
+.slide-down { animation:slideDown .2s ease; }
+@keyframes spin { to{transform:rotate(360deg)} }
+.spinner { animation:spin .8s linear infinite; }
+.success-screen { display:none; text-align:center; padding:40px 20px; }
+.success-screen.show { display:block; }
+
+  input[type="date"]::-webkit-calendar-picker-indicator {
+    filter: invert(1) brightness(1.8);
+    opacity: 0.85;
+    cursor: pointer;
+    padding: 2px;
+    border-radius: 3px;
+    transition: opacity .15s;
+  }
+  input[type="date"]::-webkit-calendar-picker-indicator:hover {
+    opacity: 1;
+    filter: invert(1) brightness(2.2);
+  }
+
+  /* Flatpickr theme override */
+  .flatpickr-calendar {
+    background:#1a2744!important; border:1.5px solid #3b4fa8!important;
+    border-radius:16px!important; box-shadow:0 24px 64px rgba(0,0,0,.7)!important;
+    font-family:inherit!important; padding:8px!important;
+    z-index:99999!important;
+  }
+  .flatpickr-months { padding:4px 0 8px; border-bottom:1px solid rgba(255,255,255,.08); margin-bottom:4px; }
+  .flatpickr-month, .flatpickr-current-month, .flatpickr-monthDropdown-months, .numInput { color:#e2e8f0!important; background:transparent!important; fill:#e2e8f0!important; font-weight:700!important; }
+  .flatpickr-current-month select { background:#1a2744!important; color:#e2e8f0!important; border:none!important; font-weight:700; font-size:.95rem; }
+  .flatpickr-current-month input.numInput { width:52px!important; font-size:.95rem; }
+  .flatpickr-weekdays { background:transparent!important; margin-bottom:2px; }
+  .flatpickr-weekday { color:#818cf8!important; background:transparent!important; font-size:.72rem!important; font-weight:700!important; }
+  .flatpickr-day { color:#cbd5e1!important; border-radius:8px!important; border:none!important; font-size:.8rem!important; height:32px!important; line-height:32px!important; margin:1px!important; }
+  .flatpickr-day:hover { background:rgba(99,102,241,.3)!important; color:#fff!important; }
+  .flatpickr-day.today { background:rgba(167,139,250,.15)!important; color:#a78bfa!important; font-weight:700!important; }
+  .flatpickr-day.today:hover { background:rgba(167,139,250,.3)!important; }
+  .flatpickr-day.selected, .flatpickr-day.selected:hover { background:#6d28d9!important; color:#fff!important; font-weight:700!important; }
+  .flatpickr-day.prevMonthDay, .flatpickr-day.nextMonthDay { color:rgba(255,255,255,.2)!important; }
+  .flatpickr-prev-month, .flatpickr-next-month { padding:4px 8px!important; }
+  .flatpickr-prev-month svg, .flatpickr-next-month svg { fill:#94a3b8!important; width:14px!important; height:14px!important; }
+  .flatpickr-prev-month:hover svg, .flatpickr-next-month:hover svg { fill:#a78bfa!important; }
+  .numInputWrapper span { border-color:rgba(255,255,255,.1)!important; }
+  .numInputWrapper span svg { fill:rgba(255,255,255,.5)!important; }
+  /* Date input icon brightness */
+  input.fp-date { cursor:pointer; }
+  input.fp-date::-webkit-calendar-picker-indicator { filter:invert(1) brightness(2); }
+</style>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/l10n/vn.js"></script>
+</head>
+<body>
+
+<!-- Theme toggle -->
+<button class="theme-btn" onclick="toggleTheme()" id="theme-btn" title="Chuyển giao diện sáng/tối">🌙</button>
+
+<!-- BG gradient (dark only) -->
+<div id="bg-grad" style="position:fixed;inset:0;background:radial-gradient(ellipse at 20% 50%,rgba(99,102,241,.12) 0%,transparent 60%),radial-gradient(ellipse at 80% 20%,rgba(139,92,246,.1) 0%,transparent 55%);pointer-events:none;z-index:0;transition:opacity .3s"></div>
+
+<div style="position:relative;z-index:1;max-width:720px;margin:0 auto;padding:28px 16px 60px">
+
+  <!-- Header -->
+  <div style="text-align:center;margin-bottom:32px">
+    <div style="display:inline-flex;align-items:center;justify-content:center;width:56px;height:56px;border-radius:16px;background:linear-gradient(135deg,#6366f1,#8b5cf6);font-size:1.5rem;margin-bottom:14px;box-shadow:0 8px 32px rgba(99,102,241,.35)">📋</div>
+    <h1 style="font-size:1.6rem;font-weight:900;color:var(--text);margin-bottom:4px">Gửi Order Marketing</h1>
+    <p style="color:var(--text3);font-size:.85rem">Điền thông tin để gửi yêu cầu đến phòng MKT</p>
+    <div style="margin-top:14px">
+      <a href="tracker.html" style="font-size:.78rem;color:#a5b4fc;text-decoration:none;padding:5px 12px;border-radius:8px;background:rgba(99,102,241,.12);border:1px solid rgba(99,102,241,.2)">📊 Theo dõi order của tôi</a>
+    </div>
+  </div>
+
+  <form id="main-form" onsubmit="return false">
+
+    <!-- ① Thông tin chung -->
+    <div class="card" style="margin-bottom:16px">
+      <p class="section-title" style="color:#a5b4fc">① Thông tin chung</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div>
+          <label>Người yêu cầu <span class="required">*</span></label>
+          <input id="f-requester" type="text" class="inp" placeholder="Họ và tên của bạn" required>
+        </div>
+        <div>
+          <label>Phòng ban <span class="required">*</span></label>
+          <select id="f-department" class="inp" required>
+            <option value="">-- Chọn phòng ban --</option>
+          </select>
+        </div>
+        <div style="grid-column:1/-1">
+          <label>Tên dự án / chiến dịch <span class="required">*</span></label>
+          <input id="f-project" type="text" class="inp" placeholder="VD: Doctor Mama T7, Flash Sale tháng 8..." required>
+        </div>
+        <input id="f-projectcode" type="hidden" value="">
+        <div style="grid-column:1/-1">
+          <label>Ghi chú chung <span style="font-weight:400;text-transform:none;color:var(--text3)">(không bắt buộc)</span></label>
+          <textarea id="f-note" rows="2" class="inp" style="resize:vertical" placeholder="Thông tin thêm áp dụng cho toàn bộ yêu cầu..."></textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- ② Chọn hạng mục -->
+    <div class="card" style="margin-bottom:16px">
+      <p class="section-title" style="color:#f472b6">② Chọn hạng mục <span class="required">*</span></p>
+      <p style="font-size:.77rem;color:var(--text3);margin-bottom:14px">Có thể chọn nhiều hạng mục. Mỗi hạng mục sẽ có deadline và chi tiết riêng.</p>
+      <div id="type-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:10px"></div>
+      <p id="type-err" style="color:#f87171;font-size:.75rem;margin-top:10px;display:none">⚠️ Vui lòng chọn ít nhất một hạng mục</p>
+    </div>
+
+    <!-- ③ Chi tiết từng hạng mục -->
+    <div id="type-sections"></div>
+
+    <!-- Submit -->
+    <div id="submit-area" style="margin-top:8px">
+      <button type="button" id="submit-btn" onclick="submitForm()" class="btn-main">Gửi yêu cầu →</button>
+      <p style="text-align:center;color:var(--text3);font-size:.72rem;margin-top:10px">Thông tin sẽ được gửi đến phòng Marketing – Truyền thông MIDU</p>
+    </div>
+
+  </form>
+
+  <!-- SUCCESS -->
+  <div id="success-screen" class="success-screen">
+    <div style="font-size:4rem;margin-bottom:16px">🎉</div>
+    <h2 style="font-size:1.4rem;font-weight:900;color:var(--text);margin-bottom:8px">Đã gửi thành công!</h2>
+    <p id="success-msg" style="color:var(--text3);font-size:.85rem;margin-bottom:20px"></p>
+    <div id="success-ids" style="background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.2);border-radius:12px;padding:16px;margin-bottom:24px;text-align:left"></div>
+    <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+      <button type="button" onclick="resetForm()" style="padding:10px 20px;border-radius:10px;background:var(--bg3);border:1px solid var(--border);color:var(--text2);font-weight:700;cursor:pointer;font-size:.85rem">+ Gửi order mới</button>
+      <a href="tracker.html" style="padding:10px 20px;border-radius:10px;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;font-weight:700;text-decoration:none;font-size:.85rem">📊 Theo dõi tiến độ</a>
+    </div>
+  </div>
+
+</div>
+
+<div id="__toast" style="position:fixed;bottom:24px;right:64px;z-index:9999;border-radius:12px;padding:12px 18px;font-size:.84rem;font-weight:700;box-shadow:0 8px 32px rgba(0,0,0,.4);opacity:0;transition:opacity .3s;pointer-events:none"></div>
+
+<script>
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbw5klIN8zAsl6cYSfIYDu8GNol4tCR4KQt8-fvldq_SZC1DDgUeK6bk73jF-ZoMdCjF/exec';
+
+const TYPES = [
+  { id:'thiet-ke',        label:'Thiết kế',       icon:'🎨', sub:'Banner, poster, ấn phẩm...', color:'#f472b6', colorRGB:'244,114,182' },
+  { id:'video-ai',        label:'Video AI',        icon:'🎬', sub:'Video AI, storytelling...',   color:'#a78bfa', colorRGB:'167,139,250' },
+  { id:'media',           label:'Media',           icon:'📸', sub:'Quay, chụp, dựng video...',  color:'#34d399', colorRGB:'52,211,153'  },
+  { id:'chay-ads',        label:'Chạy Ads',        icon:'📢', sub:'Facebook, Google, TikTok Ads', color:'#fb923c', colorRGB:'251,146,60' },
+  { id:'content',         label:'Content',         icon:'✍️', sub:'Bài viết, caption, script...', color:'#38bdf8', colorRGB:'56,189,248' },
+  { id:'lich-truyen-thong', label:'Lịch T.Thông', icon:'📅', sub:'Đặt lịch bắn bot, tin nhắn bán hàng...', color:'#06b6d4', colorRGB:'6,182,212' },
+  { id:'khac',            label:'Khác',            icon:'📦', sub:'Yêu cầu khác...',            color:'#94a3b8', colorRGB:'148,163,184' },
+];
+const TYPE_MAP = Object.fromEntries(TYPES.map(t=>[t.id,t.icon+' '+t.label]));
+
+const DEFAULT_DEPTS = ['Kinh doanh','Kế toán – Tài chính','Nhân sự','Vận hành','Ban Giám đốc','Marketing – Truyền thông','Kho – Logistics','Khác'];
+
+const DEFAULT_FORM_SCHEMA = {
+  'thiet-ke': [
+    { id:'d_objective',    label:'Mục tiêu thiết kế',         type:'text',           placeholder:'VD: Banner quảng cáo sản phẩm tháng 7', span:2 },
+    { id:'d_size',         label:'Kích thước / Tỉ lệ',        type:'text',           placeholder:'VD: 1080x1080, A4, 9:16', span:1 },
+    { id:'d_qty',          label:'Số lượng',                   type:'number',         placeholder:'VD: 3', span:1 },
+    { id:'d_text_content', label:'Nội dung chữ cần có',        type:'textarea',       placeholder:'Các chữ cần xuất hiện trong thiết kế, tagline, CTA...', span:2 },
+    { id:'d_ref',          label:'Link tham khảo / Brief',     type:'url',            placeholder:'Link Google Drive, NAS hoặc website tham khảo...', span:2 },
+    { id:'d_note_design',  label:'Ý tưởng / Ghi chú / Lưu ý', type:'textarea',      placeholder:'Màu sắc, phong cách, font, yêu cầu đặc biệt...', span:2 },
+  ],
+  'video-ai': [
+    { id:'d_objective',  label:'Mục tiêu / Tên nội dung video', type:'text',     placeholder:'VD: Video sản phẩm 360mcg, Hướng dẫn tập luyện...', span:2 },
+    { id:'d_script',     label:'Kịch bản chi tiết',             type:'textarea', placeholder:'Viết kịch bản hoặc dán link file/NAS. Bôi đỏ keyword hoặc nội dung cần làm nổi bật.', span:2, rows:6 },
+    { id:'d_duration',   label:'Thời lượng dự kiến',            type:'text',     placeholder:'VD: 30s, 60s, 2 phút', span:1 },
+    { id:'d_voice',      label:'Yêu cầu giọng đọc',             type:'text',     placeholder:'VD: Nữ – nhẹ nhàng, Nam – chuyên nghiệp, theo content', span:1 },
+    { id:'d_ref_video',  label:'Link video tham khảo',          type:'url',      placeholder:'https://...', span:2 },
+    { id:'d_note_video', label:'Lưu ý thêm',                    type:'textarea', placeholder:'Yêu cầu về hình ảnh, âm nhạc, hiệu ứng...', span:2 },
+  ],
+  'media': [
+    { id:'d_objective',   label:'Mục tiêu chiến dịch / Dự án',  type:'text',           placeholder:'VD: Xây kênh Doctor Mama, Hướng dẫn sản phẩm...', span:2 },
+    { id:'d_media_types', label:'Hình thức',                     type:'checkbox-group', placeholder:'Chụp ảnh + hậu kỳ,Chụp ảnh + trả file gốc,Dựng video,Quay,Thu Voice,Livestream,Thiết kế thumbnail', span:2 },
+    { id:'d_ratio',       label:'Kích thước / Tỉ lệ',            type:'text',           placeholder:'VD: Dọc 9:16, Ngang 16:9, Vuông 1:1', span:1 },
+    { id:'d_qty',         label:'Số lượng',                      type:'number',         placeholder:'VD: 5', span:1 },
+    { id:'d_script_link', label:'Link kịch bản / Brief',         type:'url',            placeholder:'Link Google Docs, Drive hoặc NAS...', span:2 },
+    { id:'d_location',    label:'Địa điểm quay / chụp',          type:'text',           placeholder:'VD: Văn phòng HCM, Studio, Ngoài trời', span:1 },
+    { id:'d_note_media',  label:'Ý tưởng / Ghi chú / Lưu ý',   type:'textarea',       placeholder:'Yêu cầu đặc biệt về màu sắc, phong cách, đạo cụ...', span:2 },
+  ],
+  'chay-ads': [
+    { id:'d_platform',  label:'Nền tảng',                    type:'text',     placeholder:'VD: Facebook, Google Ads, TikTok', span:1 },
+    { id:'d_budget',    label:'Ngân sách (VNĐ)',             type:'number',   placeholder:'VD: 5000000', span:1 },
+    { id:'d_objective', label:'Mục tiêu chiến dịch',         type:'text',     placeholder:'VD: Lead, Doanh thu, Reach, Traffic', span:2 },
+    { id:'d_audience',  label:'Đối tượng mục tiêu',          type:'textarea', placeholder:'Độ tuổi, giới tính, sở thích, khu vực...', span:2 },
+    { id:'d_creative',  label:'Link creative / nội dung QC', type:'url',      placeholder:'https://...', span:2 },
+    { id:'d_note_ads',  label:'Lưu ý thêm',                  type:'textarea', placeholder:'...', span:2 },
+  ],
+  'content': [
+    { id:'d_content_type', label:'Loại content',               type:'text',     placeholder:'VD: Bài viết, Caption, Script, Email marketing', span:1 },
+    { id:'d_channel',      label:'Kênh đăng',                  type:'text',     placeholder:'VD: Facebook Fanpage, Zalo OA, Website', span:1 },
+    { id:'d_topic',        label:'Chủ đề / Tiêu đề dự kiến',  type:'text',     placeholder:'VD: Flash Sale tháng 7, Ra mắt sản phẩm mới', span:2 },
+    { id:'d_keywords',     label:'Từ khóa SEO',                type:'text',     placeholder:'VD: thực phẩm chức năng, canxi cho bé', span:1 },
+    { id:'d_tone',         label:'Tone giọng văn',             type:'text',     placeholder:'VD: Thân thiện, Chuyên gia, Trẻ trung', span:1 },
+    { id:'d_outline',      label:'Outline / Nội dung cần có',  type:'textarea', placeholder:'Các ý chính cần đề cập...', span:2 },
+    { id:'d_ref_content',  label:'Link tài liệu / tham khảo', type:'url',      placeholder:'https://...', span:2 },
+  ],
+  'khac': [
+    { id:'d_desc',     label:'Mô tả yêu cầu chi tiết',      type:'textarea', placeholder:'Mô tả đầy đủ yêu cầu của bạn...', span:2, rows:5 },
+    { id:'d_ref_khac', label:'Link tài liệu / tham khảo',   type:'url',      placeholder:'https://...', span:2 },
+  ],
+  'lich-truyen-thong': [
+    { id:'d_gio_ban_bot',  label:'Giờ bắn bot',          type:'text',     placeholder:'VD: 8h, 10h30, 19h...', span:1 },
+    { id:'d_chuong_trinh', label:'Tên chương trình',      type:'text',     placeholder:'VD: Flash Sale 30/6, Ra mắt sản phẩm...', span:1 },
+    { id:'d_doi_tuong',    label:'Đối tượng',             type:'text',     placeholder:'VD: Khách cũ, Lead tháng 6, Tất cả...', span:1 },
+    { id:'d_page',         label:'Page / Tài khoản',      type:'text',     placeholder:'VD: MIDU Official, Học viện Midu...', span:1 },
+    { id:'d_cong_cu',      label:'Công cụ',               type:'text',     placeholder:'VD: Fchat, ManyChat, Zalo OA...', span:1 },
+    { id:'d_noi_dung_bot', label:'Nội dung tin nhắn',     type:'textarea', placeholder:'Nội dung cần bắn bot...', span:2, rows:4 },
+    { id:'d_hinh_anh',     label:'Link hình ảnh / media', type:'url',      placeholder:'https://...', span:2 },
+  ],
+};
+
+let dynamicDefs = JSON.parse(JSON.stringify(DEFAULT_FORM_SCHEMA));
+let selectedTypes = new Set();
+
+// ── Theme ──────────────────────────────────────────────────────
+function initTheme() {
+  const saved = localStorage.getItem('midu_theme') || 'dark';
+  document.documentElement.setAttribute('data-theme', saved);
+  document.getElementById('theme-btn').textContent = saved === 'dark' ? '☀️' : '🌙';
+  document.getElementById('bg-grad').style.opacity = saved === 'dark' ? '1' : '0';
+}
+function toggleTheme() {
+  const cur = document.documentElement.getAttribute('data-theme');
+  const next = cur === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('midu_theme', next);
+  document.getElementById('theme-btn').textContent = next === 'dark' ? '☀️' : '🌙';
+  document.getElementById('bg-grad').style.opacity = next === 'dark' ? '1' : '0';
+}
+initTheme();
+
+// ── User info auto-save ────────────────────────────────────────
+const KEY_USER_INFO = 'midu_mkt_user_info';
+function restoreUserInfo() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(KEY_USER_INFO)||'null');
+    if (!saved) return;
+    if (saved.requester) document.getElementById('f-requester').value = saved.requester;
+    if (saved.department) {
+      // Đợi buildDeptSelect xong rồi mới set (được gọi sau)
+      window._savedDept = saved.department;
+    }
+  } catch(e) {}
+}
+function saveUserInfo(requester, department) {
+  try { localStorage.setItem(KEY_USER_INFO, JSON.stringify({requester, department})); } catch(e) {}
+}
+
+// ── Init ───────────────────────────────────────────────────────
+const KEY_FORM_SCHEMA = 'midu_form_schema_v2';
+
+function _applySchema(schema) {
+  if (!schema || !Object.keys(schema).length) return;
+  const { departments, types, ...defs } = schema;
+  if (Object.keys(defs).length) {
+    dynamicDefs = defs;
+    if (selectedTypes.size) renderTypeSections();
+  }
+  if (departments?.length) {
+    buildDeptSelect(departments);
+    localStorage.setItem('midu_mkt_departments', JSON.stringify(departments));
+  }
+  if (types?.length) {
+    const existingIds = new Set(TYPES.map(t => t.id));
+    types.forEach(t => {
+      if (!existingIds.has(t.id)) {
+        TYPES.push({ id:t.id, label:t.label, icon:t.icon||'📋', sub:t.sub||'', color:t.color||'#94a3b8', colorRGB:t.colorRGB||'148,163,184' });
+      } else {
+        const existing = TYPES.find(x=>x.id===t.id);
+        if (existing) { existing.label=t.label; existing.icon=t.icon||existing.icon; existing.sub=t.sub||existing.sub; }
+      }
+    });
+    buildTypeGrid();
+  }
+}
+
+(async function init() {
+  buildTypeGrid();
+  restoreUserInfo();
+  const savedDepts = JSON.parse(localStorage.getItem('midu_mkt_departments') || 'null');
+  buildDeptSelect(savedDepts && savedDepts.length ? savedDepts : DEFAULT_DEPTS);
+
+  // 1. Ưu tiên localStorage (admin lưu từ Form Builder cùng máy)
+  const lsSchema = JSON.parse(localStorage.getItem(KEY_FORM_SCHEMA) || 'null');
+  if (lsSchema) _applySchema(lsSchema);
+
+  // 2. Thử GAS để đồng bộ (ghi đè nếu GAS mới hơn)
+  try {
+    const r = await fetch(`${GAS_URL}?action=getFormSchema&_=${Date.now()}`);
+    const d = await r.json();
+    if (d.schema && Object.keys(d.schema).length) {
+      // Chỉ dùng GAS nếu có dữ liệu tùy chỉnh (có types hoặc nhiều hơn default)
+      const { departments, types, ...defs } = d.schema;
+      const hasCustom = types?.length > 0 || Object.keys(defs).some(k => !DEFAULT_FORM_SCHEMA[k]);
+      if (hasCustom || !lsSchema) _applySchema(d.schema);
+    }
+  } catch(e) {}
+})();
+
+function buildDeptSelect(depts) {
+  const sel = document.getElementById('f-department');
+  const cur = sel.value || window._savedDept || '';
+  sel.innerHTML = '<option value="">-- Chọn phòng ban --</option>' +
+    depts.map(d => `<option${d===cur?' selected':''}>${d}</option>`).join('');
+}
+
+// ── Type grid ──────────────────────────────────────────────────
+function buildTypeGrid() {
+  document.getElementById('type-grid').innerHTML = TYPES.map(t => `
+    <div class="type-card" id="tc-${t.id}"
+      style="--tc:${t.color};--tcr:${t.colorRGB}"
+      onclick="toggleType('${t.id}')">
+      <span class="type-icon">${t.icon}</span>
+      <div style="flex:1;min-width:0">
+        <div class="type-label">${t.label}</div>
+        <div class="type-sub">${t.sub}</div>
+      </div>
+      <div class="type-check-dot" id="dot-${t.id}"></div>
+    </div>
+  `).join('');
+}
+
+function toggleType(typeId) {
+  if (selectedTypes.has(typeId)) {
+    selectedTypes.delete(typeId);
+    document.getElementById('tc-'+typeId).classList.remove('selected');
+  } else {
+    selectedTypes.add(typeId);
+    document.getElementById('tc-'+typeId).classList.add('selected');
+  }
+  renderTypeSections();
+  document.getElementById('type-err').style.display = 'none';
+}
+
+function _getTimeOptions() {
+  var opts = [];
+  for (var h = 7; h <= 23; h++) {
+    ['00','30'].forEach(function(m) {
+      if (h === 23 && m === '30') return;
+      var hh = String(h).padStart(2,'0');
+      opts.push('<option value="' + hh + ':' + m + '">' + hh + ':' + m + '</option>');
+    });
+  }
+  return opts.join('');
+}
+function _getPriorityOptions() {
+  const DEFAULT = '<option value="thap">🟢 Thấp</option><option value="trung-binh" selected>🟡 Trung bình</option><option value="cao">🟠 Cao</option><option value="khan-cap">⚡ Khẩn cấp</option>';
+  try {
+    const pc = JSON.parse(localStorage.getItem('midu_priority_config') || 'null');
+    if (pc && pc.length) return pc.map(function(p){ return '<option value="' + p.id + '"' + (p.isDefault ? ' selected' : '') + '>' + (p.icon || '') + ' ' + p.label + '</option>'; }).join('');
+  } catch(e) {}
+  return DEFAULT;
+}
+
+// ── Type sections ──────────────────────────────────────────────
+function renderTypeSections() {
+  const container = document.getElementById('type-sections');
+  const ordered = TYPES.filter(t => selectedTypes.has(t.id));
+
+  container.innerHTML = ordered.map(t => {
+    const defs = dynamicDefs[t.id] || DEFAULT_FORM_SCHEMA[t.id] || [];
+    const isSchedule = t.id === 'lich-truyen-thong';
+    const deadlineLabel = isSchedule ? 'Ngày bắn bot' : 'Deadline mong muốn';
+    const deadlineOnChange = isSchedule ? `onchange="scheduleCheckerRefreshDate()"` : '';
+
+    return `
+      <div class="type-section slide-down" style="border-color:${t.color}44">
+        <div class="type-section-header" style="background:${t.color}1a">
+          <span style="font-size:1.3rem">${t.icon}</span>
+          <span style="font-weight:800;color:${t.color};font-size:.9rem">${t.label}</span>
+          <span style="font-size:.72rem;color:var(--text3);margin-left:2px">— Chi tiết hạng mục</span>
+        </div>
+        <div class="type-section-body">
+          ${isSchedule ? renderScheduleChecker() : ''}
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:${defs.length?'16px':'0'}${isSchedule?';margin-top:16px':''}">
+            <div>
+              <label>${deadlineLabel} <span class="required">*</span></label>
+              <input id="dl-${t.id}" type="text" class="inp fp-date" readonly required placeholder="dd/mm/yyyy" ${deadlineOnChange}>
+            </div>
+            <div>
+              <label>Giờ deadline</label>
+              <div style="position:relative">
+                <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);pointer-events:none;font-size:.9rem;z-index:1">🕐</span>
+                <input type="text" id="dlt-${t.id}" list="time-datalist" class="inp"
+                  placeholder="HH:MM (vd: 09:00)" style="padding-left:32px"
+                  autocomplete="off" maxlength="5"
+                  oninput="var v=this.value.replace(/[^0-9:]/g,'');this.value=v;">
+              </div>
+            </div>
+            <div>
+              <label>Độ ưu tiên</label>
+              <select id="pri-${t.id}" class="inp">
+                ${_getPriorityOptions()}
+              </select>
+            </div>
+          </div>
+          ${defs.length ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">${renderFields(t.id, defs)}</div>` : ''}
+        </div>
+      </div>`;
+  }).join('');
+
+  // Init flatpickr cho tất cả date/time inputs
+  setTimeout(function() {
+    document.querySelectorAll('.fp-date').forEach(function(el) {
+      flatpickr(el, {
+        locale: 'vn',
+        dateFormat: 'd/m/Y',
+        altFormat: 'd/m/Y',
+        disableMobile: true,
+        appendTo: document.body,
+        onChange: function(sel, dateStr, fp) {
+          if (el.id && el.id.includes('lich-truyen-thong')) scheduleCheckerRefreshDate && scheduleCheckerRefreshDate();
+        }
+      });
+    });
+    // time dùng <select> thay flatpickr
+  }, 50);
+
+  // Auto-load conflict checker khi section được render
+  if (selectedTypes.has('lich-truyen-thong')) {
+    setTimeout(() => scheduleCheckerLoad(), 150);
+  }
+}
+
+function renderFields(typeId, defs) {
+  return defs.map(f => {
+    const id = `f-${typeId}-${f.id}`;
+    const spanStyle = f.span===2 ? 'grid-column:1/-1' : '';
+    let inputHTML = '';
+    if (f.type === 'checkbox-group') {
+      const opts = (f.placeholder||'').split(',').map(s=>s.trim()).filter(Boolean);
+      inputHTML = `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:2px">
+        ${opts.map(opt => {
+          const key = opt.replace(/[^a-z0-9]/gi,'_');
+          return `<label class="cbg-opt" id="cbgo-${typeId}-${f.id}-${key}" onclick="toggleCbg(this)">
+            <input type="checkbox" name="cbg_${typeId}_${f.id}" value="${opt}">
+            <span class="cbg-dot"></span>
+            <span class="cbg-text">${opt}</span>
+          </label>`;
+        }).join('')}
+      </div>`;
+    } else if (f.type === 'radio-group') {
+      const opts = (f.placeholder||'').split(',').map(function(s){return s.trim();}).filter(Boolean);
+      const rdoName = 'rdo_' + typeId + '_' + f.id;
+      inputHTML = '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:2px">'
+        + opts.map(function(opt) {
+            const key = opt.replace(/[^a-z0-9]/gi,'_');
+            return '<label class="cbg-opt" onclick="toggleRdo(this,\'' + rdoName + '\')">'
+              + '<input type="radio" name="' + rdoName + '" value="' + opt.replace(/"/g,'&quot;') + '">'
+              + '<span class="cbg-dot" style="border-radius:50%"></span>'
+              + '<span class="cbg-text">' + opt + '</span>'
+              + '</label>';
+          }).join('')
+        + '</div>';
+    } else if (f.type === 'checkbox') {
+      inputHTML = `<label class="cbg-opt" onclick="toggleCbg(this)" style="margin-top:4px;display:inline-flex">
+        <input type="checkbox" id="${id}">
+        <span class="cbg-dot"></span>
+        <span class="cbg-text">${(f.placeholder||'Có').replace(/"/g,'&quot;')}</span>
+      </label>`;
+    } else if (f.type === 'textarea') {
+      inputHTML = `<textarea id="${id}" rows="${f.rows||3}" class="inp" style="resize:vertical" placeholder="${(f.placeholder||'').replace(/"/g,'&quot;')}"></textarea>`;
+    } else {
+      inputHTML = `<input id="${id}" type="${f.type||'text'}" class="inp" placeholder="${(f.placeholder||'').replace(/"/g,'&quot;')}">`;
+    }
+    return `<div style="${spanStyle}"><label>${f.label}</label>${inputHTML}</div>`;
+  }).join('');
+}
+
+function toggleCbg(el) {
+  const inp = el.querySelector('input[type=checkbox]');
+  inp.checked = !inp.checked;
+  el.classList.toggle('checked', inp.checked);
+}
+function toggleRdo(el, groupName) {
+  document.querySelectorAll('input[name="' + groupName + '"]').forEach(function(r){ r.closest('label') && r.closest('label').classList.remove('checked'); });
+  var inp = el.querySelector('input[type=radio]');
+  if (inp) { inp.checked = true; }
+  el.classList.add('checked');
+}
+
+// ── Schedule checker ───────────────────────────────────────────
+function renderScheduleChecker() {
+  return '<div id="schedule-checker" style="background:rgba(6,182,212,.06);border:1px solid rgba(6,182,212,.2);border-radius:12px;padding:14px 16px">'
+    + '<div style="font-size:.72rem;font-weight:800;color:#06b6d4;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">📅 Lịch bắn gần nhất</div>'
+    + '<div id="schedule-list" style="font-size:.8rem;color:var(--text3)">Đang tải...</div>'
+    + '</div>';
+}
+
+async function scheduleCheckerLoad() {
+  var el = document.getElementById('schedule-list');
+  if (!el) return;
+  try {
+    var r = await fetch(GAS_URL + '?action=getOrders');
+    var d = await r.json();
+    var today = new Date(); today.setHours(0,0,0,0);
+    var upcoming = (d.orders||[])
+      .filter(function(o){ return o.type==='lich-truyen-thong' && o.status!=='hoan-thanh' && o.deadline; })
+      .map(function(o){ return Object.assign({}, o, {_dt: new Date(o.deadline)}); })
+      .filter(function(o){ return o._dt >= today; })
+      .sort(function(a,b){ return a._dt - b._dt; })
+      .slice(0,5);
+    if (!upcoming.length) { el.textContent = 'Chưa có lịch nào sắp tới.'; return; }
+    el.innerHTML = upcoming.map(function(o) {
+      var diff = Math.round((o._dt - today)/(1000*60*60*24));
+      var label = diff===0 ? 'Hôm nay' : diff===1 ? 'Ngày mai' : 'Còn '+diff+' ngày';
+      var fmt = o._dt.toLocaleDateString('vi-VN',{weekday:'short',day:'2-digit',month:'2-digit'});
+      return '<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid rgba(6,182,212,.1)">'
+        + '<span>' + (o.projectName||o.d_chuong_trinh||'(chưa đặt tên)') + '</span>'
+        + '<span style="color:#06b6d4;font-weight:700;white-space:nowrap;margin-left:12px">' + fmt + ' · ' + label + '</span>'
+        + '</div>';
+    }).join('');
+  } catch(e) { if(el) el.textContent = 'Không thể tải lịch.'; }
+}
+
+function scheduleCheckerRefreshDate() {
+  var dlEl = document.getElementById('dl-lich-truyen-thong');
+  if (!dlEl) return;
+  // no-op placeholder for date change
+}
+
+// ── Submit ─────────────────────────────────────────────────────
+async function submitForm() {
+  var requester   = document.getElementById('f-requester').value.trim();
+  var department  = document.getElementById('f-department').value;
+  var projectName = document.getElementById('f-project').value.trim();
+  var projectCode = (document.getElementById('f-projectcode')||{}).value || '';
+  var generalNote = document.getElementById('f-note').value.trim();
+
+  if (!requester)   { showToast('⚠️ Vui lòng nhập họ tên', 'error'); return; }
+  if (!department)  { showToast('⚠️ Vui lòng chọn phòng ban', 'error'); return; }
+  if (!projectName) { showToast('⚠️ Vui lòng nhập tên dự án', 'error'); return; }
+  if (!selectedTypes.size) {
+    document.getElementById('type-err').style.display = 'block';
+    showToast('⚠️ Vui lòng chọn ít nhất một hạng mục', 'error'); return;
+  }
+  saveUserInfo(requester, department);
+
+  var ordered = TYPES.filter(function(t){ return selectedTypes.has(t.id); });
+
+  // Validate deadlines
+  var dlErr = false;
+  ordered.forEach(function(t) {
+    var el = document.getElementById('dl-' + t.id);
+    if (!el || !el.value) { if(el) el.style.borderColor='#f87171'; dlErr=true; }
+    else el.style.borderColor='';
+  });
+  if (dlErr) { showToast('⚠️ Vui lòng điền deadline cho từng hạng mục', 'error'); return; }
+
+  // Build orders
+  var now = new Date();
+  var p = function(n){ return String(n).padStart(2,'0'); };
+  var submittedAt = p(now.getDate())+'/'+p(now.getMonth()+1)+'/'+now.getFullYear()+' '+p(now.getHours())+':'+p(now.getMinutes())+':'+p(now.getSeconds());
+
+  var defaultStatus = (function(){
+    try { var pc=JSON.parse(localStorage.getItem('midu_status_config')||'null'); return pc&&pc.length?pc[0].id:'chua-lam'; } catch(e){ return 'chua-lam'; }
+  })();
+
+  var orders = ordered.map(function(t) {
+    var defs = (dynamicDefs[t.id] || DEFAULT_FORM_SCHEMA[t.id] || []);
+    var typeData = {};
+    // _meta: map fieldId → label để GAS tự tạo/ghi cột đúng tên
+    var _meta = {};
+    defs.forEach(function(f) {
+      _meta[f.id] = f.label;
+      if (f.type === 'checkbox-group') {
+        var vals = Array.from(document.querySelectorAll('input[name="cbg_'+t.id+'_'+f.id+'"]:checked')).map(function(c){return c.value;});
+        typeData[f.id] = vals.join(', ');
+      } else if (f.type === 'radio-group') {
+        var sel = document.querySelector('input[name="rdo_'+t.id+'_'+f.id+'"]:checked');
+        typeData[f.id] = sel ? sel.value : '';
+      } else if (f.type === 'checkbox') {
+        var el = document.getElementById('f-'+t.id+'-'+f.id);
+        typeData[f.id] = el && el.checked ? (f.placeholder || 'Có') : '';
+      } else {
+        var el = document.getElementById('f-'+t.id+'-'+f.id);
+        if (el) typeData[f.id] = el.value.trim();
+      }
+    });
+    return Object.assign({ type:t.id, submittedAt:submittedAt, requester:requester, department:department,
+             projectName:projectName, projectCode:projectCode,
+             deadline: document.getElementById('dl-'+t.id).value,
+             deadlineTime: document.getElementById('dlt-'+t.id)?.value||'',
+             priority: document.getElementById('pri-'+t.id).value,
+             note: generalNote, status: defaultStatus, _meta: _meta }, typeData);
+  });
+
+  var btn = document.getElementById('submit-btn');
+  btn.disabled = true; btn.textContent = 'Đang gửi...';
+  showToast('Đang gửi yêu cầu...');
+
+  try {
+    var res = await fetch(GAS_URL, { method:'POST', body: JSON.stringify({ action:'submitOrders', orders:orders }) });
+    var data = await res.json();
+    if (data.error) throw new Error(data.error);
+    var ids = data.ids || orders.map(function(_,i){ return '#'+(i+1); });
+    document.getElementById('main-form').style.display = 'none';
+    var ss = document.getElementById('success-screen');
+    ss.style.display = 'block'; ss.classList.add('show');
+    document.getElementById('success-msg').textContent = 'Đã gửi ' + orders.length + ' yêu cầu thành công!';
+    document.getElementById('success-ids').innerHTML = ids.map(function(id,i){
+      return '<div style="padding:6px 0;border-bottom:1px solid rgba(99,102,241,.1);display:flex;justify-content:space-between">'
+        + '<span>' + (TYPE_MAP[orders[i].type]||orders[i].type) + '</span>'
+        + '<span style="color:#818cf8;font-weight:700">' + id + '</span></div>';
+    }).join('');
+  } catch(err) {
+    showToast('Lỗi gửi order: ' + err.message, 'error');
+    btn.disabled = false; btn.textContent = 'Gửi yêu cầu →';
+  }
+}
+
+function resetForm() {
+  selectedTypes.clear();
+  document.getElementById('type-sections').innerHTML = '';
+  document.getElementById('main-form').reset();
+  document.getElementById('main-form').style.display = 'block';
+  var ss = document.getElementById('success-screen');
+  ss.style.display = 'none'; ss.classList.remove('show');
+  var btn = document.getElementById('submit-btn');
+  btn.disabled = false; btn.textContent = 'Gửi yêu cầu →';
+  buildTypeGrid();
+  restoreUserInfo();
+}
+
+function showToast(msg, type) {
+  var el = document.getElementById('__toast');
+  var bg = type==='error' ? '#dc2626' : type==='success' ? '#16a34a' : '#4f46e5';
+  el.style.cssText = 'position:fixed;bottom:24px;right:24px;z-index:9999;border-radius:12px;padding:12px 18px;font-size:.84rem;font-weight:700;box-shadow:0 8px 32px rgba(0,0,0,.4);background:'+bg+';color:#fff;opacity:1;transition:opacity .3s;pointer-events:none';
+  el.textContent = msg;
+  clearTimeout(el._t);
+  el._t = setTimeout(function(){ el.style.opacity='0'; }, 3500);
+}
+
+</script>
+<datalist id="time-datalist">
+  <option value="07:00">07:00</option><option value="07:30">07:30</option>
+  <option value="08:00">08:00</option><option value="08:30">08:30</option>
+  <option value="09:00">09:00</option><option value="09:30">09:30</option>
+  <option value="10:00">10:00</option><option value="10:30">10:30</option>
+  <option value="11:00">11:00</option><option value="11:30">11:30</option>
+  <option value="12:00">12:00</option><option value="12:30">12:30</option>
+  <option value="13:00">13:00</option><option value="13:30">13:30</option>
+  <option value="14:00">14:00</option><option value="14:30">14:30</option>
+  <option value="15:00">15:00</option><option value="15:30">15:30</option>
+  <option value="16:00">16:00</option><option value="16:30">16:30</option>
+  <option value="17:00">17:00</option><option value="17:30">17:30</option>
+  <option value="18:00">18:00</option><option value="18:30">18:30</option>
+  <option value="19:00">19:00</option><option value="19:30">19:30</option>
+  <option value="20:00">20:00</option><option value="20:30">20:30</option>
+  <option value="21:00">21:00</option><option value="21:30">21:30</option>
+  <option value="22:00">22:00</option><option value="22:30">22:30</option>
+  <option value="23:00">23:00</option>
+</datalist>
+</body>
+</html>
