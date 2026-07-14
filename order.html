@@ -364,10 +364,14 @@ function _applySchema(schema) {
     const r = await fetch(`${GAS_URL}?action=getFormSchema&_=${Date.now()}`);
     const d = await r.json();
     if (d.schema && Object.keys(d.schema).length) {
-      // Chỉ dùng GAS nếu có dữ liệu tùy chỉnh (có types hoặc nhiều hơn default)
       const { departments, types, ...defs } = d.schema;
       const hasCustom = types?.length > 0 || Object.keys(defs).some(k => !DEFAULT_FORM_SCHEMA[k]);
       if (hasCustom || !lsSchema) _applySchema(d.schema);
+      // Luôn áp dụng departments từ GAS (admin config là nguồn chính xác)
+      else if (departments?.length) {
+        buildDeptSelect(departments);
+        localStorage.setItem('midu_mkt_departments', JSON.stringify(departments));
+      }
     }
   } catch(e) {}
 })();

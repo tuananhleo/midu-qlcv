@@ -664,13 +664,13 @@ function updateStats() {
   document.getElementById('st-done').textContent=all.filter(o=>o.status==='hoan-thanh').length;
 }
 
+function normDept(s){ return (s||'').trim().replace(/^Ph[oòó]ng\s+/i,''); }
 function buildDeptChips() {
   const _DEFAULT_DEPTS=['Kinh doanh','Kế toán – Tài chính','Nhân sự','Vận hành','Ban Giám đốc','Marketing – Truyền thông','Kho – Logistics','Khác'];
   let fromConfig=_DEFAULT_DEPTS;
   try { fromConfig=JSON.parse(localStorage.getItem('midu_mkt_departments')||'null')||_DEFAULT_DEPTS; } catch(_e){}
-  const allSrc=[...allOrders,...(contentOrders||[]),...internalTasks.filter(t=>!t._fromContentOrder)];
-  const fromOrders=allSrc.map(o=>o.department).filter(Boolean);
-  const depts=[...new Set([...fromConfig,...fromOrders])].sort();
+  // Chỉ dùng dept từ admin config (không gộp từ orders cũ)
+  const depts=fromConfig.slice().sort();
   const c=document.getElementById('dept-chips'); c.innerHTML='';
   const mk=(val,label)=>{
     const b=document.createElement('button'); b.type='button';
@@ -725,7 +725,7 @@ function render() {
 
   let rows=filterByPeriod(allOrders,currentPeriod).filter(o=>{
     if(_overdueFilter){ const _dl=parseDl(o); if(!_dl||_dl>=today) return false; }
-    if(activeDept && (o.department||"")!==activeDept) return false;
+    if(activeDept && normDept(o.department)!==normDept(activeDept)) return false;
     if(filters.type && o.type!==filters.type) return false;
     if(statusFilter && o.status!==statusFilter) return false;
     if(kw && !`${o.projectName}${o.department}${o.id}${o.projectCode||''}`.toLowerCase().includes(kw)) return false;
@@ -750,7 +750,7 @@ function render() {
       if(gasType!==filters.type) return false;
     }
     if(_overdueFilter){ const _idl=parseDl({deadline:t.deadline||t.plannedDate||''}); if(!_idl||_idl>=today) return false; }
-    if(activeDept&&(t.department||'')!==activeDept) return false;
+    if(activeDept&&normDept(t.department)!==normDept(activeDept)) return false;
     if(statusFilter&&t.status!==statusFilter) return false;
     if(kw&&!`${t.title||''}${t.assignedTo||''}${t.adminNote||''}${t.department||''}`.toLowerCase().includes(kw)) return false;
     return true;
