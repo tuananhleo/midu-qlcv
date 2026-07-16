@@ -223,7 +223,11 @@
       </div>
     </div>
     <div id="um-list" class="space-y-2 mb-4" style="max-height:360px;overflow-y:auto"></div>
-    <button type="button" onclick="openUserForm()" class="btn btn-primary w-full">+ Thêm người dùng</button>
+    <div style="display:flex;gap:8px;margin-top:4px">
+      <input id="um-new-name" type="text" class="inp" style="flex:1;padding:8px 12px;font-size:.85rem" placeholder="Tên nhân viên (chưa cần tài khoản)..." onkeydown="if(event.key==='Enter')addEmployeeName()">
+      <button type="button" onclick="addEmployeeName()" class="btn btn-ghost" style="white-space:nowrap">+ Thêm</button>
+      <button type="button" onclick="openUserForm()" class="btn btn-primary" style="white-space:nowrap">👤 Tạo tài khoản</button>
+    </div>
   </div>
 </div>
 
@@ -365,10 +369,7 @@
         <textarea id="s-depts" rows="6" class="inp" style="resize:vertical" placeholder="Kinh doanh&#10;Nhân sự&#10;..."></textarea>
         <button type="button" onclick="saveDepts()" class="btn btn-ghost mt-2 text-xs">Lưu phòng ban</button>
       </div>
-      <div><label>Nhân viên MKT <span style="font-weight:400;text-transform:none;color:var(--atext3)">(mỗi người một dòng)</span></label>
-        <textarea id="s-assignees" rows="5" class="inp" style="resize:vertical" placeholder="Mỗi người một dòng"></textarea>
-        <button type="button" onclick="saveAssignees()" class="btn btn-ghost mt-2 text-xs">Lưu danh sách</button>
-      </div>
+
       <div><label>GAS URL</label>
         <input id="s-gas" type="url" class="inp">
         <button type="button" onclick="saveGas()" class="btn btn-ghost mt-2 text-xs">Cập nhật</button>
@@ -1167,8 +1168,6 @@ function afterLogin() {
   // Cập nhật settings fields
   const sg = document.getElementById('s-gas');
   if (sg) { sg.value = getGasUrl(); }
-  const sa = document.getElementById('s-assignees');
-  if (sa) { sa.value = getAssignees().join('\n'); }
   const sd = document.getElementById('s-depts');
   if (sd) { sd.value = getDepts().join('\n'); }
   applyRoleUI();
@@ -1263,8 +1262,6 @@ async function loadAll(notify=false) {
       if (fmRes.schema.assignees?.length) {
         // Restore assignees từ GAS — luôn ghi đè để không mất khi clear cache
         localStorage.setItem(KEY_ASGN, JSON.stringify(fmRes.schema.assignees));
-        const sa = document.getElementById('s-assignees');
-        if (sa) sa.value = fmRes.schema.assignees.join('\n');
       }
       (fmRes.schema.types||[]).forEach(t=>{ TYPE_MAP[t.id] = t.icon+' '+t.label; });
     } else if (!fmRes) {
@@ -2371,7 +2368,6 @@ function sPriReset(){priorityConfig=JSON.parse(JSON.stringify(DEFAULT_PRIORITIES
 // ── Settings ───────────────────────────────────────────────────
 function openSettings(){
   document.getElementById('s-gas').value=getGasUrl();
-  document.getElementById('s-assignees').value=getAssignees().join('\n');
   document.getElementById('s-depts').value=getDepts().join('\n');
   const fbRaw=localStorage.getItem(KEY_FB)||'';
   document.getElementById('s-fb-config').value=fbRaw;
@@ -2381,16 +2377,36 @@ function openSettings(){
 }
 function closeSettings(){document.getElementById('settings-modal').classList.add('hidden');}
 
-async function saveAssignees(){
-  const list=document.getElementById('s-assignees').value.split('\n').map(s=>s.trim()).filter(Boolean);
-  localStorage.setItem(KEY_ASGN,JSON.stringify(list));
+// Lưu danh sách nhân viên lên localStorage + GAS (dùng nội bộ)
+async function _saveAssigneeList(list) {
+  localStorage.setItem(KEY_ASGN, JSON.stringify(list));
   try {
-    const schema={...formSchema,assignees:list};
-    const r=await fetch(getGasUrl(),{method:'POST',body:JSON.stringify({action:'saveFormSchema',schema})});
-    const d=await r.json(); if(d.error) throw new Error(d.error);
-    formSchema={...formSchema,assignees:list};
-    showToast('✓ Đã lưu danh sách — không mất khi xóa cache');
-  } catch(e){showToast('Lưu local OK, lỗi GAS: '+e.message,'error');}
+    const schema = {...formSchema, assignees: list};
+    const r = await fetch(getGasUrl(), {method:'POST', body:JSON.stringify({action:'saveFormSchema', schema})});
+    const d = await r.json(); if(d.error) throw new Error(d.error);
+    formSchema = {...formSchema, assignees: list};
+  } catch(e) { console.warn('[saveAssignees]', e.message); }
+}
+
+// Thêm tên nhân viên từ input trong modal Quản lý người dùng
+async function addEmployeeName() {
+  const inp = document.getElementById('um-new-name');
+  const name = inp.value.trim();
+  if (!name) return;
+  const current = getAssignees();
+  if (current.includes(name)) { showToast('Tên đã tồn tại', 'error'); return; }
+  await _saveAssigneeList([...current, name]);
+  inp.value = '';
+  showToast('✓ Đã thêm: ' + name);
+  renderUserList();
+}
+
+// Xóa tên nhân viên chưa có tài khoản
+async function removeEmployeeName(name) {
+  const updated = getAssignees().filter(n => n !== name);
+  await _saveAssigneeList(updated);
+  showToast('Đã xóa: ' + name);
+  renderUserList();
 }
 async function saveDepts(){
   const list=document.getElementById('s-depts').value.split('\n').map(s=>s.trim()).filter(Boolean);
@@ -2594,7 +2610,10 @@ function renderUserList() {
           <div class="um-name" style="color:var(--atext2)">${name}</div>
           <div class="um-meta" style="color:#f97316">Chưa có tài khoản</div>
         </div>
-        <button onclick="openUserForm(null,'${name.replace(/'/g,"\\'")}') " class="btn btn-primary" style="padding:4px 12px;font-size:.75rem;white-space:nowrap">+ Tạo tài khoản</button>
+        <div class="flex gap-1">
+          <button onclick="openUserForm(null,'${name.replace(/'/g,&quot;\\'&quot;)}')" class="btn btn-primary" style="padding:4px 10px;font-size:.75rem;white-space:nowrap">+ Tạo TK</button>
+          <button onclick="removeEmployeeName('${name.replace(/'/g,&quot;\\'&quot;)}')" class="btn btn-danger" style="padding:4px 10px;font-size:.75rem" title="Xóa khỏi danh sách">🗑️</button>
+        </div>
       </div>`;
     }
   });
