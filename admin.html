@@ -2549,35 +2549,31 @@ const _roleClass = id => { const lvl=getAllRoles().find(r=>r.id===id)?.permLevel
 function renderUserList() {
   const el = document.getElementById('um-list');
 
-  // Tên nhân viên trong assignees list chưa có tài khoản
-  const registeredNames = new Set(allUsers.map(u => u.displayName));
-  const unregistered = getAssignees().filter(name => !registeredNames.has(name));
+  // Gộp tất cả nhân viên: có tài khoản + chưa có tài khoản vào 1 danh sách
+  const registeredMap = Object.fromEntries(allUsers.map(u => [u.displayName, u]));
+  const allNames = [...new Set([...getAssignees(), ...allUsers.map(u => u.displayName)])];
+  const unregisteredCount = allNames.filter(n => !registeredMap[n]).length;
 
-  let html = '';
-
-  // Phần nhân viên chưa có tài khoản
-  if (unregistered.length) {
-    html += `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-      <span style="font-size:.72rem;font-weight:800;letter-spacing:.06em;color:var(--atext3);text-transform:uppercase">⚠️ Chưa có tài khoản (${unregistered.length})</span>
-      <button onclick="createAllUnregistered()" class="btn btn-primary" style="padding:3px 10px;font-size:.72rem">⚡ Tạo tất cả</button>
-    </div>`;
-    html += unregistered.map(name => `
-      <div class="um-row" style="opacity:.65;border-style:dashed">
-        <div class="um-avatar" style="background:rgba(255,255,255,.1);color:var(--atext3)">${name[0].toUpperCase()}</div>
-        <div class="um-info">
-          <div class="um-name" style="color:var(--atext2)">${name}</div>
-          <div class="um-meta">Chưa có tài khoản đăng nhập</div>
-        </div>
-        <button onclick="openUserForm(null,'${name.replace(/'/g,"\\'")}')" class="btn btn-primary" style="padding:4px 12px;font-size:.75rem;white-space:nowrap">+ Tạo tài khoản</button>
-      </div>`).join('');
-    if (allUsers.length > 1) html += `<div style="height:1px;background:var(--aborder);margin:10px 0"></div>`;
+  if (!allNames.length) {
+    el.innerHTML = '<p style="color:var(--atext3);text-align:center;padding:16px">Đang tải... (cần deploy GAS mới)</p>';
+    loadAllUsers().then(renderUserList);
+    return;
   }
 
-  // Phần đã có tài khoản
-  if (allUsers.length) {
-    if (unregistered.length) html += `<div style="font-size:.72rem;font-weight:800;letter-spacing:.06em;color:var(--atext3);margin-bottom:6px;text-transform:uppercase">✅ Đã có tài khoản (${allUsers.length})</div>`;
-    html += allUsers.map(u => `
-      <div class="um-row${u.active?'':' um-inactive'}">
+  // Header: nút "Tạo tất cả" nếu còn nhân viên chưa có tài khoản
+  let header = '';
+  if (unregisteredCount > 0) {
+    header = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+      <span style="font-size:.72rem;color:var(--atext3)">${unregisteredCount} người chưa có tài khoản</span>
+      <button onclick="createAllUnregistered()" class="btn btn-primary" style="padding:3px 10px;font-size:.72rem">⚡ Tạo tất cả</button>
+    </div>`;
+  }
+
+  const rows = allNames.map(name => {
+    const u = registeredMap[name];
+    if (u) {
+      // Đã có tài khoản
+      return `<div class="um-row${u.active?'':' um-inactive'}">
         <div class="um-avatar">${(u.displayName||u.username||'?')[0].toUpperCase()}</div>
         <div class="um-info">
           <div class="um-name">${u.displayName||u.username}</div>
@@ -2589,16 +2585,22 @@ function renderUserList() {
           ${u.id!=='u_admin'?`<button onclick="toggleUserActive('${u.id}',${!u.active})" class="btn btn-ghost" style="padding:4px 10px;font-size:.75rem" title="${u.active?'Vô hiệu hóa':'Kích hoạt'}">${u.active?'🚫':'✅'}</button>`:''}
           ${u.id!=='u_admin'?`<button onclick="deleteUser('${u.id}')" class="btn btn-danger" style="padding:4px 10px;font-size:.75rem">🗑️</button>`:''}
         </div>
-      </div>`).join('');
-  }
+      </div>`;
+    } else {
+      // Chưa có tài khoản
+      return `<div class="um-row" style="opacity:.7;border-style:dashed">
+        <div class="um-avatar" style="background:rgba(255,255,255,.1);color:var(--atext3)">${name[0].toUpperCase()}</div>
+        <div class="um-info">
+          <div class="um-name" style="color:var(--atext2)">${name}</div>
+          <div class="um-meta" style="color:#f97316">Chưa có tài khoản</div>
+        </div>
+        <button onclick="openUserForm(null,'${name.replace(/'/g,"\\'")}') " class="btn btn-primary" style="padding:4px 12px;font-size:.75rem;white-space:nowrap">+ Tạo tài khoản</button>
+      </div>`;
+    }
+  });
 
-  if (!html) {
-    html = '<p style="color:var(--atext3);text-align:center;padding:16px">Đang tải... (cần deploy GAS mới)</p>';
-    loadAllUsers().then(renderUserList);
-  }
-  el.innerHTML = html;
+  el.innerHTML = header + rows.join('');
 }
-
 // ── Role Management ────────────────────────────────────────────
 let _editingRoleId = null;
 
