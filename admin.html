@@ -2604,15 +2604,15 @@ function renderUserList() {
       </div>`;
     } else {
       // Chưa có tài khoản
-      return `<div class="um-row" style="opacity:.7;border-style:dashed">
+      return `<div class="um-row" style="opacity:.7;border-style:dashed" data-name="${name.replace(/"/g,'&quot;')}">
         <div class="um-avatar" style="background:rgba(255,255,255,.1);color:var(--atext3)">${name[0].toUpperCase()}</div>
         <div class="um-info">
           <div class="um-name" style="color:var(--atext2)">${name}</div>
           <div class="um-meta" style="color:#f97316">Chưa có tài khoản</div>
         </div>
         <div class="flex gap-1">
-          <button onclick="openUserForm(null,'${name.replace(/'/g,&quot;\\'&quot;)}')" class="btn btn-primary" style="padding:4px 10px;font-size:.75rem;white-space:nowrap">+ Tạo TK</button>
-          <button onclick="removeEmployeeName('${name.replace(/'/g,&quot;\\'&quot;)}')" class="btn btn-danger" style="padding:4px 10px;font-size:.75rem" title="Xóa khỏi danh sách">🗑️</button>
+          <button onclick="openUserForm(null,this.closest('.um-row').dataset.name)" class="btn btn-primary" style="padding:4px 10px;font-size:.75rem;white-space:nowrap">+ Tạo TK</button>
+          <button onclick="removeEmployeeName(this.closest('.um-row').dataset.name)" class="btn btn-danger" style="padding:4px 10px;font-size:.75rem" title="Xóa khỏi danh sách">🗑️</button>
         </div>
       </div>`;
     }
