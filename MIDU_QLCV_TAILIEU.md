@@ -696,6 +696,9 @@ Sau push ~1-2 phút → GitHub Pages tự cập nhật.
 - Git hay báo "dubious ownership" → đã fix bằng `safe.directory "*"` trong bat file
 - File `.git\index.lock` hay tồn đọng nếu git bị interrupt → bat file tự xóa trước khi commit
 - **Không** dùng bash/PowerShell để push (permission issues) → luôn dùng `.bat` file
+- **File khóa khác `.git\index.lock` cũng có thể tồn đọng** — gặp thực tế 20/07/2026: `packed-refs.lock` và `refs/remotes/origin/main.lock` bị kẹt lại (không phải do bat file gây ra, bat chỉ dọn `index.lock`), khiến `git push` báo lỗi dù thực ra **đã đẩy lên GitHub thành công** — lỗi chỉ nằm ở bước git tự cập nhật con trỏ theo dõi cục bộ (`refs/remotes/origin/main`) sau khi push, không phải push thất bại. Nếu gặp lỗi "Another git process seems to be running" sau khi push, đừng vội cho là push fail — chạy `git fetch origin main` để xem remote đã có commit mới chưa trước khi thử lại.
+- **Nghi có watcher chạy nền** (`watch_and_push.ps1` / `2_start_watcher.vbs`, xem mục 2) tự động thao tác git theo lịch — có thể là nguồn gây tranh chấp file khóa với thao tác push thủ công. Nếu push hay bị lock, kiểm tra có tiến trình PowerShell nào đang chạy watcher này không (Task Manager) trước khi push tay.
+- `credential.helper=manager` (Git Credential Manager) có thể mở cửa sổ đăng nhập GitHub tương tác khi push lần đầu/token hết hạn — cửa sổ này chỉ hiện trên máy thật, không thao tác được qua terminal tự động. Nếu push "treo" không phản hồi, khả năng cao đang chờ đăng nhập ở cửa sổ đó.
 
 ### Setup Firebase Hosting (chưa thực hiện)
 
