@@ -124,6 +124,27 @@
   </div>
 </div>
 
+<!-- Content Task Detail Modal -->
+<div id="ct-detail-modal" class="modal-bg hidden" onclick="if(event.target===this)closeContentTaskDetail()">
+  <div class="modal-box fade-up" style="max-width:520px">
+    <div class="flex items-center justify-between mb-3">
+      <div>
+        <div class="flex flex-wrap gap-2 mb-1">
+          <span class="meta-tag" style="background:rgba(16,185,129,.15);color:#34d399">📅 Lịch Content</span>
+          <span id="ct-detail-channel" class="meta-tag" style="background:rgba(251,191,36,.15);color:#fbbf24;font-weight:600;display:none"></span>
+        </div>
+        <h2 class="font-black mt-1" style="color:var(--ttext);font-size:1rem" id="ct-detail-title"></h2>
+      </div>
+      <button type="button" onclick="closeContentTaskDetail()" style="color:var(--ttext3);font-size:1.5rem;line-height:1;background:none;border:none;cursor:pointer">×</button>
+    </div>
+    <div id="ct-detail-body" style="font-size:.82rem;color:var(--ttext2);line-height:1.7"></div>
+    <div class="flex justify-end gap-2 mt-4">
+      <button type="button" onclick="closeContentTaskDetail()" class="btn btn-ghost">Đóng</button>
+      <a id="ct-detail-src-btn" href="#" target="_blank" rel="noopener" class="btn btn-primary">↗ Mở Lịch Content</a>
+    </div>
+  </div>
+</div>
+
 <!-- TOAST -->
 <div id="toast" class="fixed bottom-6 right-6 z-50 hidden">
   <div id="toast-inner" class="px-4 py-2.5 rounded-xl shadow-2xl text-sm font-semibold"></div>
@@ -457,8 +478,27 @@ let allOrders = [], filters = {type:''}, deptFilter = '';
 const KEY_INTERNAL       = 'midu_internal_tasks';
 const KEY_CONTENT_HIDDEN = 'midu_content_hidden';
 const KEY_CO_CACHE       = 'midu_content_orders_cache';
+const KEY_CT_CACHE       = 'midu_ct_cache';
+const KEY_CACHE          = 'midu_mkt_orders_cache';
 const _SB_URL = 'https://loqcqtuouagzaqwdmhji.supabase.co';
 const _SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxvcWNxdHVvdWFnemFxd2RtaGppIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMwNjUyNDgsImV4cCI6MjA5ODY0MTI0OH0.zoiWEgtNORL1ecxAgSpkZ3HMDaLP3nnpma3moM8QsDc';
+
+// ── Cấu hình nguồn Content (thêm người mới = thêm 1 object vào đây) ──
+// Trang Content đã lên mô hình nhiều board — mỗi board có key riêng dạng
+// "<base>--<workspaceId>", lấy từ content-plan-workspaces-v1 trên Supabase.
+// Một link chung cho cả nhóm, đổi bảng bằng dropdown "BẢNG CỦA" trong app hoặc bằng
+// hash #ws=<workspaceId> để mở thẳng đúng bảng của từng người.
+const CONTENT_APP_URL = 'https://content-kim-oanh.pages.dev/';
+const CONTENT_SOURCES = [
+  { id:'kim-oanh', name:'Kim Oanh', url:CONTENT_APP_URL, idPrefix:'cont-' },
+  { id:'khanh-huyen', name:'Khánh Huyền', url:CONTENT_APP_URL+'#ws=khanh-huyen', idPrefix:'cont-kh-' },
+];
+// Trang Content tự hỗ trợ deep-link #ws=<board>&task=<id bài> — nhảy thẳng tới đúng bài,
+// tự chuyển board nếu khác, highlight dòng đó (xem handleDeepLink() trong file Content).
+function _contentDeepLink(ws, taskId){
+  if(!ws||!taskId) return '';
+  return CONTENT_APP_URL+'#ws='+encodeURIComponent(ws)+'&task='+encodeURIComponent(taskId);
+}
 const _CONTENT_STATUS_MAP = {
   'Lên kế hoạch':'chua-lam','Đang soạn':'dang-xu-ly',
   'Chờ duyệt':'dang-xu-ly','Đã lên lịch':'dang-xu-ly',
@@ -467,6 +507,7 @@ const _CONTENT_STATUS_MAP = {
 let internalTasks = [];
 let contentTasks  = [];
 let contentOrders = [];
+let _contentChannelMap = {}; // { 'ch-menaq7': 'Fanpage Midu MenaQ7', ... }
 
 // ── LC Order helpers ───────────────────────────────────────────
 const _LC_TYPE_META={
@@ -522,30 +563,62 @@ function loadInternalTasks() {
   } catch(e) { internalTasks=[]; }
 }
 
+async function _loadContentChannels(){
+  const hdrs={'apikey':_SB_KEY,'Authorization':'Bearer '+_SB_KEY};
+  _contentChannelMap={};
+  // Đọc key cũ (không hậu tố) trước, rồi từng board — board mới có thể thiếu vài kênh
+  // cũ chưa kịp chuyển qua khi Content lên mô hình nhiều board; key sau ghi đè key trước
+  // khi trùng id, để ưu tiên tên mới nhất của từng board.
+  const ids=['content-plan-channels-v1', ...CONTENT_SOURCES.map(src=>`content-plan-channels-v1--${src.id}`)];
+  for(const id of ids){
+    try{
+      const resp=await fetch(`${_SB_URL}/rest/v1/plan_data?id=eq.${id}&select=value`,{headers:hdrs});
+      if(!resp.ok) continue;
+      const data=await resp.json();
+      const raw=data?.[0]?.value;
+      const channels=typeof raw==='string'?JSON.parse(raw):(Array.isArray(raw)?raw:[]);
+      channels.forEach(ch=>{ if(ch.id&&ch.name) _contentChannelMap[ch.id]=ch.name; });
+    }catch(e){ console.warn('[Channels]',id,e.message); }
+  }
+}
+
 async function loadContentTasks() {
-  try {
-    const hdrs = {'apikey':_SB_KEY,'Authorization':'Bearer '+_SB_KEY};
-    const resp = await fetch(`${_SB_URL}/rest/v1/plan_data?id=eq.content-plan-tasks-v2&select=value`, {headers:hdrs});
-    if (!resp.ok) return;
-    const data = await resp.json();
-    const raw = data?.[0]?.value;
-    const tasks = typeof raw==='string' ? JSON.parse(raw) : (Array.isArray(raw)?raw:[]);
-    const hidden = _getHiddenIds();
-    contentTasks = tasks
-      .filter(t=>t.coord&&t.coord.trim()&&t.coord.trim()!=='Khác')
-      .filter(t=>!hidden.has('cont-'+t.id))
-      .map(ct=>({
-        id:'cont-'+ct.id, _internal:true, _fromContent:true,
-        title:(ct.idea||ct.content||'').trim()||'(Lịch Content)',
-        projectName:(ct.idea||ct.content||'').trim()||'(Lịch Content)',
-        assignedTo:(ct.coord||'').trim(),
-        deadline:ct.date||'', plannedDate:ct.date||'',
-        status:_CONTENT_STATUS_MAP[ct.status||'']||'chua-lam',
-        adminNote:`📅 ${ct.channelId||'Lịch Content'} | ${ct.content||ct.idea||''}`,
-        type:'internal', department:'Nội bộ MKT', createdBy:'Lịch Content',
-        _channel:ct.channelId||'', _contentStatus:ct.status||''
-      }));
-  } catch(e) { console.warn('Không load được Lịch Content:', e.message); }
+  const hdrs = {'apikey':_SB_KEY,'Authorization':'Bearer '+_SB_KEY};
+  const hidden = _getHiddenIds();
+  const results = await Promise.all(CONTENT_SOURCES.map(async src=>{
+    try{
+      const resp = await fetch(`${_SB_URL}/rest/v1/plan_data?id=eq.content-plan-tasks-v2--${src.id}&select=value`, {headers:hdrs});
+      if (!resp.ok) return [];
+      const data = await resp.json();
+      const raw = data?.[0]?.value;
+      const tasks = typeof raw==='string' ? JSON.parse(raw) : (Array.isArray(raw)?raw:[]);
+      return tasks
+        .filter(t=>!hidden.has(src.idPrefix+t.id))
+        .map(ct=>({
+          id:src.idPrefix+ct.id, _internal:true, _fromContent:true, _ws:src.id, _contentTaskId:ct.id,
+          _sourceName:src.name, _sourceUrl:_contentDeepLink(src.id, ct.id)||src.url,
+          title:(ct.idea||ct.content||'').trim()||'(Lịch Content)',
+          projectName:(ct.idea||ct.content||'').trim()||'(Lịch Content)',
+          requester:src.name,
+          assignedTo:(ct.coord&&ct.coord.trim()&&ct.coord.trim()!=='Khác'?ct.coord.trim():src.name),
+          deadline:ct.date||'', plannedDate:ct.date||'',
+          status:_CONTENT_STATUS_MAP[ct.status||'']||'chua-lam',
+          priority:'trung-binh',
+          createdBy:`${src.name} · Lịch Content`,
+          type:'content',
+          department:'Marketing – Truyền thông',
+          d_channel:(_contentChannelMap[ct.channelId]||ct.channelId)||'',
+          d_channelId:ct.channelId||'',
+          d_topic:(ct.idea||ct.content||'').trim(),
+          d_content_type:ct.type||ct.format||'Bài đăng',
+          linkResult:ct.postUrl||ct.result||ct.link||ct.deliverableLink||'',
+          adminNote:`Lịch Content · ${src.name} · Kênh: ${(_contentChannelMap[ct.channelId]||ct.channelId)||'–'}${ct.status?' · '+ct.status:''}`,
+          _channel:(_contentChannelMap[ct.channelId]||ct.channelId)||'', _contentStatus:ct.status||''
+        }));
+    }catch(e){ console.warn(`[ContentTasks] ${src.name}:`, e.message); return []; }
+  }));
+  contentTasks = results.flat();
+  try { localStorage.setItem(KEY_CT_CACHE, JSON.stringify(contentTasks)); } catch(e) {}
 }
 const today = new Date(); today.setHours(0,0,0,0);
 const params = new URLSearchParams(location.search);
@@ -594,33 +667,52 @@ function sortedList(list) {
 async function loadOrders(notify=false) {
   setConn('loading');
   loadInternalTasks();
-  // Hiện cache ngay (không cần network)
-  try {
-    const coCached = JSON.parse(localStorage.getItem(KEY_CO_CACHE)||'null');
-    if (Array.isArray(coCached) && coCached.length) {
-      contentOrders = coCached;
-      try { updateStats(); buildDeptChips(); buildTypeChips(); buildStatusChips(); updatePeriodLabel(); render(); } catch(_e) {}
-      document.getElementById('loading-state').classList.add('hidden');
-      document.getElementById('list').classList.remove('hidden');
-    }
-  } catch(_e) {}
-  // Load Supabase data + GAS in parallel; render fast data first
-  const gasPromise = fetch(`${getGasUrl()}?action=getOrders`, {signal: AbortSignal.timeout(15000)})
-    .then(r=>r.json()).catch(()=>null);
-  await Promise.all([loadContentTasks(), loadContentOrders()]);
-  // Render immediately with Supabase data (no wait for GAS)
-  document.getElementById('loading-state').classList.add('hidden');
-  document.getElementById('list').classList.remove('hidden');
-  try { updateStats(); buildDeptChips(); buildTypeChips(); buildStatusChips(); updatePeriodLabel(); render(); }
-  catch(e) { console.error('[loadOrders render error]', e); }
-  // GAS data loads in background, update when ready
-  const gasResult = await gasPromise;
-  if(gasResult) {
-    allOrders=gasResult.orders||[]; if(gasResult.schema) dynamicSchema=gasResult.schema;
+  document.getElementById('loading-state').classList.remove('hidden');
+  document.getElementById('list').classList.add('hidden');
+
+  // ── B1: Load cache ngay lập tức (0ms) ──────────────────────────
+  try { const c=JSON.parse(localStorage.getItem(KEY_CACHE)||'null'); if(c?.orders?.length){allOrders=c.orders;if(c.schema)dynamicSchema=c.schema;} } catch(e){}
+  try { const c=JSON.parse(localStorage.getItem(KEY_CT_CACHE)||'null'); if(Array.isArray(c)&&c.length) contentTasks=c; } catch(e){}
+  try { const c=JSON.parse(localStorage.getItem(KEY_CO_CACHE)||'null'); if(Array.isArray(c)&&c.length) contentOrders=c; } catch(e){}
+
+  // ── B2: Render ngay nếu có cache ────────────────────────────────
+  const _hasData=()=>allOrders.length||contentOrders.length||contentTasks.length||internalTasks.filter(t=>!t._fromContentOrder).length;
+  if(_hasData()){
+    try { updateStats(); buildDeptChips(); buildTypeChips(); buildStatusChips(); updatePeriodLabel(); render(); } catch(e){}
+    document.getElementById('loading-state').classList.add('hidden');
+    document.getElementById('list').classList.remove('hidden');
+  }
+
+  // ── B3: Khởi động network requests song song (timeout 8s) ───────
+  const SIG=()=>AbortSignal.timeout(8000);
+  const gasPromise=fetch(`${getGasUrl()}?action=getOrders`,{signal:SIG()}).then(r=>r.json()).catch(()=>null);
+
+  // ── B4: Chờ Supabase (nhanh) ────────────────────────────────────
+  await Promise.all([
+    _loadContentChannels().catch(e=>console.warn('[Channels]',e.message)),
+    loadContentTasks().catch(e=>console.warn('[ContentTasks]',e.message)),
+    loadContentOrders().catch(e=>console.warn('[ContentOrders]',e.message)),
+  ]);
+  if(_hasData()){
+    try { updateStats(); buildDeptChips(); buildTypeChips(); buildStatusChips(); updatePeriodLabel(); render(); } catch(e){}
+    document.getElementById('loading-state').classList.add('hidden');
+    document.getElementById('list').classList.remove('hidden');
+  }
+
+  // ── B5: Chờ GAS ─────────────────────────────────────────────────
+  const gasResult=await gasPromise;
+  if(gasResult){
+    const fresh=gasResult.orders||[];
+    if(fresh.length>0) allOrders=fresh; else if(allOrders.length===0) allOrders=fresh;
+    if(gasResult.schema) dynamicSchema=gasResult.schema;
+    try { localStorage.setItem(KEY_CACHE,JSON.stringify({orders:allOrders,schema:dynamicSchema})); } catch(e){}
     setConn('ok'); if(notify) showToast('Đã cập nhật'); resetRefreshTimer();
   } else { setConn('error'); }
-  try { updateStats(); buildDeptChips(); buildTypeChips(); buildStatusChips(); updatePeriodLabel(); render(); }
-  catch(e) { console.error('[loadOrders render2 error]', e); }
+
+  // ── B6: Render cuối + luôn tắt spinner ──────────────────────────
+  try { updateStats(); buildDeptChips(); buildTypeChips(); buildStatusChips(); updatePeriodLabel(); render(); } catch(e){}
+  document.getElementById('loading-state').classList.add('hidden');
+  document.getElementById('list').classList.remove('hidden');
 }
 
 function setConn(state) {
@@ -654,7 +746,7 @@ function filterByStat(type) {
 }
 function updateStats() {
   const base=urlDept?allOrders.filter(o=>o.department===urlDept):allOrders;
-  const all=[...base,...contentOrders,...internalTasks.filter(t=>!t._fromContentOrder)];
+  const all=[...base,...contentOrders,...contentTasks,...internalTasks.filter(t=>!t._fromContentOrder)];
   const active=all.filter(o=>o.status!=='hoan-thanh');
   const feedback=all.filter(o=>o.status==='feedback').length;
   const overdue=active.filter(o=>{ const d=dlDiff({...o,deadline:o.deadline||o.plannedDate||''}); return d!==null&&d<0; });
@@ -718,7 +810,7 @@ function setStatusFilter(val){
 }
 
 function render() {
-  const kw=document.getElementById('f-kw').value.toLowerCase();
+  const kw=normVN(document.getElementById('f-kw').value);
   const hideOld=document.getElementById('hide-old').checked;
   const hideDays=parseInt(document.getElementById('hide-days').value);
   const activeDept=urlDept||deptFilter;
@@ -728,7 +820,7 @@ function render() {
     if(activeDept && normDept(o.department)!==normDept(activeDept)) return false;
     if(filters.type && o.type!==filters.type) return false;
     if(statusFilter && o.status!==statusFilter) return false;
-    if(kw && !`${o.projectName}${o.department}${o.id}${o.projectCode||''}`.toLowerCase().includes(kw)) return false;
+    if(kw && !normVN(`${o.projectName}${o.department}${o.id}${o.projectCode||''}${o.requester||''}${o.assignedTo||''}${o.resultText||''}${o.adminNote||''}${o.clientNote||''}`).includes(kw)) return false;
     if(hideOld&&hideDays>0&&o.status==='hoan-thanh') {
       const sub=o.submittedAt?new Date(o.submittedAt):null;
       if(sub&&(today-sub)/86400000>hideDays) return false;
@@ -740,19 +832,19 @@ function render() {
   // Internal + content tasks + content orders
   // Internal tasks: lọc kỳ theo deadline + loại (map LC rawType→GAS type)
   const _iPR = (currentPeriod && currentPeriod!=='all') ? (currentPeriod==='custom'?customRange:getDateRange(currentPeriod)) : null;
-  const allIntRows = [...contentOrders,...internalTasks.filter(t=>!t._fromContentOrder)].filter(t=>{
+  const allIntRows = [...contentOrders,...contentTasks,...internalTasks.filter(t=>!t._fromContentOrder)].filter(t=>{
     if(_iPR) {
       const _dl=parseDl({deadline:t.deadline||t.plannedDate||''});
       if(_dl) { const _to=new Date(_iPR.to.getTime()+86400000); if(!(_dl>=_iPR.from&&_dl<_to)) return false; }
     }
     if(filters.type) {
-      const gasType=_LC_TO_GAS[t._rawType||'']||t._rawType||'';
+      const gasType = t._fromContent ? t.type : (_LC_TO_GAS[t._rawType||'']||t._rawType||'');
       if(gasType!==filters.type) return false;
     }
     if(_overdueFilter){ const _idl=parseDl({deadline:t.deadline||t.plannedDate||''}); if(!_idl||_idl>=today) return false; }
     if(activeDept&&normDept(t.department)!==normDept(activeDept)) return false;
     if(statusFilter&&t.status!==statusFilter) return false;
-    if(kw&&!`${t.title||''}${t.assignedTo||''}${t.adminNote||''}${t.department||''}`.toLowerCase().includes(kw)) return false;
+    if(kw&&!normVN(`${t.title||''}${t.projectName||''}${t.requester||''}${t.assignedTo||''}${t.adminNote||''}${t.department||''}${t.d_channel||''}${t.d_topic||''}`).includes(kw)) return false;
     return true;
   });
   const allRows=[
@@ -761,7 +853,12 @@ function render() {
   ];
 
   const list=document.getElementById('list'), empty=document.getElementById('empty-state');
-  if(!allRows.length) { list.innerHTML=''; empty.classList.remove('hidden'); return; }
+  if(!allRows.length) {
+    list.innerHTML='';
+    const stillLoading = !document.getElementById('loading-state').classList.contains('hidden');
+    if(!stillLoading) empty.classList.remove('hidden');
+    return;
+  }
   empty.classList.add('hidden');
 
   const urgent   = sortedList(allRows.filter(o=>o.status!=='hoan-thanh'&&o.status!=='feedback'&&dlPriority(o)<=1));
@@ -782,7 +879,8 @@ function render() {
 
 function renderGroup(title,items,key,defaultOpen,color,bg,renderer) {
   if(!items.length) return '';
-  const open=(localStorage.getItem('grp_'+key)??(defaultOpen?'1':'0'))==='1';
+  const hasKw=!!(document.getElementById('f-kw')?.value?.trim());
+  const open=hasKw?true:(localStorage.getItem('grp_'+key)??(defaultOpen?'1':'0'))==='1';
   const body=renderer?renderer(items):items.map(o=>renderCard(o)).join('');
   return `<div>
     <div class="group-hdr" onclick="toggleGroup('${key}',this)">
@@ -859,7 +957,7 @@ function renderCard(o) {
         <div class="flex items-center gap-2">
           <span class="text-xs flex-shrink-0" style="color:var(--ttext3)">🔗 Kết quả:</span>
           ${isLink?`<a href="${o.linkResult}" target="_blank" rel="noopener" class="text-xs text-indigo-400 underline break-all flex-1">${o.linkResult}</a>`:`<span class="text-xs break-all flex-1" style="color:var(--ttext2)">${o.linkResult}</span>`}
-          <button type="button" onclick="copyLink('${o.linkResult.replace(/'/g,"\\'")}',this)" class="btn btn-ghost flex-shrink-0" style="padding:4px 8px;font-size:.75rem">📋 Sao chép</button>
+          <button type="button" onclick="copyLink(this)" data-copy="${escapeHtml(o.linkResult)}" class="btn btn-ghost flex-shrink-0" style="padding:4px 8px;font-size:.75rem">📋 Sao chép</button>
           ${isLink?`<a href="${o.linkResult}" target="_blank" rel="noopener" class="btn btn-ghost flex-shrink-0" style="padding:4px 8px;font-size:.75rem">🔗 Mở link</a>`:''}
         </div>
         ${o.resultBy?`<div class="text-xs mt-1" style="color:var(--ttext2)">👤 Người cập nhật KQ: <span style="color:var(--ttext3)">${o.resultBy}${o.resultAt?' · '+o.resultAt:''}</span></div>`:''}
@@ -895,6 +993,7 @@ function renderIntCard(t) {
         <div class="flex flex-wrap items-center gap-2 mb-1">
           <span class="meta-tag" style="background:rgba(251,146,60,.15);color:#fb923c">📋 LC · ${t._orderCode||''}</span>
           <span class="meta-tag" style="background:rgba(251,146,60,.1);color:#f97316">${t._orderTypeIcon||'📦'} ${t._orderType||''}</span>
+          ${t.d_channel?`<span class="meta-tag" style="background:rgba(251,191,36,.15);color:#fbbf24;font-weight:600">📢 ${t.d_channel}</span>`:''}
           ${t.department?`<span class="meta-tag">🏢 ${t.department}</span>`:''}
           <span class="px-2 py-0.5 rounded-full text-xs font-bold" style="background:${s.bg};color:${s.color}">${s.label}</span>
           <span class="ml-auto font-mono text-xs" style="color:var(--ttext3)">${t._orderCode||t.id}</span>
@@ -906,14 +1005,17 @@ function renderIntCard(t) {
           ${t.assignedTo?`<div><span style="color:var(--ttext3)">Phụ trách: </span><span class="font-medium" style="color:var(--ttext2)">👤 ${t.assignedTo}</span></div>`:''}
           ${ro.priority?`<div><span style="color:var(--ttext3)">Ưu tiên: </span><span style="color:var(--ttext2)">${ro.priority}</span></div>`:''}
         </div>
-        <div class="mt-2"><button onclick="openLcoDetail('${t.id}')" class="btn btn-ghost" style="font-size:.72rem;padding:3px 10px">👁 Xem chi tiết brief / order</button></div>
+        <div class="mt-2 flex gap-1.5 flex-wrap">
+          <button onclick="openLcoDetail('${t.id}')" class="btn btn-ghost" style="font-size:.72rem;padding:3px 10px">👁 Xem chi tiết brief / order</button>
+          ${t._sourceUrl?`<a href="${t._sourceUrl}" target="_blank" rel="noopener" class="btn btn-ghost" style="font-size:.72rem;padding:3px 10px">↗ Mở bài gốc</a>`:''}
+        </div>
       </div>
     ${t.linkResult?`<div class="info-strip space-y-2">
       <div>
         <div class="flex items-center gap-2 flex-wrap">
           <span class="text-xs flex-shrink-0" style="color:var(--ttext3)">🔗 Kết quả:</span>
           ${isUrl(t.linkResult)?`<a href="${t.linkResult}" target="_blank" rel="noopener" class="text-xs text-indigo-400 underline break-all flex-1">${t.linkResult}</a>`:`<span class="text-xs break-all flex-1" style="color:var(--ttext2)">${t.linkResult}</span>`}
-          <button type="button" onclick="copyLink('${(t.linkResult||'').replace(/'/g,"\'")}',this)" class="btn btn-ghost flex-shrink-0" style="padding:4px 8px;font-size:.75rem">📋 Sao chép</button>
+          <button type="button" onclick="copyLink(this)" data-copy="${escapeHtml(t.linkResult||'')}" class="btn btn-ghost flex-shrink-0" style="padding:4px 8px;font-size:.75rem">📋 Sao chép</button>
           ${isUrl(t.linkResult)?`<a href="${t.linkResult}" target="_blank" rel="noopener" class="btn btn-ghost flex-shrink-0" style="padding:4px 8px;font-size:.75rem">🔗 Mở link</a>`:''}
         </div>
         ${t.resultBy?`<div class="text-xs mt-1" style="color:var(--ttext2)">👤 Người cập nhật KQ: <span style="color:var(--ttext3)">${t.resultBy}${t.resultAt?' · '+t.resultAt:''}</span></div>`:''}
@@ -922,15 +1024,48 @@ function renderIntCard(t) {
     </div>`;
   }
 
-  // ── Internal task (nội bộ MKT) ──────────────────────────────
-  const badge=t._fromContent
-    ?`<span class="meta-tag" style="background:rgba(16,185,129,.15);color:#34d399">📅 Lịch Content</span>`
-    :`<span class="meta-tag" style="background:rgba(99,102,241,.15);color:#a5b4fc">🏠 Nội bộ MKT</span>`;
+  // ── Content task từ Lịch Content (read-only) ──────────────────
+  if(t._fromContent){
+    const chName=t.d_channel||t._channel||'';
+    return `<div class="${cardCls}">
+      <div class="p-4">
+        <div class="flex flex-wrap items-center gap-2 mb-1">
+          <span class="meta-tag" style="background:rgba(16,185,129,.15);color:#34d399">📅 Lịch Content</span>
+          <span class="meta-tag" style="background:rgba(16,185,129,.1);color:#10b981">✍️ Content</span>
+          ${chName?`<span class="meta-tag" style="background:rgba(251,191,36,.15);color:#fbbf24;font-weight:600">📢 ${chName}</span>`:''}
+          <span class="px-2 py-0.5 rounded-full text-xs font-bold" style="background:${s.bg};color:${s.color}">${s.label}</span>
+          <span class="ml-auto text-xs" style="color:var(--ttext3)">${t._contentStatus||''}</span>
+        </div>
+        <div class="font-bold text-sm mb-3" style="color:var(--ttext)">${t.projectName||t.title||'Không tên'}</div>
+        <div class="flex flex-wrap gap-x-6 gap-y-1 text-xs mb-2">
+          <div><span style="color:var(--ttext3)">Người thực hiện: </span><span class="font-medium" style="color:var(--ttext2)">👤 ${t.assignedTo||t._sourceName||'–'}</span></div>
+          <div><span style="color:var(--ttext3)">Phòng ban: </span><span style="color:var(--ttext2)">${t.department||'–'}</span></div>
+          <div><span style="color:var(--ttext3)">Deadline: </span><span class="${dlCls}" style="${!dlCls?'color:var(--ttext2)':''}">${dlStr}${dlBadge}</span></div>
+          ${t.d_content_type?`<div><span style="color:var(--ttext3)">Loại: </span><span style="color:var(--ttext2)">${t.d_content_type}</span></div>`:''}
+        </div>
+        ${t.linkResult?`<div class="mt-2 pt-2 border-t" style="border-color:var(--tborder)">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="text-xs flex-shrink-0" style="color:var(--ttext3)">🔗 Kết quả:</span>
+            ${isUrl(t.linkResult)?`<a href="${t.linkResult}" target="_blank" rel="noopener" class="text-xs text-indigo-400 underline break-all flex-1">${t.linkResult}</a>`:`<span class="text-xs break-all flex-1" style="color:var(--ttext2)">${t.linkResult}</span>`}
+            <button type="button" onclick="copyLink(this)" data-copy="${escapeHtml(t.linkResult||'')}" class="btn btn-ghost flex-shrink-0" style="padding:4px 8px;font-size:.75rem">📋 Sao chép</button>
+            ${isUrl(t.linkResult)?`<a href="${t.linkResult}" target="_blank" rel="noopener" class="btn btn-ghost flex-shrink-0" style="padding:4px 8px;font-size:.75rem">🔗 Mở link</a>`:''}
+          </div>
+        </div>`:''}
+        <div class="mt-2"><button onclick="openContentTaskDetail('${t.id}')" class="btn btn-ghost" style="font-size:.72rem;padding:3px 10px">👁 Xem chi tiết nội dung</button></div>
+      </div>
+      <div class="info-strip" style="display:flex;align-items:center;justify-content:space-between">
+        <span class="text-xs italic" style="color:var(--ttext3)">🔄 Tự đồng bộ từ Lịch Content ${t._sourceName||'Content'}</span>
+        <a href="${t._sourceUrl||'#'}" target="_blank" rel="noopener" class="btn btn-ghost" style="font-size:.72rem;padding:3px 10px">↗ Mở bài này (${t._sourceName||''})</a>
+      </div>
+    </div>`;
+  }
+
+  // ── Internal task (nội bộ MKT thủ công) ─────────────────────
   const assignees=(t.assignedTo||'').split(',').map(s=>s.trim()).filter(Boolean);
   return `<div class="${cardCls}">
     <div class="p-4">
       <div class="flex flex-wrap items-center gap-2 mb-1">
-        ${badge}
+        <span class="meta-tag" style="background:rgba(99,102,241,.15);color:#a5b4fc">🏠 Nội bộ MKT</span>
         ${t._channel?`<span class="meta-tag" style="background:rgba(251,191,36,.15);color:#fbbf24;font-weight:600">📢 ${t._channel}</span>`:''}
         <span class="px-2 py-0.5 rounded-full text-xs font-bold" style="background:${s.bg};color:${s.color}">${s.label}</span>
         <span class="ml-auto font-mono text-xs" style="color:var(--ttext3)">${t.id||''}</span>
@@ -949,7 +1084,7 @@ function renderIntCard(t) {
         <div class="flex items-center gap-2 flex-wrap">
           <span class="text-xs flex-shrink-0" style="color:var(--ttext3)">🔗 Kết quả:</span>
           ${isUrl(t.linkResult)?`<a href="${t.linkResult}" target="_blank" rel="noopener" class="text-xs text-indigo-400 underline break-all flex-1">${t.linkResult}</a>`:`<span class="text-xs break-all flex-1" style="color:var(--ttext2)">${t.linkResult}</span>`}
-          <button type="button" onclick="copyLink('${(t.linkResult||'').replace(/'/g,"\'")}',this)" class="btn btn-ghost flex-shrink-0" style="padding:4px 8px;font-size:.75rem">📋 Sao chép</button>
+          <button type="button" onclick="copyLink(this)" data-copy="${escapeHtml(t.linkResult||'')}" class="btn btn-ghost flex-shrink-0" style="padding:4px 8px;font-size:.75rem">📋 Sao chép</button>
           ${isUrl(t.linkResult)?`<a href="${t.linkResult}" target="_blank" rel="noopener" class="btn btn-ghost flex-shrink-0" style="padding:4px 8px;font-size:.75rem">🔗 Mở link</a>`:''}
         </div>
         ${t.resultBy?`<div class="text-xs mt-1" style="color:var(--ttext2)">👤 Người cập nhật KQ: <span style="color:var(--ttext3)">${t.resultBy}${t.resultAt?' · '+t.resultAt:''}</span></div>`:''}
@@ -973,7 +1108,7 @@ function saveLcResult(id){
   } else { ov.linkResult=val; ov.status=co.status; }
   try{localStorage.setItem(KEY_INTERNAL,JSON.stringify(internalTasks));}catch(e){}
   const lcStatus=({'chua-lam':'Chưa làm','dang-xu-ly':'Đang làm','feedback':'Chờ feedback','hoan-thanh':'Hoàn thành'})[co.status]||'Chưa làm';
-  _writeBackContentOrder(co._contentOrderId, val, lcStatus);
+  _writeBackContentOrder(co._contentOrderId, val, lcStatus, co._ws);
   render(); updateStats();
   showToast('✓ Đã lưu kết quả và cập nhật lịch content');
 }
@@ -990,15 +1125,35 @@ function saveLcStatus(id, newStatus){
   } else { ov.status=newStatus; }
   try{localStorage.setItem(KEY_INTERNAL,JSON.stringify(internalTasks));}catch(e){}
   const lcStatus=({'chua-lam':'Chưa làm','dang-xu-ly':'Đang làm','feedback':'Chờ feedback','hoan-thanh':'Hoàn thành'})[newStatus]||'Chưa làm';
-  _writeBackContentOrder(co._contentOrderId, co.linkResult||'', lcStatus);
+  _writeBackContentOrder(co._contentOrderId, co.linkResult||'', lcStatus, co._ws);
   updateStats(); render();
 }
 
-function copyLink(url, btn) {
-  navigator.clipboard.writeText(url).then(()=>{
-    const t=btn.textContent; btn.textContent='✓ Đã chép!';
-    setTimeout(()=>btn.textContent=t, 2000);
-  });
+function escapeHtml(s){ return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+// Tìm kiếm bỏ qua dấu tiếng Việt: "khanh huyen" phải khớp được "Khánh Huyền".
+function normVN(s){ return String(s??'').toLowerCase().replace(/đ/g,'d').normalize('NFD').replace(/[̀-ͯ]/g,''); }
+// btn: nút bấm, đọc link/đường dẫn từ data-copy (tránh nhúng thẳng vào onclick — path ổ cứng
+// có dấu \ sẽ bị JS hiểu nhầm thành ký tự escape như \f \n, làm hỏng chuỗi copy).
+function copyLink(btn) {
+  const url=btn.dataset.copy||'';
+  const done=()=>{ const t=btn.textContent; btn.textContent='✓ Đã chép!'; setTimeout(()=>btn.textContent=t,2000); };
+  const fallback=()=>{
+    let ok=false;
+    try{
+      const ta=document.createElement('textarea');
+      ta.value=url; ta.style.position='fixed'; ta.style.opacity='0';
+      document.body.appendChild(ta); ta.select();
+      ok=document.execCommand('copy');
+      document.body.removeChild(ta);
+    }catch(e){}
+    if(ok){ done(); return; }
+    try{ window.prompt('Copy:',url); }catch(e){}
+  };
+  if(window.isSecureContext && navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(url).then(done).catch(fallback);
+  } else {
+    fallback();
+  }
 }
 
 // ── LC Order Detail Modal ──────────────────────────────────────
@@ -1042,13 +1197,46 @@ function openLcoDetail(id){
 function closeLcoDetail(){
   document.getElementById('lco-detail-modal').classList.add('hidden');
 }
+function openContentTaskDetail(id){
+  const t=contentTasks.find(x=>x.id===id); if(!t) return;
+  const isUrl=v=>/^https?:\/\//i.test(String(v));
+  const stMap={'chua-lam':'⚪ Chưa làm','dang-xu-ly':'🔵 Đang xử lý','feedback':'🟡 Chờ feedback','hoan-thanh':'🟢 Hoàn thành'};
+  const chEl=document.getElementById('ct-detail-channel');
+  if(chEl){ if(t.d_channel){chEl.textContent='📢 '+t.d_channel;chEl.style.display='';}else chEl.style.display='none'; }
+  document.getElementById('ct-detail-title').textContent=t.projectName||t.title||'(Lịch Content)';
+  const srcBtn=document.getElementById('ct-detail-src-btn');
+  if(srcBtn){ srcBtn.href=t._sourceUrl||'#'; srcBtn.textContent=`↗ Mở bài này (${t._sourceName||''})`; }
+  const rows=[
+    ['Người phụ trách',t._sourceName||'–'],
+    ['Người thực hiện',t.assignedTo||t._sourceName||'–'],
+    ['Phòng ban',t.department||'–'],
+    ['Kênh',t.d_channel||'–'],
+    ['Loại nội dung',t.d_content_type||'–'],
+    ['Chủ đề / Ý tưởng',t.d_topic||t.projectName||'–'],
+    ['Trạng thái gốc',t._contentStatus||'–'],
+    ['Trạng thái hệ thống',stMap[t.status]||t.status||'–'],
+    ['Deadline',t.deadline||'–'],
+    ['Kết quả / Link bài',t.linkResult||'–',true],
+  ];
+  document.getElementById('ct-detail-body').innerHTML=rows.map(([k,v,url])=>`
+    <div class="flex gap-3 py-1.5 border-b" style="border-color:var(--tborder)">
+      <span style="min-width:140px;color:var(--ttext3);flex-shrink:0;font-size:.8rem">${k}</span>
+      ${url&&isUrl(v)?`<a href="${v}" target="_blank" rel="noopener" class="text-indigo-400 underline break-all flex-1" style="font-size:.82rem">${v}</a>`
+        :`<span style="color:var(--ttext);font-weight:500;font-size:.82rem;flex:1;word-break:break-all">${v}</span>`}
+    </div>`).join('');
+  document.getElementById('ct-detail-modal').classList.remove('hidden');
+}
+function closeContentTaskDetail(){
+  document.getElementById('ct-detail-modal').classList.add('hidden');
+}
 // ───────────────────────────────────────────────────────────────
 
 
-async function _writeBackContentOrder(orderId, deliverableLink, lcStatus){
+async function _writeBackContentOrder(orderId, deliverableLink, lcStatus, ws){
+  if(!ws) return; // không rõ order thuộc board nào thì không đoán, tránh ghi nhầm board
   try{
     const hdrs={'apikey':_SB_KEY,'Authorization':'Bearer '+_SB_KEY,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'};
-    const resp=await fetch(`${_SB_URL}/rest/v1/plan_data?id=eq.content-plan-orders-v1&select=value`,{headers:{'apikey':_SB_KEY,'Authorization':'Bearer '+_SB_KEY}});
+    const resp=await fetch(`${_SB_URL}/rest/v1/plan_data?id=eq.content-plan-orders-v1--${ws}&select=value`,{headers:{'apikey':_SB_KEY,'Authorization':'Bearer '+_SB_KEY}});
     if(!resp.ok) return;
     const data=await resp.json();
     const raw=data?.[0]?.value;
@@ -1057,20 +1245,21 @@ async function _writeBackContentOrder(orderId, deliverableLink, lcStatus){
     if(idx<0) return;
     if(deliverableLink!==undefined) orders[idx].deliverableLink=deliverableLink;
     if(lcStatus) orders[idx].status=lcStatus;
-    await fetch(`${_SB_URL}/rest/v1/plan_data`,{method:'POST',headers:hdrs,body:JSON.stringify({id:'content-plan-orders-v1',value:orders})});
+    await fetch(`${_SB_URL}/rest/v1/plan_data`,{method:'POST',headers:hdrs,body:JSON.stringify({id:'content-plan-orders-v1--'+ws,value:orders})});
   }catch(e){console.warn('[LC write-back] lỗi:',e.message);}
 }
 
 async function loadContentOrders(){
   try{
     const hdrs={'apikey':_SB_KEY,'Authorization':'Bearer '+_SB_KEY};
-    const resp=await fetch(`${_SB_URL}/rest/v1/plan_data?id=eq.content-plan-orders-v1&select=value`,{headers:hdrs});
-    if(!resp.ok) return;
-    const data=await resp.json();
-    const raw=data?.[0]?.value;
-    const orders=typeof raw==='string'?JSON.parse(raw):(Array.isArray(raw)?raw:[]);
     const hidden=_getHiddenIds();
-    contentOrders=orders
+    const perSource=await Promise.all(CONTENT_SOURCES.map(async src=>{
+      const resp=await fetch(`${_SB_URL}/rest/v1/plan_data?id=eq.content-plan-orders-v1--${src.id}&select=value`,{headers:hdrs});
+      if(!resp.ok) return [];
+      const data=await resp.json();
+      const raw=data?.[0]?.value;
+      const orders=typeof raw==='string'?JSON.parse(raw):(Array.isArray(raw)?raw:[]);
+      return orders
       .filter(o=>!hidden.has('lco-'+o.id))
       .map(o=>{
         const meta=_LC_TYPE_META[o.type]||{icon:'📦',label:o.type||'Khác'};
@@ -1080,15 +1269,16 @@ async function loadContentOrders(){
         const det=o.details||{};
         const refLink=o.refLink||det.refLink||det.creativeLink||det.mediaLink||'';
         return {
-          id:'lco-'+o.id, _internal:true, _fromContentOrder:true,
-          _contentOrderId:o.id, _orderCode:o.code||'',
-          _orderType:meta.label, _orderTypeIcon:meta.icon,
+          id:'lco-'+o.id, _internal:true, _fromContentOrder:true, _ws:src.id,
+          _contentOrderId:o.id, _contentTaskId:o.taskId, _sourceUrl:_contentDeepLink(src.id, o.taskId),
+          _orderCode:o.code||'', _orderType:meta.label, _orderTypeIcon:meta.icon,
           _rawType:o.type||'other', _rawDetails:{...det},
           _rawOrder:{code:o.code,project:o.project,person:o.person,deadline:o.deadline,
             deadlineTime:o.deadlineTime,priority:o.priority,requester:o.requester,
             department:o.department,type:o.type,status:o.status,deliverableLink:o.deliverableLink||''},
           title:`[${o.code||meta.label}] ${o.project||meta.label}`,
           projectName:o.project||o.code||'',
+          requester:o.requester||src.name,
           assignedTo:saved?.assignedTo||o.person||'',
           deadline:o.deadline||'', deadlineTime:o.deadlineTime||'',
           plannedDate:o.deadline||'',
@@ -1096,10 +1286,13 @@ async function loadContentOrders(){
           linkResult:saved?.linkResult||o.deliverableLink||'',
           refLink, adminNote:'',
           priority:o.priority==='Cao'?'cao':o.priority==='Thấp'?'thap':'trung-binh',
-          createdBy:'Lịch Content · '+(o.requester||'Oanh'),
+          createdBy:'Lịch Content · '+(o.requester||src.name),
           type:'internal', department:o.department||'Truyền thông Marketing',
+          d_channel:(_contentChannelMap[o.channelId]||o.channelId)||'',
         };
       });
+    }));
+    contentOrders=perSource.flat();
   // Cache để load nhanh lần sau
   try { localStorage.setItem(KEY_CO_CACHE, JSON.stringify(contentOrders)); } catch(_e) {}
   }catch(e){console.warn('[loadContentOrders]',e.message);}

@@ -924,6 +924,7 @@ const KEY_CO_CACHE = 'midu_content_orders_cache';
 let internalTasks  = [];
 let contentTasks   = []; // live từ Supabase, không lưu localStorage
 let contentOrders  = []; // orders từ lịch content Oanh (content-plan-orders-v1)
+let _contentChannelMap = {}; // { 'ch-menaq7': 'Fanpage Midu MenaQ7', ... }
 function _loadInternal(){
   try{internalTasks=JSON.parse(localStorage.getItem(KEY_INTERNAL)||'[]');}catch(e){internalTasks=[];}
   // Xóa các task cũ từ lịch content (đã chuyển sang contentTasks)
@@ -983,7 +984,7 @@ function _updateInternal(id,fields){
     Object.assign(ov,fields); Object.assign(co,fields); _saveInternal();
     // Ghi ngược trạng thái + kết quả về Lịch Content (Supabase)
     const lcStatus=({'chua-lam':'Chưa làm','dang-xu-ly':'Đang làm','feedback':'Chờ feedback','hoan-thanh':'Hoàn thành'})[co.status]||'Chưa làm';
-    _writeBackContentOrder(co._contentOrderId, co.linkResult||'', lcStatus);
+    _writeBackContentOrder(co._contentOrderId, co.linkResult||'', lcStatus, co._ws);
     return;
   }
   const t=internalTasks.find(x=>x.id===id); if(!t) return;
@@ -1224,7 +1225,7 @@ function showCached() {
     if (Array.isArray(coCached) && coCached.length) contentOrders = coCached;
   } catch(e) {}
   // Render nếu có bất kỳ dữ liệu nào
-  if (allOrders.length || contentOrders.length || internalTasks.length) {
+  if (allOrders.length || contentOrders.length || contentTasks.length || internalTasks.length) {
     try { updateStats(); buildDeptChips(); buildTypeChips(); renderStatusChips(); updateListPeriodLabel(); render(); } catch(e) {}
     document.getElementById('loading-state').classList.add('hidden');
     document.getElementById('list').classList.remove('hidden');
@@ -1235,8 +1236,9 @@ async function loadAll(notify=false) {
   // Kick off GAS (slow) without blocking — Supabase renders first
   const gasOrders = fetch(`${getGasUrl()}?action=getOrders`, {signal:AbortSignal.timeout(15000)}).then(r=>r.json()).catch(()=>null);
   const gasSchema = fetch(`${getGasUrl()}?action=getFormSchema&_=${Date.now()}`, {signal:AbortSignal.timeout(15000)}).then(r=>r.json()).catch(()=>null);
-  // Load Supabase (fast) and render immediately
-  try { await Promise.all([_loadContentTasks(), _loadContentOrders()]); } catch(e) { console.warn('[loadAll] supabase:', e.message); }
+  // Load Supabase (fast) and render immediately. Channels trước để tasks map ra tên kênh
+  // thay vì ID thô (contentTasks đọc _contentChannelMap ngay lúc map, không phải lazy).
+  try { await _loadContentChannels(); await Promise.all([_loadContentTasks(), _loadContentOrders()]); } catch(e) { console.warn('[loadAll] supabase:', e.message); }
   try { updateStats(); buildDeptChips(); buildTypeChips(); renderStatusChips(); render(); } catch(e) { console.error('[render] error:', e); }
   document.getElementById('loading-state').classList.add('hidden');
   document.getElementById('list').classList.remove('hidden');
@@ -1321,7 +1323,7 @@ function filterByStat(type) {
   render();
 }
 function updateStats() {
-  const all = [...allOrders, ...contentOrders, ...internalTasks.filter(t=>!t._fromContentOrder)];
+  const all = [...allOrders, ...contentOrders, ...contentTasks, ...internalTasks.filter(t=>!t._fromContentOrder)];
   const active  = all.filter(o=>o.status!=='hoan-thanh');
   const overdue = active.filter(o=>{ const dl=parseDl(o); return dl&&dl<today; });
   document.getElementById('st-total').textContent    = all.length;
@@ -1376,7 +1378,7 @@ function setChip(el,key,val) {
   el.classList.add('active'); filters[key]=val; render();
 }
 function render() {
-  const kw=document.getElementById('f-kw').value.toLowerCase();
+  const kw=normVN(document.getElementById('f-kw').value);
   // Nhân viên chỉ thấy order được phân công cho mình
   const baseOrders = perm().viewAll ? allOrders : allOrders.filter(o => {
     const assigned = (o.assignedTo||'').split(',').map(s=>s.trim());
@@ -1387,14 +1389,14 @@ function render() {
     if(filters.dept   && normDept(o.department)!==normDept(filters.dept)) return false;
     if(filters.type   && o.type!==filters.type)       return false;
     if(filters.status && o.status!==filters.status)   return false;
-    if(kw && !`${o.projectName}${o.requester}${o.department}${o.id}${o.projectCode||''}`.toLowerCase().includes(kw)) return false;
+    if(kw && !normVN(`${o.projectName}${o.requester}${o.department}${o.id}${o.projectCode||''}`).includes(kw)) return false;
     return true;
   });
   rows=sorted(rows);
 
   // Thêm internal tasks: lọc kỳ theo deadline + loại (map LC rawType→GAS type)
   const _intPeriodRange = (currentPeriod && currentPeriod!=='all') ? (currentPeriod==='custom'?customRange:getDateRange(currentPeriod)) : null;
-  let intRows = [...contentOrders,...internalTasks.filter(t=>!t._fromContentOrder)].filter(t=>{
+  let intRows = [...contentOrders,...contentTasks,...internalTasks.filter(t=>!t._fromContentOrder)].filter(t=>{
     if(_intPeriodRange) {
       const _dl=parseDl({deadline:t.deadline||t.plannedDate||''});
       if(_dl) {
@@ -1403,13 +1405,13 @@ function render() {
       }
     }
     if(filters.type) {
-      const gasType=_LC_TO_GAS[t._rawType||'']||t._rawType||'';
+      const gasType=t._fromContent?t.type:(_LC_TO_GAS[t._rawType||'']||t._rawType||'');
       if(gasType!==filters.type) return false;
     }
     if(_overdueFilter){ const _idl=parseDl({deadline:t.deadline||t.plannedDate||''}); if(!_idl||_idl>=today) return false; }
     if(filters.dept&&normDept(t.department)!==normDept(filters.dept)) return false;
     if(filters.status&&t.status!==filters.status) return false;
-    if(kw&&!`${t.title||''}${t.assignedTo||''}${t.adminNote||''}${t.department||''}`.toLowerCase().includes(kw)) return false;
+    if(kw&&!normVN(`${t.title||''}${t.projectName||''}${t.requester||''}${t.assignedTo||''}${t.adminNote||''}${t.department||''}${t.d_channel||''}${t._channel||''}`).includes(kw)) return false;
     return true;
   });
 
@@ -1472,7 +1474,7 @@ function renderCard(o) {
         <div class="flex items-center gap-2 flex-wrap">
           <span class="text-xs flex-shrink-0" style="color:var(--atext3)">🔗 Kết quả:</span>
           ${isUrl(o.linkResult)?`<a href="${o.linkResult}" target="_blank" rel="noopener" class="text-xs text-indigo-400 underline break-all flex-1">${o.linkResult}</a>`:`<span class="text-xs break-all flex-1" style="color:var(--atext2)">${o.linkResult}</span>`}
-          <button type="button" onclick="copyLink('${o.linkResult.replace(/'/g,"\\'")}',this)" class="btn btn-ghost flex-shrink-0" style="padding:4px 8px;font-size:.75rem">📋 Sao chép</button>
+          <button type="button" onclick="copyLink(this)" data-copy="${escapeHtml(o.linkResult)}" class="btn btn-ghost flex-shrink-0" style="padding:4px 8px;font-size:.75rem">📋 Sao chép</button>
           ${isUrl(o.linkResult)?`<a href="${o.linkResult}" target="_blank" rel="noopener" class="btn btn-ghost flex-shrink-0" style="padding:4px 8px;font-size:.75rem">🔗 Mở link</a>`:''}
         </div>
         ${o.resultBy?`<div class="text-xs mt-1" style="color:var(--atext3)">👤 ${o.resultBy}${o.resultAt?' · '+o.resultAt:''}</div>`:''}
@@ -1548,11 +1550,14 @@ function renderIntCard(t){
           <div class="flex items-center gap-2 flex-wrap">
             <span class="text-xs flex-shrink-0" style="color:var(--atext3)">🔗 Kết quả:</span>
             ${isUrl(t.linkResult)?`<a href="${t.linkResult}" target="_blank" rel="noopener" class="text-xs text-indigo-400 underline break-all flex-1">${t.linkResult}</a>`:`<span class="text-xs break-all flex-1" style="color:var(--atext2)">${t.linkResult}</span>`}
-            <button type="button" onclick="copyLink('${t.linkResult.replace(/'/g,"\\'")}',this)" class="btn btn-ghost flex-shrink-0" style="padding:4px 8px;font-size:.75rem">📋 Sao chép</button>
+            <button type="button" onclick="copyLink(this)" data-copy="${escapeHtml(t.linkResult)}" class="btn btn-ghost flex-shrink-0" style="padding:4px 8px;font-size:.75rem">📋 Sao chép</button>
             ${isUrl(t.linkResult)?`<a href="${t.linkResult}" target="_blank" rel="noopener" class="btn btn-ghost flex-shrink-0" style="padding:4px 8px;font-size:.75rem">🔗 Mở link</a>`:''}
           </div>
         </div>`:''}
-        <div class="mt-2"><button onclick="openLcoDetail('${t.id}')" class="btn btn-ghost" style="font-size:.72rem;padding:3px 10px">👁 Xem chi tiết brief / order</button></div>
+        <div class="mt-2 flex gap-1.5 flex-wrap">
+          <button onclick="openLcoDetail('${t.id}')" class="btn btn-ghost" style="font-size:.72rem;padding:3px 10px">👁 Xem chi tiết brief / order</button>
+          ${t._sourceUrl?`<a href="${t._sourceUrl}" target="_blank" rel="noopener" class="btn btn-ghost" style="font-size:.72rem;padding:3px 10px">↗ Mở bài gốc trên Lịch Content</a>`:''}
+        </div>
       </div>
       <div class="admin-strip">
         <div style="min-width:150px;flex:1"><label>Phân công</label>
@@ -1572,14 +1577,34 @@ function renderIntCard(t){
     </div>`;
   }
 
-  // ── Internal / Content task: layout như cũ ──────────────────
-  const badge=t._fromContent
-    ?`<span class="meta-tag" style="background:rgba(16,185,129,.15);color:#34d399">📅 Lịch Content</span>`
-    :`<span class="meta-tag" style="background:rgba(99,102,241,.15);color:#a5b4fc">🏠 Nội bộ MKT</span>`;
+  // ── Content task từ Lịch Content (chỉ xem — chưa có cơ chế ghi ngược
+  // trạng thái/phân công về Supabase, nên không cho sửa để tránh tưởng đã lưu) ──
+  if(t._fromContent){
+    return `<div class="${cardCls}">
+    <div class="p-4">
+      <div class="flex flex-wrap items-center gap-2 mb-1">
+        <span class="meta-tag" style="background:rgba(16,185,129,.15);color:#34d399">📅 Lịch Content</span>
+        ${t._channel?`<span class="meta-tag" style="background:rgba(251,191,36,.15);color:#fbbf24;font-weight:600">📢 ${t._channel}</span>`:''}
+        <span class="px-2 py-0.5 rounded-full text-xs font-bold" style="background:${s.bg};color:${s.color}">${s.label}</span>
+        <span class="ml-auto text-xs font-mono" style="color:var(--atext3)">${t.id||''}</span>
+      </div>
+      <div class="font-bold text-sm mb-3" style="color:var(--atext)">${t.title||t.projectName||'Không tên'}</div>
+      <div class="flex flex-wrap gap-x-6 gap-y-1 text-xs mb-2">
+        <div><span style="color:var(--atext3)">Deadline: </span><span class="${dlCls}">${dlStr}${dlTimeStr}${dlBadge}</span></div>
+        ${t.assignedTo?`<div><span style="color:var(--atext3)">Phân công: </span><span class="font-medium" style="color:var(--atext2)">👤 ${t.assignedTo}</span></div>`:''}
+        ${t.createdBy?`<div><span style="color:var(--atext3)">Tạo bởi: </span><span style="color:var(--atext2)">${t.createdBy}</span></div>`:''}
+      </div>
+      ${t.adminNote?`<div class="mt-2 text-xs px-3 py-2 rounded-lg" style="color:var(--atext3);background:var(--abg3);border:1px solid var(--aborder);white-space:pre-line">📝 ${t.adminNote}</div>`:''}
+      ${t._sourceUrl?`<div class="mt-2"><a href="${t._sourceUrl}" target="_blank" rel="noopener" class="btn btn-ghost" style="font-size:.72rem;padding:3px 10px">↗ Mở bài này trên Lịch Content</a></div>`:''}
+    </div>
+  </div>`;
+  }
+
+  // ── Internal task: layout như cũ ──────────────────
   return `<div class="${cardCls}">
     <div class="p-4">
       <div class="flex flex-wrap items-center gap-2 mb-1">
-        ${badge}
+        <span class="meta-tag" style="background:rgba(99,102,241,.15);color:#a5b4fc">🏠 Nội bộ MKT</span>
         ${t._channel?`<span class="meta-tag" style="background:rgba(251,191,36,.15);color:#fbbf24;font-weight:600">📢 ${t._channel}</span>`:''}
         <span class="px-2 py-0.5 rounded-full text-xs font-bold" style="background:${s.bg};color:${s.color}">${s.label}</span>
         <span class="ml-auto text-xs font-mono" style="color:var(--atext3)">${t.id||''}</span>
@@ -1927,6 +1952,7 @@ function renderReport(){
   const allForReport=[
     ...allOrders,
     ...contentOrders.map(t=>({...t,department:t.department||'Nội bộ MKT',type:t.type||'internal'})),
+    ...contentTasks.map(t=>({...t,department:t.department||'Nội bộ MKT',type:t.type||'internal'})),
     ...internalTasks.filter(t=>!contentOrders.find(co=>co._contentOrderId===t._contentOrderId)) // tránh duplicate
   ];
   reportOrders=filterByPeriod(allForReport,currentPeriod);
@@ -2505,11 +2531,31 @@ async function fbSyncAll() {
 }
 
 // ── Utilities ──────────────────────────────────────────────────
-function copyLink(url,btn){
-  navigator.clipboard.writeText(url).then(()=>{
-    const t=btn.textContent; btn.textContent='✓';
-    setTimeout(()=>btn.textContent=t,2000);
-  });
+// Tìm kiếm bỏ qua dấu tiếng Việt: "khanh huyen" phải khớp được "Khánh Huyền".
+function normVN(s){ return String(s??'').toLowerCase().replace(/đ/g,'d').normalize('NFD').replace(/[̀-ͯ]/g,''); }
+function escapeHtml(s){ return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+// btn: nút bấm, đọc link/đường dẫn từ data-copy (tránh nhúng thẳng vào onclick — path ổ cứng
+// có dấu \ sẽ bị JS hiểu nhầm thành ký tự escape như \f \n, làm hỏng chuỗi copy).
+function copyLink(btn){
+  const url=btn.dataset.copy||'';
+  const done=()=>{ const t=btn.textContent; btn.textContent='✓'; setTimeout(()=>btn.textContent=t,2000); };
+  const fallback=()=>{
+    let ok=false;
+    try{
+      const ta=document.createElement('textarea');
+      ta.value=url; ta.style.position='fixed'; ta.style.opacity='0';
+      document.body.appendChild(ta); ta.select();
+      ok=document.execCommand('copy');
+      document.body.removeChild(ta);
+    }catch(e){}
+    if(ok){ done(); return; }
+    try{ window.prompt('Copy:',url); }catch(e){}
+  };
+  if(window.isSecureContext && navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(url).then(done).catch(fallback);
+  } else {
+    fallback();
+  }
 }
 function exportCSV(){
   const cols=['id','type','submittedAt','status','assignedTo','linkResult','adminNote','requester','department','projectName','projectCode','deadline','note'];
@@ -2981,6 +3027,19 @@ const _CONTENT_STATUS_MAP={
 };
 const _SB_URL='https://loqcqtuouagzaqwdmhji.supabase.co';
 const _SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxvcWNxdHVvdWFnemFxd2RtaGppIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMwNjUyNDgsImV4cCI6MjA5ODY0MTI0OH0.zoiWEgtNORL1ecxAgSpkZ3HMDaLP3nnpma3moM8QsDc';
+// Trang Content đã lên mô hình nhiều board — mỗi board có key riêng dạng
+// "<base>--<workspaceId>". Thêm người mới = thêm 1 dòng vào đây.
+const _CONTENT_SOURCES=[
+  {id:'kim-oanh', name:'Kim Oanh'},
+  {id:'khanh-huyen', name:'Khánh Huyền'},
+];
+const CONTENT_APP_URL='https://content-kim-oanh.pages.dev/';
+// Trang Content tự hỗ trợ deep-link #ws=<board>&task=<id bài> — nhảy thẳng tới đúng bài,
+// tự chuyển board nếu khác, highlight dòng đó (xem handleDeepLink() trong file Content).
+function _contentDeepLink(ws, taskId){
+  if(!ws||!taskId) return '';
+  return CONTENT_APP_URL+'#ws='+encodeURIComponent(ws)+'&task='+encodeURIComponent(taskId);
+}
 
 
 // ── Test quyền ghi Supabase (chạy 1 lần, tự xóa) ─────────────
@@ -2998,29 +3057,54 @@ const _SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJl
 function _getHiddenIds(){ try{return new Set(JSON.parse(localStorage.getItem(KEY_CONTENT_HIDDEN)||'[]'));}catch(e){return new Set();} }
 function _addHiddenId(id){ const s=_getHiddenIds(); s.add(id); localStorage.setItem(KEY_CONTENT_HIDDEN,JSON.stringify([...s])); }
 
+async function _loadContentChannels(){
+  const hdrs={'apikey':_SB_KEY,'Authorization':'Bearer '+_SB_KEY};
+  _contentChannelMap={};
+  // Đọc key cũ (không hậu tố) trước, rồi từng board — board mới có thể thiếu vài kênh
+  // cũ chưa kịp chuyển qua khi Content lên mô hình nhiều board; key sau ghi đè key trước
+  // khi trùng id, để ưu tiên tên mới nhất của từng board.
+  const ids=['content-plan-channels-v1', ..._CONTENT_SOURCES.map(src=>`content-plan-channels-v1--${src.id}`)];
+  for(const id of ids){
+    try{
+      const resp=await fetch(`${_SB_URL}/rest/v1/plan_data?id=eq.${id}&select=value`,{headers:hdrs});
+      if(!resp.ok) continue;
+      const data=await resp.json();
+      const raw=data?.[0]?.value;
+      const channels=typeof raw==='string'?JSON.parse(raw):(Array.isArray(raw)?raw:[]);
+      channels.forEach(ch=>{ if(ch.id&&ch.name) _contentChannelMap[ch.id]=ch.name; });
+    }catch(e){ console.warn('[Channels]',id,e.message); }
+  }
+}
+
 async function _loadContentTasks(){
   const hdrs={'apikey':_SB_KEY,'Authorization':'Bearer '+_SB_KEY};
-  const resp=await fetch(`${_SB_URL}/rest/v1/plan_data?id=eq.content-plan-tasks-v2&select=value`,{headers:hdrs});
-  if(!resp.ok) throw new Error('HTTP '+resp.status);
-  const data=await resp.json();
-  const raw=data?.[0]?.value;
-  const tasks=typeof raw==='string'?JSON.parse(raw):(Array.isArray(raw)?raw:[]);
   const hidden=_getHiddenIds();
-  contentTasks=tasks
-    .filter(t=>t.coord&&t.coord.trim()&&t.coord.trim()!=='Khác')
-    .filter(t=>!hidden.has('cont-'+t.id))
-    .map(ct=>({
-      id:'cont-'+ct.id, _internal:true, _fromContent:true,
-      title:(ct.idea||ct.content||'').trim()||'(Lịch Content)',
-      projectName:(ct.idea||ct.content||'').trim()||'(Lịch Content)',
-      assignedTo:(ct.coord||'').trim(),
-      plannedDate:ct.date||'', deadline:ct.date||'',
-      status:_CONTENT_STATUS_MAP[ct.status||'']||statusConfig[0]?.id||'chua-lam',
-      adminNote:`📅 ${ct.channelId||'Lịch Content'} | ${ct.content||ct.idea||''}`,
-      priority:priorityConfig.find(p=>p.isDefault)?.id||'trung-binh',
-      createdBy:'Lịch Content', type:'internal', department:'Nội bộ MKT',
-      _channel:ct.channelId||'', _contentStatus:ct.status||''
-    }));
+  const perSource=await Promise.all(_CONTENT_SOURCES.map(async src=>{
+    const resp=await fetch(`${_SB_URL}/rest/v1/plan_data?id=eq.content-plan-tasks-v2--${src.id}&select=value`,{headers:hdrs});
+    if(!resp.ok) return [];
+    const data=await resp.json();
+    const raw=data?.[0]?.value;
+    const tasks=typeof raw==='string'?JSON.parse(raw):(Array.isArray(raw)?raw:[]);
+    return tasks
+      .filter(t=>!hidden.has('cont-'+t.id))
+      .map(ct=>{
+        const chName=(_contentChannelMap[ct.channelId]||ct.channelId)||'';
+        return {
+        id:'cont-'+ct.id, _internal:true, _fromContent:true, _ws:src.id, _contentTaskId:ct.id,
+        title:(ct.idea||ct.content||'').trim()||'(Lịch Content)',
+        projectName:(ct.idea||ct.content||'').trim()||'(Lịch Content)',
+        requester:src.name,
+        assignedTo:(ct.coord&&ct.coord.trim()&&ct.coord.trim()!=='Khác'?ct.coord.trim():src.name),
+        plannedDate:ct.date||'', deadline:ct.date||'',
+        status:_CONTENT_STATUS_MAP[ct.status||'']||statusConfig[0]?.id||'chua-lam',
+        adminNote:`Lịch Content · ${src.name} · Kênh: ${chName||'–'}${ct.status?' · '+ct.status:''}`,
+        priority:priorityConfig.find(p=>p.isDefault)?.id||'trung-binh',
+        createdBy:'Lịch Content · '+src.name, type:'content', department:'Nội bộ MKT',
+        _channel:chName, _contentStatus:ct.status||'',
+        _sourceUrl:_contentDeepLink(src.id, ct.id)
+      };});
+  }));
+  contentTasks=perSource.flat();
 }
 
 
@@ -3065,13 +3149,14 @@ const _LC_ORDER_TYPES=[
 ];
 async function _loadContentOrders(){
   const hdrs={'apikey':_SB_KEY,'Authorization':'Bearer '+_SB_KEY};
-  const resp=await fetch(`${_SB_URL}/rest/v1/plan_data?id=eq.content-plan-orders-v1&select=value`,{headers:hdrs});
-  if(!resp.ok) throw new Error('HTTP '+resp.status);
-  const data=await resp.json();
-  const raw=data?.[0]?.value;
-  const orders=typeof raw==='string'?JSON.parse(raw):(Array.isArray(raw)?raw:[]);
   const hidden=_getHiddenIds();
-  contentOrders=orders
+  const perSource=await Promise.all(_CONTENT_SOURCES.map(async src=>{
+    const resp=await fetch(`${_SB_URL}/rest/v1/plan_data?id=eq.content-plan-orders-v1--${src.id}&select=value`,{headers:hdrs});
+    if(!resp.ok) return [];
+    const data=await resp.json();
+    const raw=data?.[0]?.value;
+    const orders=typeof raw==='string'?JSON.parse(raw):(Array.isArray(raw)?raw:[]);
+    return orders
     .filter(o=>!hidden.has('lco-'+o.id))
     .map(o=>{
       const meta=_LC_TYPE_META[o.type]||{icon:'📦',label:o.type||'Khác'};
@@ -3090,19 +3175,21 @@ async function _loadContentOrders(){
       const detLines=Object.entries(det).filter(([,v])=>v).map(([k,v])=>`${DETAIL_LABELS[k]||k}: ${v}`);
       const refLink=o.refLink||det.refLink||det.creativeLink||det.mediaLink||'';
       const briefLines=[
-        `Người yêu cầu: ${o.requester||'Oanh'} · Phòng: ${o.department||'MKT'} · Ưu tiên: ${o.priority||'Trung bình'}`,
+        `Người yêu cầu: ${o.requester||src.name} · Phòng: ${o.department||'MKT'} · Ưu tiên: ${o.priority||'Trung bình'}`,
         o.project?`Dự án: ${o.project}`:'',
         ...detLines,
         refLink?`Link tham khảo: ${refLink}`:''
       ].filter(Boolean);
       return {
-        id:'lco-'+o.id, _internal:true, _fromContentOrder:true,
+        id:'lco-'+o.id, _internal:true, _fromContentOrder:true, _ws:src.id,
         _contentOrderId:o.id, _contentTaskId:o.taskId,
+        _sourceUrl:_contentDeepLink(src.id, o.taskId),
         _orderCode:o.code||'', _orderType:meta.label, _orderTypeIcon:meta.icon,
         _rawType:o.type||'other', _rawDetails:{...o.details||{}},
         _rawOrder:{code:o.code,project:o.project,person:o.person,deadline:o.deadline,deadlineTime:o.deadlineTime,priority:o.priority,requester:o.requester,department:o.department,type:o.type,status:o.status,deliverableLink:o.deliverableLink||''},
         title:`[${o.code||meta.label}] ${o.project||o.typeLabel||meta.label}`,
         projectName:o.project||o.code||'',
+        requester:o.requester||src.name,
         assignedTo:saved?.assignedTo||o.person||'',
         deadline:o.deadline||'', deadlineTime:o.deadlineTime||'',
         plannedDate:o.deadline||'',
@@ -3111,22 +3198,25 @@ async function _loadContentOrders(){
         refLink, // link tham khảo / brief
         adminNote:briefLines.join('\n'),
         priority:o.priority==='Cao'?'cao':o.priority==='Thấp'?'thap':'trung-binh',
-        createdBy:'Lịch Content · '+(o.requester||'Oanh'),
+        createdBy:'Lịch Content · '+(o.requester||src.name),
         type:'internal', department:o.department||'Nội bộ MKT',
         _feedbackAt:saved?._feedbackAt||'',
         completedBy:saved?.completedBy||'', resultBy:saved?.resultBy||''
       };
     });
+  }));
+  contentOrders=perSource.flat();
   // Cache để load nhanh lần sau
   try { localStorage.setItem(KEY_CO_CACHE, JSON.stringify(contentOrders)); } catch(e) {}
 }
 
-// Ghi ngược deliverableLink + status về lịch content (content-plan-orders-v1)
-async function _writeBackContentOrder(orderId, deliverableLink, lcStatus){
+// Ghi ngược deliverableLink + status về lịch content (content-plan-orders-v1--<workspaceId>)
+async function _writeBackContentOrder(orderId, deliverableLink, lcStatus, ws){
+  if(!ws) return; // không rõ order thuộc board nào thì không đoán, tránh ghi nhầm board
   try{
     const hdrs={'apikey':_SB_KEY,'Authorization':'Bearer '+_SB_KEY,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'};
     // Đọc toàn bộ orders hiện tại
-    const resp=await fetch(`${_SB_URL}/rest/v1/plan_data?id=eq.content-plan-orders-v1&select=value`,{headers:{'apikey':_SB_KEY,'Authorization':'Bearer '+_SB_KEY}});
+    const resp=await fetch(`${_SB_URL}/rest/v1/plan_data?id=eq.content-plan-orders-v1--${ws}&select=value`,{headers:{'apikey':_SB_KEY,'Authorization':'Bearer '+_SB_KEY}});
     if(!resp.ok) return;
     const data=await resp.json();
     const raw=data?.[0]?.value;
@@ -3135,13 +3225,14 @@ async function _writeBackContentOrder(orderId, deliverableLink, lcStatus){
     if(idx<0) return;
     if(deliverableLink!==undefined) orders[idx].deliverableLink=deliverableLink;
     if(lcStatus) orders[idx].status=lcStatus;
-    await fetch(`${_SB_URL}/rest/v1/plan_data`,{method:'POST',headers:hdrs,body:JSON.stringify({id:'content-plan-orders-v1',value:orders})});
+    await fetch(`${_SB_URL}/rest/v1/plan_data`,{method:'POST',headers:hdrs,body:JSON.stringify({id:'content-plan-orders-v1--'+ws,value:orders})});
   }catch(e){console.warn('[LC write-back] lỗi:',e.message);}
 }
 async function _autoSyncContent(){
   const btn=document.getElementById('sync-content-btn');
   if(btn){btn.disabled=true;btn.textContent='⏳ Đang tải...';}
   try{
+    await _loadContentChannels();
     await Promise.all([_loadContentTasks(), _loadContentOrders()]);
     render();
     showToast(`Lịch Content: ${contentOrders.length} order`,'success');
