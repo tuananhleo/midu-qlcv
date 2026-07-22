@@ -3076,20 +3076,20 @@ function _addHiddenId(id){ const s=_getHiddenIds(); s.add(id); localStorage.setI
 async function _loadContentChannels(){
   const hdrs={'apikey':_SB_KEY,'Authorization':'Bearer '+_SB_KEY};
   _contentChannelMap={};
-  // Đọc key cũ (không hậu tố) trước, rồi từng board — board mới có thể thiếu vài kênh
-  // cũ chưa kịp chuyển qua khi Content lên mô hình nhiều board; key sau ghi đè key trước
-  // khi trùng id, để ưu tiên tên mới nhất của từng board.
+  // Đọc key cũ (không hậu tố) và từng board song song (trước đây tuần tự từng key,
+  // chậm gấp N lần không cần thiết) — key sau ghi đè key trước khi trùng id (ưu tiên
+  // tên mới nhất của từng board), giữ nguyên bằng cách áp kết quả theo đúng thứ tự ids.
   const ids=['content-plan-channels-v1', ..._CONTENT_SOURCES.map(src=>`content-plan-channels-v1--${src.id}`)];
-  for(const id of ids){
+  const perId=await Promise.all(ids.map(async id=>{
     try{
-      const resp=await fetch(`${_SB_URL}/rest/v1/plan_data?id=eq.${id}&select=value`,{headers:hdrs});
-      if(!resp.ok) continue;
+      const resp=await fetch(`${_SB_URL}/rest/v1/plan_data?id=eq.${id}&select=value`,{headers:hdrs,signal:AbortSignal.timeout(8000)});
+      if(!resp.ok) return [];
       const data=await resp.json();
       const raw=data?.[0]?.value;
-      const channels=typeof raw==='string'?JSON.parse(raw):(Array.isArray(raw)?raw:[]);
-      channels.forEach(ch=>{ if(ch.id&&ch.name) _contentChannelMap[ch.id]=ch.name; });
-    }catch(e){ console.warn('[Channels]',id,e.message); }
-  }
+      return typeof raw==='string'?JSON.parse(raw):(Array.isArray(raw)?raw:[]);
+    }catch(e){ console.warn('[Channels]',id,e.message); return []; }
+  }));
+  perId.forEach(channels=>channels.forEach(ch=>{ if(ch.id&&ch.name) _contentChannelMap[ch.id]=ch.name; }));
 }
 
 async function _loadContentTasks(){
@@ -3099,7 +3099,7 @@ async function _loadContentTasks(){
   // không được kéo sập dữ liệu của board còn lại.
   const perSource=await Promise.all(_CONTENT_SOURCES.map(async src=>{
    try{
-    const resp=await fetch(`${_SB_URL}/rest/v1/plan_data?id=eq.content-plan-tasks-v2--${src.id}&select=value`,{headers:hdrs});
+    const resp=await fetch(`${_SB_URL}/rest/v1/plan_data?id=eq.content-plan-tasks-v2--${src.id}&select=value`,{headers:hdrs,signal:AbortSignal.timeout(8000)});
     if(!resp.ok) return [];
     const data=await resp.json();
     const raw=data?.[0]?.value;
@@ -3173,7 +3173,7 @@ async function _loadContentOrders(){
   // Mỗi board có try/catch riêng: 1 board lỗi không được kéo sập order của board còn lại.
   const perSource=await Promise.all(_CONTENT_SOURCES.map(async src=>{
    try{
-    const resp=await fetch(`${_SB_URL}/rest/v1/plan_data?id=eq.content-plan-orders-v1--${src.id}&select=value`,{headers:hdrs});
+    const resp=await fetch(`${_SB_URL}/rest/v1/plan_data?id=eq.content-plan-orders-v1--${src.id}&select=value`,{headers:hdrs,signal:AbortSignal.timeout(8000)});
     if(!resp.ok) return [];
     const data=await resp.json();
     const raw=data?.[0]?.value;
