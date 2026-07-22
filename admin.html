@@ -805,6 +805,7 @@ const KEY_GAS       = 'midu_mkt_gas_url';
 const KEY_ASGN      = 'midu_mkt_assignees';
 const KEY_DEPTS     = 'midu_mkt_departments';
 const KEY_CACHE     = 'midu_mkt_orders_cache';
+const KEY_CT_CACHE  = 'midu_ct_cache'; // cache contentTasks — thiếu cái này khiến reload tạm mất card "Lịch Content" vài giây
 const KEY_FB        = 'midu_mkt_fb_config';
 const KEY_ROLES     = 'midu_mkt_custom_roles';
 const DEFAULT_GAS  = 'https://script.google.com/macros/s/AKfycbw5klIN8zAsl6cYSfIYDu8GNol4tCR4KQt8-fvldq_SZC1DDgUeK6bk73jF-ZoMdCjF/exec';
@@ -1231,6 +1232,10 @@ function showCached() {
   try {
     const coCached = JSON.parse(localStorage.getItem(KEY_CO_CACHE)||'null');
     if (Array.isArray(coCached) && coCached.length) contentOrders = coCached;
+  } catch(e) {}
+  try {
+    const ctCached = JSON.parse(localStorage.getItem(KEY_CT_CACHE)||'null');
+    if (Array.isArray(ctCached) && ctCached.length) contentTasks = ctCached;
   } catch(e) {}
   // Render nếu có bất kỳ dữ liệu nào
   if (allOrders.length || contentOrders.length || contentTasks.length || internalTasks.length) {
@@ -3125,6 +3130,7 @@ async function _loadContentTasks(){
    }catch(e){ console.warn('[ContentTasks]',src.name,e.message); return []; }
   }));
   contentTasks=perSource.flat();
+  try { localStorage.setItem(KEY_CT_CACHE, JSON.stringify(contentTasks)); } catch(e) {}
 }
 
 
