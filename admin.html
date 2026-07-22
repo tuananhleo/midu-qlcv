@@ -3079,7 +3079,10 @@ async function _loadContentChannels(){
 async function _loadContentTasks(){
   const hdrs={'apikey':_SB_KEY,'Authorization':'Bearer '+_SB_KEY};
   const hidden=_getHiddenIds();
+  // Mỗi board có try/catch riêng: 1 board lỗi (mạng chập chờn, đang ghi dở dữ liệu...)
+  // không được kéo sập dữ liệu của board còn lại.
   const perSource=await Promise.all(_CONTENT_SOURCES.map(async src=>{
+   try{
     const resp=await fetch(`${_SB_URL}/rest/v1/plan_data?id=eq.content-plan-tasks-v2--${src.id}&select=value`,{headers:hdrs});
     if(!resp.ok) return [];
     const data=await resp.json();
@@ -3103,6 +3106,7 @@ async function _loadContentTasks(){
         _channel:chName, _contentStatus:ct.status||'',
         _sourceUrl:_contentDeepLink(src.id, ct.id)
       };});
+   }catch(e){ console.warn('[ContentTasks]',src.name,e.message); return []; }
   }));
   contentTasks=perSource.flat();
 }
@@ -3150,7 +3154,9 @@ const _LC_ORDER_TYPES=[
 async function _loadContentOrders(){
   const hdrs={'apikey':_SB_KEY,'Authorization':'Bearer '+_SB_KEY};
   const hidden=_getHiddenIds();
+  // Mỗi board có try/catch riêng: 1 board lỗi không được kéo sập order của board còn lại.
   const perSource=await Promise.all(_CONTENT_SOURCES.map(async src=>{
+   try{
     const resp=await fetch(`${_SB_URL}/rest/v1/plan_data?id=eq.content-plan-orders-v1--${src.id}&select=value`,{headers:hdrs});
     if(!resp.ok) return [];
     const data=await resp.json();
@@ -3204,6 +3210,7 @@ async function _loadContentOrders(){
         completedBy:saved?.completedBy||'', resultBy:saved?.resultBy||''
       };
     });
+   }catch(e){ console.warn('[ContentOrders]',src.name,e.message); return []; }
   }));
   contentOrders=perSource.flat();
   // Cache để load nhanh lần sau

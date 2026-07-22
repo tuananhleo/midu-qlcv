@@ -720,6 +720,7 @@ Sau đó có thể dùng `2_push_and_deploy.bat` để push GitHub + deploy Fire
 
 | Task | Mô tả | File |
 |------|-------|------|
+| #63 | **Fix nghiêm trọng: 1 board lỗi thoáng qua làm sập TOÀN BỘ Lịch Content, kể cả board không liên quan.** Chi tiết bên dưới. | admin.html, tracker.html |
 | #62 | **Tìm kiếm bỏ qua dấu tiếng Việt** (`normVN()`) + bổ sung field `requester` còn thiếu cho Content Order/Task, để ô tìm kiếm thực sự tìm được theo "Người yêu cầu". Chi tiết bên dưới. | admin.html, tracker.html |
 | #61 | **Fix nút "📋 Sao chép" không copy được** (đặc biệt link và đường dẫn ổ cứng). Chi tiết bên dưới. | admin.html, tracker.html |
 | #60 | **Fix nghiêm trọng (2 lớp lồng nhau): bật filter "Loại công việc" bất kỳ làm biến mất TOÀN BỘ Lịch Content trong admin.html** — (1) công thức lọc thiếu nhánh cho content task, (2) `TYPE_MAP` thiếu hẳn `'internal'` nên không có chip nào để khớp. Chi tiết bên dưới. | admin.html |
@@ -904,6 +905,22 @@ Vì lỗi "admin thiếu việc" đã tái diễn ít nhất 2 lần (Task #58, 
 ```
 "Khánh Huyền" → 1   "khanh huyen" → 1   "KHANH HUYEN" → 1   "Kim Oanh" → 46   "kim oanh" → 46
 ```
+
+---
+
+### Task #63 — 1 board lỗi thoáng qua làm sập toàn bộ Lịch Content
+
+**Triệu chứng báo lên (sau khi Task #58-#62 đã lên GitHub Pages thật):** admin vẫn thỉnh thoảng thiếu việc, kiểu "lúc có lúc không" — khác hẳn kiểu lỗi cố định của các Task trước.
+
+**Cách phát hiện:** đọc trực tiếp stat "Tổng" trên trang thật lúc anh báo lỗi = đúng bằng số Content Order tải được, **0 Content Task** — tức Content Task bị mất sạch trong khi Content Order vẫn còn nguyên.
+
+**Nguyên nhân:** `_loadContentTasks()` và `_loadContentOrders()` (admin.html) + `loadContentOrders()` (tracker.html) dùng `Promise.all()` để tải song song nhiều board, nhưng **không có try/catch riêng cho từng board** — chỉ có 1 try/catch bọc ngoài (hoặc không có gì). Do Kim Oanh/Khánh Huyền đang **thao tác thật, liên tục** trên trang Content, thỉnh thoảng 1 request tới đúng lúc dữ liệu đang ghi dở/mạng chập chờn sẽ ném lỗi (fetch fail hoặc `JSON.parse` fail vì dữ liệu tạm thời không hợp lệ). Khi đó `Promise.all` **reject toàn bộ**, kéo theo mất luôn dữ liệu của board KHÔNG hề lỗi (vd Kim Oanh) chứ không chỉ board đang gặp sự cố (vd Khánh Huyền). `tracker.html`'s `loadContentTasks()` đã có sẵn try/catch riêng cho từng board từ trước — chỉ 3/4 hàm còn lại bị thiếu.
+
+**Fix:** thêm `try{...}catch(e){ console.warn(...); return []; }` **bên trong** callback `.map()` của từng nguồn (không phải bọc ngoài `Promise.all`) ở cả 3 chỗ còn thiếu — 1 board lỗi giờ chỉ trả về mảng rỗng cho riêng board đó, các board khác không bị ảnh hưởng.
+
+**Đã verify bằng cách giả lập lỗi thật:** ép `fetch` ném lỗi có chủ đích riêng cho board `khanh-huyen`, gọi lại `_loadContentTasks()+_loadContentOrders()` → kết quả: Kim Oanh vẫn đủ 36/36 task, chỉ thiếu đúng phần Khánh Huyền (18/19 order, đúng bằng số lượng giả lập lỗi) — không còn hiện tượng "sập cả 2 board vì 1 board lỗi" nữa.
+
+**Bài học chung:** khi có nhiều nguồn dữ liệu độc lập tải song song qua `Promise.all`, **luôn đặt try/catch bên trong từng phần tử của `.map()`**, không đặt 1 try/catch chung bọc ngoài cả `Promise.all` — nếu không, 1 nguồn lỗi sẽ kéo sập toàn bộ các nguồn khác dù chúng hoàn toàn ổn.
 
 ---
 
