@@ -796,6 +796,10 @@
           <p class="text-xs font-bold uppercase tracking-widest mb-3" style="color:var(--atext3)">📅 Order theo thời gian</p>
           <div style="height:220px;position:relative"><canvas id="chart-time"></canvas></div>
         </div>
+        <div class="chart-box" style="grid-column:1/-1" title="Click để xem chi tiết">
+          <p class="text-xs font-bold uppercase tracking-widest mb-3" style="color:var(--atext3)">👤 Theo người phụ trách</p>
+          <div style="height:220px;position:relative"><canvas id="chart-assignee"></canvas></div>
+        </div>
       </div>
 
       <!-- Table view (bản thay thế cho biểu đồ — dễ đọc/copy số liệu chính xác) -->
@@ -808,9 +812,13 @@
           <p class="text-xs font-bold uppercase tracking-widest mb-3" style="color:var(--atext3)">🏢 Theo phòng ban</p>
           <table class="report-tbl"><thead><tr><th>Phòng ban</th><th style="text-align:right">Số lượng</th></tr></thead><tbody id="tbl-dept"></tbody></table>
         </div>
-        <div class="chart-box" style="cursor:default;grid-column:1/-1">
+        <div class="chart-box" style="cursor:default">
           <p class="text-xs font-bold uppercase tracking-widest mb-3" style="color:var(--atext3)">🔄 Theo trạng thái</p>
           <table class="report-tbl"><thead><tr><th>Trạng thái</th><th style="text-align:right">Số lượng</th><th style="text-align:right">%</th></tr></thead><tbody id="tbl-status"></tbody></table>
+        </div>
+        <div class="chart-box" style="cursor:default">
+          <p class="text-xs font-bold uppercase tracking-widest mb-3" style="color:var(--atext3)">👤 Theo người phụ trách</p>
+          <table class="report-tbl"><thead><tr><th>Người phụ trách</th><th style="text-align:right">Số lượng</th></tr></thead><tbody id="tbl-assignee"></tbody></table>
         </div>
       </div>
 
@@ -997,7 +1005,7 @@ function _newInternal(data){
     priority:data.priority||priorityConfig.find(p=>p.isDefault)?.id||'trung-binh',
     createdAt:new Date().toLocaleString('vi-VN',{hour12:false}),
     createdBy:currentUser?.displayName||'',
-    type:'internal', department:'Nội bộ MKT'
+    type:'internal', department:'Marketing – Truyền thông'
   };
   internalTasks.push(t); _saveInternal(); return t;
 }
@@ -1012,7 +1020,7 @@ function _updateInternal(id,fields){
       ov={id,_internal:true,_fromContentOrder:true,_contentOrderId:co._contentOrderId,
           title:co.title,assignedTo:co.assignedTo,deadline:co.deadline,deadlineTime:co.deadlineTime,
           plannedDate:co.deadline,status:co.status,linkResult:co.linkResult||'',
-          adminNote:co.adminNote,priority:co.priority,type:'internal',department:'Nội bộ MKT',
+          adminNote:co.adminNote,priority:co.priority,type:_LC_TO_GAS[co._rawType]||'khac',department:'Marketing – Truyền thông',
           createdBy:co.createdBy,_feedbackAt:'',completedBy:'',resultBy:''};
       internalTasks.push(ov);
     }
@@ -2024,8 +2032,8 @@ function renderReport(){
   // Gộp tất cả nguồn: GAS orders + content orders + internal tasks
   const allForReport=[
     ...allOrders,
-    ...contentOrders.map(t=>({...t,department:t.department||'Nội bộ MKT',type:t.type||'internal'})),
-    ...contentTasks.map(t=>({...t,department:t.department||'Nội bộ MKT',type:t.type||'internal'})),
+    ...contentOrders.map(t=>({...t,department:t.department||'Marketing – Truyền thông',type:t.type||'internal'})),
+    ...contentTasks.map(t=>({...t,department:t.department||'Marketing – Truyền thông',type:t.type||'internal'})),
     ...internalTasks.filter(t=>!contentOrders.find(co=>co._contentOrderId===t._contentOrderId)) // tránh duplicate
   ];
   reportOrders=filterByPeriod(allForReport,currentPeriod);
@@ -2053,9 +2061,13 @@ function renderReport(){
   buildChartDept();
   buildChartStatus();
   buildChartTime();
+  buildChartAssignee();
   buildProjectGroups();
   buildReportTables();
 }
+// Tách assignedTo (chuỗi phân cách bởi dấu phẩy, 1 order có thể có nhiều người phụ trách)
+// thành mảng tên — dùng chung cho biểu đồ, bảng và drill-down "Theo người phụ trách".
+function _splitAssignees(o){ return (o.assignedTo||'').split(',').map(s=>s.trim()).filter(Boolean); }
 function toggleReportTable(){
   const cv=document.getElementById('report-charts-view'), tv=document.getElementById('report-table-view'), btn=document.getElementById('report-tbl-toggle');
   const showingTable=!tv.classList.contains('hidden');
@@ -2082,6 +2094,12 @@ function buildReportTables(){
     const c=reportOrders.filter(o=>o.status===sc.id).length;
     return `<tr><td><span class="report-dot" style="background:${sc.color||'#64748b'}"></span>${sc.icon||''} ${sc.label}</td><td style="text-align:right">${c}</td><td style="text-align:right">${n?Math.round(c/n*100):0}%</td></tr>`;
   }).join('');
+
+  const asgCounts={}; reportOrders.forEach(o=>{ _splitAssignees(o).forEach(name=>{ asgCounts[name]=(asgCounts[name]||0)+1; }); });
+  const asgSorted=Object.entries(asgCounts).sort((a,b)=>b[1]-a[1]);
+  document.getElementById('tbl-assignee').innerHTML=asgSorted.map(([k,v])=>
+    `<tr><td>👤 ${k}</td><td style="text-align:right">${v}</td></tr>`
+  ).join('')||`<tr><td colspan="2" style="color:var(--atext3)">Không có dữ liệu</td></tr>`;
 }
 function destroyCharts(){
   Object.values(reportCharts).forEach(c=>c.destroy());
@@ -2166,7 +2184,9 @@ function buildChartTime(){
   const pad=n=>String(n).padStart(2,'0');
 
   reportOrders.forEach(o=>{
-    const d=parseDate(o.submittedAt);
+    // Content order/task/internal task không có submittedAt (chỉ GAS order mới có) — dùng
+    // deadline/plannedDate làm mốc thời gian thay thế, tránh biểu đồ bỏ sót gần hết dữ liệu.
+    const d=parseDate(o.submittedAt)||parseDl(o);
     if(!d) return;
     let key;
     if(currentPeriod==='today')  key=`${pad(d.getHours())}:00`;
@@ -2198,6 +2218,24 @@ function buildChartTime(){
     },
     options:{...cd,
       scales:{x:{ticks:{color:cd._axC,maxTicksLimit:12},grid:{color:cd._gc}},y:{ticks:{color:cd._axC,stepSize:1},grid:{color:cd._gc}}},
+      plugins:{...cd.plugins,legend:{display:false}}
+    }
+  });
+}
+function buildChartAssignee(){
+  const cd=getChartDefaults();
+  // 1 order có thể có nhiều người phụ trách (assignedTo là chuỗi "A, B") — order đó phải
+  // được cộng vào tổng của TỪNG người, không chỉ tính 1 lần cho cả chuỗi gộp.
+  const counts={};
+  reportOrders.forEach(o=>{ _splitAssignees(o).forEach(name=>{ counts[name]=(counts[name]||0)+1; }); });
+  const sorted=Object.entries(counts).sort((a,b)=>b[1]-a[1]);
+  const ctx=document.getElementById('chart-assignee').getContext('2d');
+  reportCharts.assignee=new Chart(ctx,{
+    type:'bar',
+    data:{labels:sorted.map(e=>e[0]),datasets:[{label:'Order',data:sorted.map(e=>e[1]),backgroundColor:CAT_PALETTE[1]+'cc',borderColor:CAT_PALETTE[1],borderWidth:1,borderRadius:5}]},
+    options:{...cd,indexAxis:'y',
+      onClick:(_,els)=>{if(els.length){openDrillDownAssignee(sorted[els[0].index][0]);}},
+      scales:{x:{ticks:{color:cd._axC,stepSize:1},grid:{color:cd._gc}},y:{ticks:{color:cd._axC},grid:{display:false}}},
       plugins:{...cd.plugins,legend:{display:false}}
     }
   });
@@ -2237,8 +2275,7 @@ function buildProjectGroups(){
 }
 
 // ── Drill down ─────────────────────────────────────────────────
-function openDrillDown(field,value,title){
-  const matched=reportOrders.filter(o=>o[field]===value);
+function _renderDrillList(matched,title){
   document.getElementById('drill-title').textContent=`${title} — ${matched.length} order`;
   document.getElementById('drill-list').innerHTML=matched.length
     ? sorted(matched).map(o=>{
@@ -2259,6 +2296,14 @@ function openDrillDown(field,value,title){
       }).join('')
     : '<p class="text-white/30 text-sm text-center py-6">Không có order nào</p>';
   document.getElementById('drill-modal').classList.remove('hidden');
+}
+function openDrillDown(field,value,title){
+  _renderDrillList(reportOrders.filter(o=>o[field]===value), title);
+}
+// Riêng người phụ trách: 1 order có thể gán nhiều người (assignedTo="A, B") nên phải so khớp
+// theo từng tên tách ra, không so sánh chuỗi nguyên văn như các field khác.
+function openDrillDownAssignee(person){
+  _renderDrillList(reportOrders.filter(o=>_splitAssignees(o).includes(person)), `👤 ${person}`);
 }
 function closeDrill(){document.getElementById('drill-modal').classList.add('hidden');}
 function drillByField(field){
@@ -3209,7 +3254,7 @@ async function _loadContentTasks(){
         status:_CONTENT_STATUS_MAP[ct.status||'']||statusConfig[0]?.id||'chua-lam',
         adminNote:`Lịch Content · ${src.name} · Kênh: ${chName||'–'}${ct.status?' · '+ct.status:''}`,
         priority:priorityConfig.find(p=>p.isDefault)?.id||'trung-binh',
-        createdBy:'Lịch Content · '+src.name, type:'content', department:'Nội bộ MKT',
+        createdBy:'Lịch Content · '+src.name, type:'content', department:'Marketing – Truyền thông',
         _channel:chName, _contentStatus:ct.status||'',
         _sourceUrl:_contentDeepLink(src.id, ct.id)
       };});
@@ -3313,7 +3358,9 @@ async function _loadContentOrders(){
         adminNote:briefLines.join('\n'),
         priority:o.priority==='Cao'?'cao':o.priority==='Thấp'?'thap':'trung-binh',
         createdBy:'Lịch Content · '+(o.requester||src.name),
-        type:'internal', department:o.department||'Nội bộ MKT',
+        // type: map về đúng hạng mục GAS (thiết kế/content/ads...) thay vì 'internal' chung chung,
+        // để báo cáo "Theo loại order" gộp đúng nhóm thay vì dồn hết Content Order vào 1 mục mơ hồ.
+        type:_LC_TO_GAS[o.type]||'khac', department:o.department||'Marketing – Truyền thông',
         _feedbackAt:saved?._feedbackAt||'',
         completedBy:saved?.completedBy||'', resultBy:saved?.resultBy||''
       };

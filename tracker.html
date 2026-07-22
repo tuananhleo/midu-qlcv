@@ -1252,7 +1252,7 @@ async function loadContentOrders(){
           refLink, adminNote:'',
           priority:o.priority==='Cao'?'cao':o.priority==='Thấp'?'thap':'trung-binh',
           createdBy:'Lịch Content · '+(o.requester||src.name),
-          type:'internal', department:o.department||'Truyền thông Marketing',
+          type:'internal', department:o.department||'Marketing – Truyền thông',
           d_channel:(_contentChannelMap[o.channelId]||o.channelId)||'',
         };
       });
