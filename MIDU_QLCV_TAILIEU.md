@@ -720,6 +720,8 @@ Sau đó có thể dùng `2_push_and_deploy.bat` để push GitHub + deploy Fire
 
 | Task | Mô tả | File |
 |------|-------|------|
+| #66 | **Content Task giờ sửa được trạng thái**, ghi ngược về Supabase (trước đây chỉ xem). Chi tiết bên dưới. | admin.html, tracker.html |
+| #65 | **Thêm trạng thái "🚫 Hủy"** — trước đây Content đánh dấu "Huỷ" bị gộp chung vào "Hoàn thành", sai lệch số liệu. Chi tiết bên dưới. | admin.html, tracker.html |
 | #64 | **Đồng bộ tự động khi Content xoá/sửa/thêm** — không cần bấm "Tải lại" nữa. Chi tiết bên dưới. | admin.html, tracker.html |
 | #63 | **Fix nghiêm trọng: 1 board lỗi thoáng qua làm sập TOÀN BỘ Lịch Content, kể cả board không liên quan.** Chi tiết bên dưới. | admin.html, tracker.html |
 | #62 | **Tìm kiếm bỏ qua dấu tiếng Việt** (`normVN()`) + bổ sung field `requester` còn thiếu cho Content Order/Task, để ô tìm kiếm thực sự tìm được theo "Người yêu cầu". Chi tiết bên dưới. | admin.html, tracker.html |
@@ -942,6 +944,33 @@ Vì lỗi "admin thiếu việc" đã tái diễn ít nhất 2 lần (Task #58, 
 - Focus vào ô tìm kiếm rồi gọi `_periodicContentSync()` → xác nhận DOM danh sách **không đổi** (bỏ qua render), dữ liệu nền vẫn cập nhật ngầm để lần render kế tiếp là đúng
 
 **Kết quả:** xoá/sửa/thêm bên Content giờ tự phản ánh sang admin.html trong tối đa ~90 giây, tracker.html trong tối đa ~120 giây — không cần ai bấm tay, và không có rủi ro mất thao tác đang làm dở.
+
+---
+
+### Task #65 — Thêm trạng thái "🚫 Hủy"
+
+**Bối cảnh phát hiện:** trang Content vốn đã có sẵn trạng thái task **"Huỷ"** (`DEFAULT_STATUS` trong file Content, `done:true`) từ trước — nhưng `_CONTENT_STATUS_MAP` bên admin.html/tracker.html map `'Huỷ':'hoan-thanh'`, gộp chung "đã hủy" với "đã hoàn thành". Kết quả: bài bị hủy vẫn cộng vào số liệu "Hoàn thành" trên stat card, sai lệch báo cáo. Content Order chưa có khái niệm "Huỷ" (chỉ Chưa làm/Đang làm/Chờ feedback/Hoàn thành).
+
+**Fix:**
+- Thêm status `'huy'` (🚫 Hủy, màu xám) vào `DEFAULT_STATUSES` (admin.html, có migration tự bổ sung cho user đã có config cũ trong localStorage — không ghi đè trạng thái tùy chỉnh họ đã thêm) và `STATUS_MAP` (tracker.html, hằng số cố định).
+- Đổi `_CONTENT_STATUS_MAP['Huỷ']` (và biến thể chính tả `'Hủy'`) → `'huy'` thay vì `'hoan-thanh'`.
+- `updateStats()`/tính "Trễ deadline": loại `status==='huy'` khỏi tập "đang active" — việc đã hủy không tính trễ hạn.
+- tracker.html: nhóm hiển thị theo trạng thái (render() 5 nhóm) gộp `huy` chung với `hoan-thanh` vào nhóm "✅ Hoàn thành" — nếu chỉ loại trừ khỏi nhóm "🔴 Cần xử lý" mà không xếp vào đâu, item sẽ **biến mất khỏi mọi nhóm**.
+
+**Đã verify:** giả lập user có config cũ (không có `huy`) + có 1 status tùy chỉnh riêng → sau migration có đủ `huy`, không mất status tùy chỉnh; `STATUS_MAP['huy']`/`_CONTENT_STATUS_MAP['Huỷ']` đúng ở cả 2 file.
+
+---
+
+### Task #66 — Content Task sửa được trạng thái, ghi ngược về Content
+
+**Yêu cầu:** "công việc của các bạn content trong admin cũng chỉ xem được thôi à" → xác nhận muốn sửa được, ghi ngược về Content giống Content Order.
+
+**Fix:** thêm `_writeBackContentTask(taskId, status, ws)` (song song với `_writeBackContentOrder()` đã có) + `_saveLcTaskStatus()` (đọc lựa chọn dropdown, cập nhật state cục bộ, gọi ghi ngược) ở cả 2 file. Card Content Task giờ có dropdown trạng thái ngay trên card, đổi là ghi liền (không cần nút Lưu riêng).
+
+**Chỉ map được 4/6 trạng thái của Content** — dropdown giới hạn còn `chua-lam`/`dang-xu-ly`/`hoan-thanh`/`huy` (map ngược `_LC_TASK_STATUS_REVERSE`: → 'Lên kế hoạch'/'Đang soạn'/'Đã đăng'/'Huỷ'). Bỏ qua `feedback` — khái niệm đó thuộc luồng Content Order (yêu cầu ngược lại phòng), không có ý nghĩa với lịch bài đăng của chính Content.
+
+**⚠️ Sự cố xảy ra lúc verify (20-22/07/2026) — bài học quan trọng cho lần sau:** lúc test `_writeBackContentTask()`, mock `fetch` lọc theo `url.includes('content-plan-tasks-v2')` — nhưng **endpoint ghi (POST) dùng chung 1 URL `/rest/v1/plan_data` cho mọi bảng, định danh board nằm trong BODY chứ không phải URL**. Mock lọc sai khiến request POST thật lọt qua, **ghi đè "Huỷ" lên task `seed-1` thật của Kim Oanh**. Phát hiện và khôi phục lại đúng trạng thái gốc ("Đã đăng") ngay trong vài phút, xác nhận lại bằng cách đọc lại dữ liệu.
+- **Quy tắc bắt buộc từ nay:** khi test bất kỳ hàm nào có gọi `fetch(...,{method:'POST'...})` tới Supabase, **PHẢI chặn toàn bộ `window.fetch` vô điều kiện** (không lọc theo URL) trong lúc test, trả về dữ liệu giả lập cho cả GET lẫn POST — không được tin tưởng lọc theo chuỗi URL vì endpoint ghi thường dùng chung 1 URL cho nhiều bảng khác nhau.
 
 ---
 

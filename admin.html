@@ -897,6 +897,7 @@ const DEFAULT_STATUSES = [
   {id:'dang-xu-ly', label:'Đang xử lý', icon:'🔄', color:'#60a5fa', bg:'rgba(96,165,250,.18)',  core:true},
   {id:'feedback',   label:'Feedback',   icon:'💬', color:'#a78bfa', bg:'rgba(167,139,250,.18)', core:true},
   {id:'hoan-thanh', label:'Hoàn thành', icon:'✅', color:'#22c55e', bg:'rgba(34,197,94,.18)',   core:true},
+  {id:'huy',        label:'Hủy',        icon:'🚫', color:'#94a3b8', bg:'rgba(148,163,184,.18)', core:true},
 ];
 const DEFAULT_PRIORITIES = [
   {id:'thap',       label:'Thấp',      icon:'🟢', isDefault:false},
@@ -911,6 +912,12 @@ let STATUS_MAP     = {};
 function _loadConfigs() {
   try { statusConfig = JSON.parse(localStorage.getItem(KEY_STATUS_CONFIG)||'null')||[]; } catch(e) { statusConfig=[]; }
   if (!statusConfig.length) statusConfig = JSON.parse(JSON.stringify(DEFAULT_STATUSES));
+  // Migration: user đã có config cũ (trước khi có trạng thái Hủy) thì bổ sung thêm,
+  // không ghi đè phần tùy chỉnh họ đã có.
+  if (!statusConfig.some(s=>s.id==='huy')) {
+    statusConfig.push(JSON.parse(JSON.stringify(DEFAULT_STATUSES.find(s=>s.id==='huy'))));
+    try { localStorage.setItem(KEY_STATUS_CONFIG, JSON.stringify(statusConfig)); } catch(e) {}
+  }
   try { priorityConfig = JSON.parse(localStorage.getItem(KEY_PRIORITY_CONFIG)||'null')||[]; } catch(e) { priorityConfig=[]; }
   if (!priorityConfig.length) priorityConfig = JSON.parse(JSON.stringify(DEFAULT_PRIORITIES));
   STATUS_MAP = Object.fromEntries(statusConfig.map(s=>[s.id,{label:s.label,icon:s.icon||'',color:s.color||'#94a3b8',bg:s.bg||'rgba(148,163,184,.18)'}]));
@@ -1325,7 +1332,7 @@ function filterByStat(type) {
 }
 function updateStats() {
   const all = [...allOrders, ...contentOrders, ...contentTasks, ...internalTasks.filter(t=>!t._fromContentOrder)];
-  const active  = all.filter(o=>o.status!=='hoan-thanh');
+  const active  = all.filter(o=>o.status!=='hoan-thanh'&&o.status!=='huy');
   const overdue = active.filter(o=>{ const dl=parseDl(o); return dl&&dl<today; });
   document.getElementById('st-total').textContent    = all.length;
   document.getElementById('st-overdue').textContent  = overdue.length;
@@ -1578,9 +1585,12 @@ function renderIntCard(t){
     </div>`;
   }
 
-  // ── Content task từ Lịch Content (chỉ xem — chưa có cơ chế ghi ngược
-  // trạng thái/phân công về Supabase, nên không cho sửa để tránh tưởng đã lưu) ──
+  // ── Content task từ Lịch Content — sửa được trạng thái, ghi ngược về Supabase
+  // (Task #65). Chỉ 4 trạng thái có tương ứng rõ ràng bên Content mới cho chọn.
   if(t._fromContent){
+    const lcTaskId='lct_'+t.id.replace(/[^a-z0-9]/gi,'_');
+    const lcStatusOpts=statusConfig.filter(sc=>_LC_TASK_STATUS_REVERSE[sc.id])
+      .map(sc=>`<option value="${sc.id}"${t.status===sc.id?' selected':''}>${sc.label}</option>`).join('');
     return `<div class="${cardCls}">
     <div class="p-4">
       <div class="flex flex-wrap items-center gap-2 mb-1">
@@ -1597,6 +1607,11 @@ function renderIntCard(t){
       </div>
       ${t.adminNote?`<div class="mt-2 text-xs px-3 py-2 rounded-lg" style="color:var(--atext3);background:var(--abg3);border:1px solid var(--aborder);white-space:pre-line">📝 ${t.adminNote}</div>`:''}
       ${t._sourceUrl?`<div class="mt-2"><a href="${t._sourceUrl}" target="_blank" rel="noopener" class="btn btn-ghost" style="font-size:.72rem;padding:3px 10px">↗ Mở bài này trên Lịch Content</a></div>`:''}
+    </div>
+    <div class="admin-strip">
+      <div style="min-width:150px"><label>Trạng thái (ghi ngược về Content)</label>
+        <select id="${lcTaskId}_stat" class="cinp" onchange="_saveLcTaskStatus('${t.id}', this)">${lcStatusOpts}</select>
+      </div>
     </div>
   </div>`;
   }
@@ -3024,7 +3039,7 @@ function applyRangePicker(){
 const _CONTENT_STATUS_MAP={
   'Lên kế hoạch':'chua-lam','Đang soạn':'dang-xu-ly',
   'Chờ duyệt':'dang-xu-ly','Đã lên lịch':'dang-xu-ly',
-  'Đã đăng':'hoan-thanh','Huỷ':'hoan-thanh','Order Thiết kế':'dang-xu-ly'
+  'Đã đăng':'hoan-thanh','Huỷ':'huy','Hủy':'huy','Order Thiết kế':'dang-xu-ly'
 };
 const _SB_URL='https://loqcqtuouagzaqwdmhji.supabase.co';
 const _SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxvcWNxdHVvdWFnemFxd2RtaGppIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMwNjUyNDgsImV4cCI6MjA5ODY0MTI0OH0.zoiWEgtNORL1ecxAgSpkZ3HMDaLP3nnpma3moM8QsDc';
@@ -3235,6 +3250,33 @@ async function _writeBackContentOrder(orderId, deliverableLink, lcStatus, ws){
     if(lcStatus) orders[idx].status=lcStatus;
     await fetch(`${_SB_URL}/rest/v1/plan_data`,{method:'POST',headers:hdrs,body:JSON.stringify({id:'content-plan-orders-v1--'+ws,value:orders})});
   }catch(e){console.warn('[LC write-back] lỗi:',e.message);}
+}
+// Chiều ngược lại của _CONTENT_STATUS_MAP — chỉ map 4 trạng thái có ý nghĩa rõ ràng bên
+// Content (bỏ qua 'feedback', khái niệm đó không tồn tại trong luồng lịch bài đăng).
+const _LC_TASK_STATUS_REVERSE={'chua-lam':'Lên kế hoạch','dang-xu-ly':'Đang soạn','hoan-thanh':'Đã đăng','huy':'Huỷ'};
+async function _writeBackContentTask(taskId, status, ws){
+  if(!ws||!taskId) return;
+  const lcStatus=_LC_TASK_STATUS_REVERSE[status];
+  if(!lcStatus) return; // trạng thái không có tương ứng bên Content (vd feedback) thì không ghi
+  try{
+    const hdrs={'apikey':_SB_KEY,'Authorization':'Bearer '+_SB_KEY,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'};
+    const resp=await fetch(`${_SB_URL}/rest/v1/plan_data?id=eq.content-plan-tasks-v2--${ws}&select=value`,{headers:{'apikey':_SB_KEY,'Authorization':'Bearer '+_SB_KEY}});
+    if(!resp.ok) return;
+    const data=await resp.json();
+    const raw=data?.[0]?.value;
+    const tasks=typeof raw==='string'?JSON.parse(raw):(Array.isArray(raw)?raw:[]);
+    const idx=tasks.findIndex(t=>t.id===taskId);
+    if(idx<0) return;
+    tasks[idx].status=lcStatus;
+    await fetch(`${_SB_URL}/rest/v1/plan_data`,{method:'POST',headers:hdrs,body:JSON.stringify({id:'content-plan-tasks-v2--'+ws,value:tasks})});
+  }catch(e){console.warn('[LC task write-back] lỗi:',e.message);}
+}
+async function _saveLcTaskStatus(taskId, selectEl){
+  const t=contentTasks.find(x=>x.id===taskId); if(!t) return;
+  const newStatus=selectEl.value;
+  t.status=newStatus; t._contentStatus=_LC_TASK_STATUS_REVERSE[newStatus]||t._contentStatus;
+  render();
+  await _writeBackContentTask(t._contentTaskId, newStatus, t._ws);
 }
 async function _autoSyncContent(){
   const btn=document.getElementById('sync-content-btn');

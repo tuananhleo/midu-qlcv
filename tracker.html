@@ -306,6 +306,7 @@ const STATUS_MAP = {
   'dang-xu-ly': {label:'Đang xử lý', color:'#60a5fa', bg:'rgba(96,165,250,.18)'},
   'feedback':   {label:'Feedback',   color:'#a78bfa', bg:'rgba(167,139,250,.18)'},
   'hoan-thanh': {label:'Hoàn thành', color:'#22c55e', bg:'rgba(34,197,94,.18)'},
+  'huy':        {label:'Hủy',        color:'#94a3b8', bg:'rgba(148,163,184,.18)'},
 };
 const TYPE_MAP = {
   'thiet-ke':'🎨 Thiết kế','video-ai':'🎬 Video AI','media':'📸 Media',
@@ -502,7 +503,7 @@ function _contentDeepLink(ws, taskId){
 const _CONTENT_STATUS_MAP = {
   'Lên kế hoạch':'chua-lam','Đang soạn':'dang-xu-ly',
   'Chờ duyệt':'dang-xu-ly','Đã lên lịch':'dang-xu-ly',
-  'Đã đăng':'hoan-thanh','Huỷ':'hoan-thanh','Order Thiết kế':'dang-xu-ly'
+  'Đã đăng':'hoan-thanh','Huỷ':'huy','Hủy':'huy','Order Thiết kế':'dang-xu-ly'
 };
 let internalTasks = [];
 let contentTasks  = [];
@@ -753,7 +754,7 @@ function filterByStat(type) {
 function updateStats() {
   const base=urlDept?allOrders.filter(o=>o.department===urlDept):allOrders;
   const all=[...base,...contentOrders,...contentTasks,...internalTasks.filter(t=>!t._fromContentOrder)];
-  const active=all.filter(o=>o.status!=='hoan-thanh');
+  const active=all.filter(o=>o.status!=='hoan-thanh'&&o.status!=='huy');
   const feedback=all.filter(o=>o.status==='feedback').length;
   const overdue=active.filter(o=>{ const d=dlDiff({...o,deadline:o.deadline||o.plannedDate||''}); return d!==null&&d<0; });
   document.getElementById('st-total').textContent=all.length;
@@ -867,11 +868,13 @@ function render() {
   }
   empty.classList.add('hidden');
 
-  const urgent   = sortedList(allRows.filter(o=>o.status!=='hoan-thanh'&&o.status!=='feedback'&&dlPriority(o)<=1));
+  // "huy" gộp chung nhóm Hoàn thành (đã đóng, không còn là việc cần làm) — tránh rơi khỏi
+  // mọi nhóm nếu chỉ loại trừ ở urgent mà không xếp nó vào đâu cả.
+  const urgent   = sortedList(allRows.filter(o=>o.status!=='hoan-thanh'&&o.status!=='feedback'&&o.status!=='huy'&&dlPriority(o)<=1));
   const doing    = sortedList(allRows.filter(o=>o.status==='dang-xu-ly'&&dlPriority(o)>1));
   const feedback = sortedList(allRows.filter(o=>o.status==='feedback'));
   const pending  = sortedList(allRows.filter(o=>o.status==='chua-lam'&&dlPriority(o)>1));
-  const done     = sortedList(allRows.filter(o=>o.status==='hoan-thanh'));
+  const done     = sortedList(allRows.filter(o=>o.status==='hoan-thanh'||o.status==='huy'));
 
   const renderMixed=(items)=>items.map(o=>o._isInt?renderIntCard(o):renderCard(o)).join('');
   list.innerHTML=[
@@ -1030,9 +1033,11 @@ function renderIntCard(t) {
     </div>`;
   }
 
-  // ── Content task từ Lịch Content (read-only) ──────────────────
+  // ── Content task từ Lịch Content — sửa được trạng thái, ghi ngược về Supabase (Task #65) ──
   if(t._fromContent){
     const chName=t.d_channel||t._channel||'';
+    const lcStatusOpts=Object.keys(_LC_TASK_STATUS_REVERSE)
+      .map(id=>`<option value="${id}"${t.status===id?' selected':''}>${STATUS_MAP[id]?.label||id}</option>`).join('');
     return `<div class="${cardCls}">
       <div class="p-4">
         <div class="flex flex-wrap items-center gap-2 mb-1">
@@ -1059,9 +1064,12 @@ function renderIntCard(t) {
         </div>`:''}
         <div class="mt-2"><button onclick="openContentTaskDetail('${t.id}')" class="btn btn-ghost" style="font-size:.72rem;padding:3px 10px">👁 Xem chi tiết nội dung</button></div>
       </div>
-      <div class="info-strip" style="display:flex;align-items:center;justify-content:space-between">
+      <div class="info-strip" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
         <span class="text-xs italic" style="color:var(--ttext3)">🔄 Tự đồng bộ từ Lịch Content ${t._sourceName||'Content'}</span>
-        <a href="${t._sourceUrl||'#'}" target="_blank" rel="noopener" class="btn btn-ghost" style="font-size:.72rem;padding:3px 10px">↗ Mở bài này (${t._sourceName||''})</a>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <select class="cinp" style="font-size:.75rem;padding:3px 6px" onchange="_saveLcTaskStatus('${t.id}', this)">${lcStatusOpts}</select>
+          <a href="${t._sourceUrl||'#'}" target="_blank" rel="noopener" class="btn btn-ghost" style="font-size:.72rem;padding:3px 10px">↗ Mở bài này (${t._sourceName||''})</a>
+        </div>
       </div>
     </div>`;
   }
@@ -1253,6 +1261,33 @@ async function _writeBackContentOrder(orderId, deliverableLink, lcStatus, ws){
     if(lcStatus) orders[idx].status=lcStatus;
     await fetch(`${_SB_URL}/rest/v1/plan_data`,{method:'POST',headers:hdrs,body:JSON.stringify({id:'content-plan-orders-v1--'+ws,value:orders})});
   }catch(e){console.warn('[LC write-back] lỗi:',e.message);}
+}
+// Chiều ngược lại của _CONTENT_STATUS_MAP — chỉ map 4 trạng thái có ý nghĩa rõ ràng bên
+// Content (bỏ qua 'feedback', khái niệm đó không tồn tại trong luồng lịch bài đăng).
+const _LC_TASK_STATUS_REVERSE={'chua-lam':'Lên kế hoạch','dang-xu-ly':'Đang soạn','hoan-thanh':'Đã đăng','huy':'Huỷ'};
+async function _writeBackContentTask(taskId, status, ws){
+  if(!ws||!taskId) return;
+  const lcStatus=_LC_TASK_STATUS_REVERSE[status];
+  if(!lcStatus) return;
+  try{
+    const hdrs={'apikey':_SB_KEY,'Authorization':'Bearer '+_SB_KEY,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'};
+    const resp=await fetch(`${_SB_URL}/rest/v1/plan_data?id=eq.content-plan-tasks-v2--${ws}&select=value`,{headers:{'apikey':_SB_KEY,'Authorization':'Bearer '+_SB_KEY}});
+    if(!resp.ok) return;
+    const data=await resp.json();
+    const raw=data?.[0]?.value;
+    const tasks=typeof raw==='string'?JSON.parse(raw):(Array.isArray(raw)?raw:[]);
+    const idx=tasks.findIndex(t=>t.id===taskId);
+    if(idx<0) return;
+    tasks[idx].status=lcStatus;
+    await fetch(`${_SB_URL}/rest/v1/plan_data`,{method:'POST',headers:hdrs,body:JSON.stringify({id:'content-plan-tasks-v2--'+ws,value:tasks})});
+  }catch(e){console.warn('[LC task write-back] lỗi:',e.message);}
+}
+async function _saveLcTaskStatus(taskId, selectEl){
+  const t=contentTasks.find(x=>x.id===taskId); if(!t) return;
+  const newStatus=selectEl.value;
+  t.status=newStatus; t._contentStatus=_LC_TASK_STATUS_REVERSE[newStatus]||t._contentStatus;
+  render();
+  await _writeBackContentTask(t._contentTaskId, newStatus, t._ws);
 }
 
 async function loadContentOrders(){
