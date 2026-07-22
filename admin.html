@@ -104,6 +104,25 @@
   .rcard { background:var(--abg2); border:1px solid var(--aborder); border-radius:14px; padding:16px 20px; }
   .chart-box { background:var(--abg2); border:1px solid var(--aborder); border-radius:14px; padding:16px; cursor:pointer; transition:.2s; }
   .chart-box:hover { border-color:rgba(99,102,241,.35); background:rgba(99,102,241,.05); }
+  .kpi-tile { background:var(--abg2); border:1px solid var(--aborder); border-radius:14px; padding:14px 16px; position:relative; overflow:hidden; }
+  .kpi-tile::before { content:''; position:absolute; left:0; top:0; bottom:0; width:3px; }
+  .kpi-tile.c-neutral::before { background:#64748b; }
+  .kpi-tile.c-good::before { background:#0ca30c; }
+  .kpi-tile.c-blue::before { background:#3987e5; }
+  .kpi-tile.c-critical::before { background:#d03b3b; }
+  .kpi-icon { font-size:1rem; opacity:.85; }
+  .kpi-val { font-size:1.65rem; font-weight:800; font-variant-numeric:tabular-nums; line-height:1; color:var(--atext); }
+  .kpi-tile.c-good .kpi-val { color:#0ca30c; }
+  .kpi-tile.c-blue .kpi-val { color:#3987e5; }
+  .kpi-tile.c-critical .kpi-val { color:#d03b3b; }
+  .kpi-sub { font-size:.7rem; font-weight:700; margin-left:6px; color:#0ca30c; }
+  .kpi-lbl { font-size:.74rem; color:var(--atext3); margin-top:5px; }
+  .report-tbl { width:100%; border-collapse:collapse; font-size:.78rem; }
+  .report-tbl th { text-align:left; color:var(--atext3); font-weight:700; padding:6px 8px; border-bottom:1px solid var(--aborder); font-size:.68rem; text-transform:uppercase; letter-spacing:.04em; }
+  .report-tbl td { padding:6px 8px; border-bottom:1px solid rgba(255,255,255,.05); font-variant-numeric:tabular-nums; color:var(--atext2); }
+  [data-theme="light"] .report-tbl td { border-bottom-color:rgba(0,0,0,.06); }
+  .report-tbl tr:hover td { background:rgba(99,102,241,.06); }
+  .report-dot { display:inline-block; width:9px; height:9px; border-radius:2px; margin-right:6px; vertical-align:middle; }
   .period-btn { padding:5px 14px; border-radius:8px; font-size:.75rem; font-weight:700; cursor:pointer; border:1.5px solid var(--aborder); background:var(--abg2); color:var(--atext3); transition:.15s; }
   .period-btn.active { background:#6366f1; border-color:#6366f1; color:#fff; }
   .tab-btn { padding:7px 18px; border-radius:10px; font-size:.8rem; font-weight:700; cursor:pointer; border:1.5px solid transparent; color:var(--atext3); background:transparent; transition:.15s; }
@@ -676,7 +695,7 @@
         </div>
         <!-- Row 5: Tìm kiếm -->
         <div class="flex flex-wrap gap-2 items-center">
-          <input id="f-kw" type="text" placeholder="🔍 Tìm kiếm..." class="cinp" style="width:100%;max-width:320px" oninput="render()">
+          <input id="f-kw" type="text" placeholder="🔍 Tìm kiếm..." class="cinp" style="width:100%;max-width:320px" oninput="updateStats();render()">
           <div class="flex items-center gap-2 ml-auto">
             <span title="Tự động cập nhật mỗi 2 phút" style="display:inline-flex;align-items:center;gap:4px;font-size:.72rem;color:var(--atext3)">
               <span id="realtime-dot" style="width:7px;height:7px;border-radius:50%;background:#f97316;display:inline-block;transition:.3s"></span>Live
@@ -732,26 +751,35 @@
 
       <!-- Summary cards -->
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-        <div class="rcard">
-          <div class="text-2xl font-black" id="r-total" style="color:var(--atext)">–</div>
-          <div class="text-xs mt-1" style="color:var(--atext3)">Tổng order</div>
+        <div class="kpi-tile c-neutral">
+          <div class="kpi-icon">📦</div>
+          <div class="kpi-val" id="r-total">–</div>
+          <div class="kpi-lbl">Tổng order</div>
         </div>
-        <div class="rcard">
-          <div class="text-2xl font-black text-green-500" id="r-done">–</div>
-          <div class="text-xs mt-1" style="color:var(--atext3)">Hoàn thành <span class="text-green-500" id="r-done-pct"></span></div>
+        <div class="kpi-tile c-good">
+          <div class="kpi-icon">✅</div>
+          <div class="kpi-val" id="r-done">–<span class="kpi-sub" id="r-done-pct"></span></div>
+          <div class="kpi-lbl">Hoàn thành</div>
         </div>
-        <div class="rcard">
-          <div class="text-2xl font-black text-blue-400" id="r-inprog">–</div>
-          <div class="text-xs mt-1" style="color:var(--atext3)">Đang xử lý</div>
+        <div class="kpi-tile c-blue">
+          <div class="kpi-icon">🔄</div>
+          <div class="kpi-val" id="r-inprog">–</div>
+          <div class="kpi-lbl">Đang xử lý</div>
         </div>
-        <div class="rcard">
-          <div class="text-2xl font-black text-red-400" id="r-late">–</div>
-          <div class="text-xs mt-1" style="color:var(--atext3)">Trễ deadline</div>
+        <div class="kpi-tile c-critical">
+          <div class="kpi-icon">🔴</div>
+          <div class="kpi-val" id="r-late">–</div>
+          <div class="kpi-lbl">Trễ deadline</div>
         </div>
       </div>
 
+      <div class="flex items-center justify-between mb-3">
+        <span class="text-xs font-bold uppercase tracking-widest" style="color:var(--atext3)">📊 Phân tích chi tiết</span>
+        <button type="button" class="btn btn-ghost" id="report-tbl-toggle" onclick="toggleReportTable()" style="font-size:.7rem;padding:4px 10px">📋 Xem dạng bảng</button>
+      </div>
+
       <!-- Charts 2x2 -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+      <div id="report-charts-view" class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
         <div class="chart-box" onclick="drillByField('type')" title="Click để xem chi tiết">
           <p class="text-xs font-bold uppercase tracking-widest mb-3" style="color:var(--atext3)">📊 Theo loại order</p>
           <div style="height:220px;position:relative"><canvas id="chart-type"></canvas></div>
@@ -767,6 +795,22 @@
         <div class="chart-box">
           <p class="text-xs font-bold uppercase tracking-widest mb-3" style="color:var(--atext3)">📅 Order theo thời gian</p>
           <div style="height:220px;position:relative"><canvas id="chart-time"></canvas></div>
+        </div>
+      </div>
+
+      <!-- Table view (bản thay thế cho biểu đồ — dễ đọc/copy số liệu chính xác) -->
+      <div id="report-table-view" class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6 hidden">
+        <div class="chart-box" style="cursor:default">
+          <p class="text-xs font-bold uppercase tracking-widest mb-3" style="color:var(--atext3)">📊 Theo loại order</p>
+          <table class="report-tbl"><thead><tr><th>Loại</th><th style="text-align:right">Số lượng</th></tr></thead><tbody id="tbl-type"></tbody></table>
+        </div>
+        <div class="chart-box" style="cursor:default">
+          <p class="text-xs font-bold uppercase tracking-widest mb-3" style="color:var(--atext3)">🏢 Theo phòng ban</p>
+          <table class="report-tbl"><thead><tr><th>Phòng ban</th><th style="text-align:right">Số lượng</th></tr></thead><tbody id="tbl-dept"></tbody></table>
+        </div>
+        <div class="chart-box" style="cursor:default;grid-column:1/-1">
+          <p class="text-xs font-bold uppercase tracking-widest mb-3" style="color:var(--atext3)">🔄 Theo trạng thái</p>
+          <table class="report-tbl"><thead><tr><th>Trạng thái</th><th style="text-align:right">Số lượng</th><th style="text-align:right">%</th></tr></thead><tbody id="tbl-status"></tbody></table>
         </div>
       </div>
 
@@ -1333,10 +1377,51 @@ function filterByStat(type) {
     const v = c.getAttribute('onclick')?.match(/'([^']*)'\s*\)/)?.[1] ?? '';
     c.classList.toggle('active', filters.status === v && !_overdueFilter);
   });
-  render();
+  updateStats(); render();
+}
+// Dùng chung bởi render() và updateStats() — để ô thống kê (Tổng/Trễ/Đang làm/Hoàn thành)
+// luôn khớp đúng tập dữ liệu đang hiển thị bên dưới, thay vì đếm toàn bộ không lọc.
+function getFilteredRows(){
+  const kw=normVN(document.getElementById('f-kw').value);
+  // Nhân viên chỉ thấy order được phân công cho mình
+  const baseOrders = perm().viewAll ? allOrders : allOrders.filter(o => {
+    const assigned = (o.assignedTo||'').split(',').map(s=>s.trim());
+    return assigned.includes(currentUser?.displayName||'__none__');
+  });
+  const rows=filterByPeriod(baseOrders,currentPeriod).filter(o=>{
+    if(_overdueFilter){ const _dl=parseDl(o); if(!_dl||_dl>=today) return false; }
+    if(filters.dept   && normDept(o.department)!==normDept(filters.dept)) return false;
+    if(filters.type   && o.type!==filters.type)       return false;
+    if(filters.status && o.status!==filters.status)   return false;
+    if(kw && !normVN(`${o.projectName}${o.requester}${o.department}${o.id}${o.projectCode||''}`).includes(kw)) return false;
+    return true;
+  });
+
+  // Internal tasks: lọc kỳ theo deadline + loại (map LC rawType→GAS type)
+  const _intPeriodRange = (currentPeriod && currentPeriod!=='all') ? (currentPeriod==='custom'?customRange:getDateRange(currentPeriod)) : null;
+  const intRows = [...contentOrders,...contentTasks,...internalTasks.filter(t=>!t._fromContentOrder)].filter(t=>{
+    if(_intPeriodRange) {
+      const _dl=parseDl({deadline:t.deadline||t.plannedDate||''});
+      if(_dl) {
+        const _to=new Date(_intPeriodRange.to.getTime()+86400000);
+        if(!(_dl>=_intPeriodRange.from && _dl<_to)) return false;
+      }
+    }
+    if(filters.type) {
+      const gasType=t._fromContent?t.type:(_LC_TO_GAS[t._rawType||'']||t._rawType||'');
+      if(gasType!==filters.type) return false;
+    }
+    if(_overdueFilter){ const _idl=parseDl({deadline:t.deadline||t.plannedDate||''}); if(!_idl||_idl>=today) return false; }
+    if(filters.dept&&normDept(t.department)!==normDept(filters.dept)) return false;
+    if(filters.status&&t.status!==filters.status) return false;
+    if(kw&&!normVN(`${t.title||''}${t.projectName||''}${t.requester||''}${t.assignedTo||''}${t.adminNote||''}${t.department||''}${t.d_channel||''}${t._channel||''}`).includes(kw)) return false;
+    return true;
+  });
+  return {rows, intRows};
 }
 function updateStats() {
-  const all = [...allOrders, ...contentOrders, ...contentTasks, ...internalTasks.filter(t=>!t._fromContentOrder)];
+  const {rows, intRows} = getFilteredRows();
+  const all = [...rows, ...intRows];
   const active  = all.filter(o=>o.status!=='hoan-thanh'&&o.status!=='huy');
   const overdue = active.filter(o=>{ const dl=parseDl(o); return dl&&dl<today; });
   document.getElementById('st-total').textContent    = all.length;
@@ -1353,7 +1438,7 @@ function buildDeptChips() {
     const b=document.createElement('button'); b.type='button';
     b.className='chip'+(filters.dept===val?' active':'');
     b.textContent=label;
-    b.onclick=()=>{ filters.dept=filters.dept===val?'':val; buildDeptChips(); render(); };
+    b.onclick=()=>{ filters.dept=filters.dept===val?'':val; buildDeptChips(); updateStats(); render(); };
     c.appendChild(b);
   };
   mk('','Tất cả'); depts.forEach(d=>mk(d,d));
@@ -1366,7 +1451,7 @@ function buildTypeChips() {
     const b = document.createElement('button'); b.type = 'button';
     b.className = 'chip type-chip' + (filters.type === val ? ' active' : '');
     b.textContent = label;
-    b.onclick = () => { filters.type = filters.type === val ? '' : val; buildTypeChips(); render(); };
+    b.onclick = () => { filters.type = filters.type === val ? '' : val; buildTypeChips(); updateStats(); render(); };
     c.appendChild(b);
   };
   mk('', 'Tất cả');
@@ -1388,45 +1473,11 @@ function updateListPeriodLabel() {
 function setChip(el,key,val) {
   const grp=el.classList.contains('type-chip')?'.type-chip':'.status-chip';
   document.querySelectorAll(grp).forEach(c=>c.classList.remove('active'));
-  el.classList.add('active'); filters[key]=val; render();
+  el.classList.add('active'); filters[key]=val; updateStats(); render();
 }
 function render() {
-  const kw=normVN(document.getElementById('f-kw').value);
-  // Nhân viên chỉ thấy order được phân công cho mình
-  const baseOrders = perm().viewAll ? allOrders : allOrders.filter(o => {
-    const assigned = (o.assignedTo||'').split(',').map(s=>s.trim());
-    return assigned.includes(currentUser?.displayName||'__none__');
-  });
-  let rows=filterByPeriod(baseOrders,currentPeriod).filter(o=>{
-    if(_overdueFilter){ const _dl=parseDl(o); if(!_dl||_dl>=today) return false; }
-    if(filters.dept   && normDept(o.department)!==normDept(filters.dept)) return false;
-    if(filters.type   && o.type!==filters.type)       return false;
-    if(filters.status && o.status!==filters.status)   return false;
-    if(kw && !normVN(`${o.projectName}${o.requester}${o.department}${o.id}${o.projectCode||''}`).includes(kw)) return false;
-    return true;
-  });
-  rows=sorted(rows);
-
-  // Thêm internal tasks: lọc kỳ theo deadline + loại (map LC rawType→GAS type)
-  const _intPeriodRange = (currentPeriod && currentPeriod!=='all') ? (currentPeriod==='custom'?customRange:getDateRange(currentPeriod)) : null;
-  let intRows = [...contentOrders,...contentTasks,...internalTasks.filter(t=>!t._fromContentOrder)].filter(t=>{
-    if(_intPeriodRange) {
-      const _dl=parseDl({deadline:t.deadline||t.plannedDate||''});
-      if(_dl) {
-        const _to=new Date(_intPeriodRange.to.getTime()+86400000);
-        if(!(_dl>=_intPeriodRange.from && _dl<_to)) return false;
-      }
-    }
-    if(filters.type) {
-      const gasType=t._fromContent?t.type:(_LC_TO_GAS[t._rawType||'']||t._rawType||'');
-      if(gasType!==filters.type) return false;
-    }
-    if(_overdueFilter){ const _idl=parseDl({deadline:t.deadline||t.plannedDate||''}); if(!_idl||_idl>=today) return false; }
-    if(filters.dept&&normDept(t.department)!==normDept(filters.dept)) return false;
-    if(filters.status&&t.status!==filters.status) return false;
-    if(kw&&!normVN(`${t.title||''}${t.projectName||''}${t.requester||''}${t.assignedTo||''}${t.adminNote||''}${t.department||''}${t.d_channel||''}${t._channel||''}`).includes(kw)) return false;
-    return true;
-  });
+  const {rows: filteredRows, intRows} = getFilteredRows();
+  let rows=sorted(filteredRows);
 
   const list=document.getElementById('list');
   const empty=document.getElementById('empty-state');
@@ -1521,7 +1572,7 @@ function renderCard(o) {
 
 function intUpdateStatus(id, val){
   _updateInternal(id,{status:val});
-  render();
+  updateStats(); render();
 }
 
 function renderIntCard(t){
@@ -1660,7 +1711,7 @@ function _saveLcCard(id, lcId){
   if(stat) fields.status=stat;
   if(link!==undefined) fields.linkResult=link;
   _updateInternal(id, fields);
-  render();
+  updateStats(); render();
 }
 
 // ── Multi-select dropdown ──────────────────────────────────────
@@ -1964,6 +2015,7 @@ function setPeriod(el,period){
     if(b.getAttribute('onclick')?.includes(`'${period}'`)) b.classList.add('active');
   });
   currentPeriod=period;
+  updateStats();           // cập nhật ô thống kê Tổng/Trễ/Đang làm/Hoàn thành
   render();               // cập nhật danh sách
   renderReport();         // cập nhật báo cáo
   updateListPeriodLabel(); // cập nhật nhãn kỳ trên danh sách
@@ -2002,6 +2054,34 @@ function renderReport(){
   buildChartStatus();
   buildChartTime();
   buildProjectGroups();
+  buildReportTables();
+}
+function toggleReportTable(){
+  const cv=document.getElementById('report-charts-view'), tv=document.getElementById('report-table-view'), btn=document.getElementById('report-tbl-toggle');
+  const showingTable=!tv.classList.contains('hidden');
+  cv.classList.toggle('hidden', !showingTable);
+  tv.classList.toggle('hidden', showingTable);
+  btn.textContent = showingTable ? '📋 Xem dạng bảng' : '📊 Xem dạng biểu đồ';
+}
+// Bảng dữ liệu thay thế cho 3 biểu đồ phân tích — cùng nguồn đếm với buildChartType/Dept/Status,
+// để người dùng đọc/copy số liệu chính xác (biểu đồ khó đọc số lẻ khi nhiều nhóm).
+function buildReportTables(){
+  const typeCounts={}; reportOrders.forEach(o=>{typeCounts[o.type]=(typeCounts[o.type]||0)+1;});
+  document.getElementById('tbl-type').innerHTML=Object.entries(typeCounts).map(([k,v])=>
+    `<tr><td><span class="report-dot" style="background:${getTypeColor(k)}"></span>${TYPE_MAP[k]||k}</td><td style="text-align:right">${v}</td></tr>`
+  ).join('')||`<tr><td colspan="2" style="color:var(--atext3)">Không có dữ liệu</td></tr>`;
+
+  const deptCounts={}; reportOrders.forEach(o=>{if(o.department) deptCounts[o.department]=(deptCounts[o.department]||0)+1;});
+  const deptSorted=Object.entries(deptCounts).sort((a,b)=>b[1]-a[1]);
+  document.getElementById('tbl-dept').innerHTML=deptSorted.map(([k,v])=>
+    `<tr><td>${k}</td><td style="text-align:right">${v}</td></tr>`
+  ).join('')||`<tr><td colspan="2" style="color:var(--atext3)">Không có dữ liệu</td></tr>`;
+
+  const n=reportOrders.length;
+  document.getElementById('tbl-status').innerHTML=statusConfig.map(sc=>{
+    const c=reportOrders.filter(o=>o.status===sc.id).length;
+    return `<tr><td><span class="report-dot" style="background:${sc.color||'#64748b'}"></span>${sc.icon||''} ${sc.label}</td><td style="text-align:right">${c}</td><td style="text-align:right">${n?Math.round(c/n*100):0}%</td></tr>`;
+  }).join('');
 }
 function destroyCharts(){
   Object.values(reportCharts).forEach(c=>c.destroy());
@@ -2017,8 +2097,14 @@ function getChartDefaults() {
     plugins:{legend:{labels:{color:tc,font:{size:11},padding:10}}} };
 }
 const CHART_DEFAULTS = getChartDefaults();
-const TYPE_COLORS={'thiet-ke':'#6366f1','video-ai':'#8b5cf6','media':'#ec4899','chay-ads':'#f59e0b','content':'#10b981','khac':'#64748b'};
-const STATUS_COLORS={'chua-lam':'#f97316','dang-xu-ly':'#60a5fa','hoan-thanh':'#22c55e'};
+// Bảng màu định danh (categorical) đã kiểm tra an toàn cho người mù màu — xem dataviz skill.
+// Gán màu theo VỊ TRÍ của type trong TYPE_MAP (danh sách đầy đủ, cố định), không theo thứ tự
+// xuất hiện trong dữ liệu đang lọc — để đổi bộ lọc không làm đổi màu của loại đã hiển thị trước đó.
+const CAT_PALETTE=['#3987e5','#008300','#d55181','#c98500','#199e70','#d95926','#9085e9','#e66767'];
+function getTypeColor(typeKey){
+  const idx=Object.keys(TYPE_MAP).indexOf(typeKey);
+  return idx>=0 ? CAT_PALETTE[idx%CAT_PALETTE.length] : '#64748b';
+}
 
 function buildChartType(){
   const cd=getChartDefaults();
@@ -2026,7 +2112,7 @@ function buildChartType(){
   reportOrders.forEach(o=>{counts[o.type]=(counts[o.type]||0)+1;});
   const labels=Object.keys(counts).map(k=>TYPE_MAP[k]||k);
   const data=Object.values(counts);
-  const colors=Object.keys(counts).map(k=>TYPE_COLORS[k]||'#6366f1');
+  const colors=Object.keys(counts).map(k=>getTypeColor(k));
   const ctx=document.getElementById('chart-type').getContext('2d');
   reportCharts.type=new Chart(ctx,{
     type:'doughnut',
@@ -2045,7 +2131,7 @@ function buildChartDept(){
   const ctx=document.getElementById('chart-dept').getContext('2d');
   reportCharts.dept=new Chart(ctx,{
     type:'bar',
-    data:{labels:sorted.map(e=>e[0]),datasets:[{label:'Order',data:sorted.map(e=>e[1]),backgroundColor:'rgba(99,102,241,.7)',borderColor:'#6366f1',borderWidth:1,borderRadius:5}]},
+    data:{labels:sorted.map(e=>e[0]),datasets:[{label:'Order',data:sorted.map(e=>e[1]),backgroundColor:CAT_PALETTE[0]+'cc',borderColor:CAT_PALETTE[0],borderWidth:1,borderRadius:5}]},
     options:{...cd,indexAxis:'y',
       onClick:(_,els)=>{if(els.length){const dept=sorted[els[0].index][0];openDrillDown('department',dept,`🏢 ${dept}`);}},
       scales:{x:{ticks:{color:cd._axC,stepSize:1},grid:{color:cd._gc}},y:{ticks:{color:cd._axC},grid:{display:false}}},
@@ -2055,18 +2141,18 @@ function buildChartDept(){
 }
 function buildChartStatus(){
   const cd=getChartDefaults();
-  const counts={'chua-lam':0,'dang-xu-ly':0,'hoan-thanh':0};
-  reportOrders.forEach(o=>{if(counts[o.status]!==undefined) counts[o.status]++;});
-  const statusLabels={'chua-lam':'⏳ Chưa làm','dang-xu-ly':'🔄 Đang làm','hoan-thanh':'✅ Hoàn thành'};
+  // Dùng statusConfig đầy đủ (kể cả Feedback/Huỷ và trạng thái tùy chỉnh) thay vì 3 trạng thái
+  // cố định — trước đây báo cáo đếm thiếu Feedback/Huỷ dù 2 trạng thái này đã có từ lâu.
+  const counts=statusConfig.map(sc=>reportOrders.filter(o=>o.status===sc.id).length);
   const ctx=document.getElementById('chart-status').getContext('2d');
   reportCharts.status=new Chart(ctx,{
     type:'bar',
     data:{
-      labels:Object.keys(counts).map(k=>statusLabels[k]),
-      datasets:[{data:Object.values(counts),backgroundColor:Object.keys(counts).map(k=>STATUS_COLORS[k]+'cc'),borderColor:Object.keys(counts).map(k=>STATUS_COLORS[k]),borderWidth:1,borderRadius:6}]
+      labels:statusConfig.map(sc=>`${sc.icon||''} ${sc.label}`),
+      datasets:[{data:counts,backgroundColor:statusConfig.map(sc=>(sc.color||'#64748b')+'cc'),borderColor:statusConfig.map(sc=>sc.color||'#64748b'),borderWidth:1,borderRadius:6}]
     },
     options:{...cd,
-      onClick:(_,els)=>{if(els.length){const k=Object.keys(counts)[els[0].index];openDrillDown('status',k,statusLabels[k]);}},
+      onClick:(_,els)=>{if(els.length){const sc=statusConfig[els[0].index];openDrillDown('status',sc.id,`${sc.icon||''} ${sc.label}`);}},
       scales:{x:{ticks:{color:cd._axC},grid:{display:false}},y:{ticks:{color:cd._axC,stepSize:1},grid:{color:cd._gc}}},
       plugins:{...cd.plugins,legend:{display:false}}
     }
@@ -2108,7 +2194,7 @@ function buildChartTime(){
     type:'line',
     data:{
       labels:allKeys,
-      datasets:[{label:'Order gửi',data:allKeys.map(k=>groups[k]||0),backgroundColor:'rgba(99,102,241,.2)',borderColor:'#6366f1',borderWidth:2,pointRadius:3,pointHoverRadius:5,fill:true,tension:.3}]
+      datasets:[{label:'Order gửi',data:allKeys.map(k=>groups[k]||0),backgroundColor:CAT_PALETTE[0]+'33',borderColor:CAT_PALETTE[0],borderWidth:2,pointRadius:3,pointHoverRadius:5,fill:true,tension:.3}]
     },
     options:{...cd,
       scales:{x:{ticks:{color:cd._axC,maxTicksLimit:12},grid:{color:cd._gc}},y:{ticks:{color:cd._axC,stepSize:1},grid:{color:cd._gc}}},
@@ -2168,7 +2254,7 @@ function openDrillDown(field,value,title){
           </div>
           <span class="text-xs px-2 py-0.5 rounded-full flex-shrink-0" style="background:${s.bg};color:${s.color}">${s.label}</span>
           <span class="text-xs flex-shrink-0 ${isOv?'text-red-400':''}" style="${!isOv?'color:var(--atext3)':''}">${dlStr}${isOv?' 🔴':''}</span>
-          <button type="button" onclick="closeDrill();switchTab('orders');filters={dept:'',type:'',status:''};document.getElementById('f-kw').value='${o.id}';render();" class="btn btn-ghost flex-shrink-0" style="padding:3px 7px;font-size:.7rem">↗</button>
+          <button type="button" onclick="closeDrill();switchTab('orders');filters={dept:'',type:'',status:''};document.getElementById('f-kw').value='${o.id}';updateStats();render();" class="btn btn-ghost flex-shrink-0" style="padding:3px 7px;font-size:.7rem">↗</button>
         </div>`;
       }).join('')
     : '<p class="text-white/30 text-sm text-center py-6">Không có order nào</p>';
@@ -3035,7 +3121,7 @@ function applyRangePicker(){
   document.getElementById('period-btn-custom')?.classList.add('active');
   document.getElementById('period-btn-custom-list')?.classList.add('active');
   closeRangePicker();
-  render(); updateListPeriodLabel();
+  updateStats(); render(); updateListPeriodLabel();
   loadChartJs(renderReport);
 }
 
@@ -3054,7 +3140,7 @@ const _CONTENT_SOURCES=[
   {id:'kim-oanh', name:'Kim Oanh'},
   {id:'khanh-huyen', name:'Khánh Huyền'},
 ];
-const CONTENT_APP_URL='https://content-kim-oanh.pages.dev/';
+const CONTENT_APP_URL='https://content-marketing.pages.dev/';
 // Trang Content tự hỗ trợ deep-link #ws=<board>&task=<id bài> — nhảy thẳng tới đúng bài,
 // tự chuyển board nếu khác, highlight dòng đó (xem handleDeepLink() trong file Content).
 function _contentDeepLink(ws, taskId){
@@ -3281,7 +3367,7 @@ async function _saveLcTaskStatus(taskId, selectEl){
   const t=contentTasks.find(x=>x.id===taskId); if(!t) return;
   const newStatus=selectEl.value;
   t.status=newStatus; t._contentStatus=_LC_TASK_STATUS_REVERSE[newStatus]||t._contentStatus;
-  render();
+  updateStats(); render();
   await _writeBackContentTask(t._contentTaskId, newStatus, t._ws);
 }
 async function _autoSyncContent(){
@@ -3290,7 +3376,7 @@ async function _autoSyncContent(){
   try{
     await _loadContentChannels();
     await Promise.all([_loadContentTasks(), _loadContentOrders()]);
-    render();
+    updateStats(); render();
     showToast(`Lịch Content: ${contentOrders.length} order`,'success');
   }catch(e){
     console.error(e); showToast('Lỗi: '+e.message,'error');
@@ -3341,7 +3427,7 @@ async function _autoCompleteFeedback24h() {
       o.status = 'hoan-thanh';
     } catch(e) { console.warn('[auto24h]', e); }
   }
-  if(toComplete.length) { render(); showToast(`Tự động hoàn thành ${toComplete.length} đơn feedback quá 24h`); }
+  if(toComplete.length) { updateStats(); render(); showToast(`Tự động hoàn thành ${toComplete.length} đơn feedback quá 24h`); }
 }
 
 function syncFromContent(){ _autoSyncContent(); }
@@ -3419,7 +3505,7 @@ function saveInternalTask(){
   } else {
     _newInternal({title,assignedTo,plannedDate,status,priority,linkResult,adminNote});
   }
-  render();
+  updateStats(); render();
   showToast(id?'✓ Đã cập nhật':'✓ Đã thêm công việc');
   closeAddInternal();
 }
@@ -3428,7 +3514,7 @@ function deleteInternalTask(){
   if(!confirm('Xóa công việc này?')) return;
   const idx=internalTasks.findIndex(t=>t.id===id);
   if(idx>=0){ internalTasks.splice(idx,1); _saveInternal(); }
-  render(); showToast('✓ Đã xóa','warn'); closeAddInternal();
+  updateStats(); render(); showToast('✓ Đã xóa','warn'); closeAddInternal();
 }
 
 // ── LC Order Detail Modal ──────────────────────────────────────

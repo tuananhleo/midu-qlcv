@@ -257,10 +257,10 @@
       <div id="status-chips" class="flex flex-wrap gap-1.5"></div>
     </div>
     <div class="flex flex-wrap gap-2 items-center">
-      <input id="f-kw" type="text" placeholder="🔍 Tìm kiếm..." class="cinp" style="width:100%;max-width:320px" oninput="render()">
+      <input id="f-kw" type="text" placeholder="🔍 Tìm kiếm..." class="cinp" style="width:100%;max-width:320px" oninput="updateStats();render()">
       <label class="hide-old-toggle ml-auto">
-        <input type="checkbox" id="hide-old" onchange="render()" checked>
-        <span>Ẩn hoàn thành &gt; <select id="hide-days" class="cinp" style="width:68px;display:inline-block;padding:2px 4px" onchange="render()">
+        <input type="checkbox" id="hide-old" onchange="updateStats();render()" checked>
+        <span>Ẩn hoàn thành &gt; <select id="hide-days" class="cinp" style="width:68px;display:inline-block;padding:2px 4px" onchange="updateStats();render()">
           <option value="7">7 ngày</option>
           <option value="14">14 ngày</option>
           <option value="30">30 ngày</option>
@@ -489,7 +489,7 @@ const _SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsIn
 // "<base>--<workspaceId>", lấy từ content-plan-workspaces-v1 trên Supabase.
 // Một link chung cho cả nhóm, đổi bảng bằng dropdown "BẢNG CỦA" trong app hoặc bằng
 // hash #ws=<workspaceId> để mở thẳng đúng bảng của từng người.
-const CONTENT_APP_URL = 'https://content-kim-oanh.pages.dev/';
+const CONTENT_APP_URL = 'https://content-marketing.pages.dev/';
 const CONTENT_SOURCES = [
   { id:'kim-oanh', name:'Kim Oanh', url:CONTENT_APP_URL, idPrefix:'cont-' },
   { id:'khanh-huyen', name:'Khánh Huyền', url:CONTENT_APP_URL+'#ws=khanh-huyen', idPrefix:'cont-kh-' },
@@ -751,13 +751,52 @@ function filterByStat(type) {
     const v = c.getAttribute('onclick')?.match(/'([^']*)'\s*\)/)?.[1] ?? '';
     c.classList.toggle('active', statusFilter === v && !_overdueFilter);
   });
-  render();
+  updateStats(); render();
+}
+// Dùng chung bởi render() và updateStats() — để ô thống kê (Tổng/Trễ/Đang làm/Hoàn thành)
+// luôn khớp đúng tập dữ liệu đang hiển thị bên dưới, thay vì đếm toàn bộ không lọc.
+function getFilteredRows(){
+  const kw=normVN(document.getElementById('f-kw').value);
+  const hideOld=document.getElementById('hide-old').checked;
+  const hideDays=parseInt(document.getElementById('hide-days').value);
+  const activeDept=urlDept||deptFilter;
+
+  const rows=filterByPeriod(allOrders,currentPeriod).filter(o=>{
+    if(_overdueFilter){ const _dl=parseDl(o); if(!_dl||_dl>=today) return false; }
+    if(activeDept && normDept(o.department)!==normDept(activeDept)) return false;
+    if(filters.type && o.type!==filters.type) return false;
+    if(statusFilter && o.status!==statusFilter) return false;
+    if(kw && !normVN(`${o.projectName}${o.department}${o.id}${o.projectCode||''}${o.requester||''}${o.assignedTo||''}${o.resultText||''}${o.adminNote||''}${o.clientNote||''}`).includes(kw)) return false;
+    if(hideOld&&hideDays>0&&o.status==='hoan-thanh') {
+      const sub=o.submittedAt?new Date(o.submittedAt):null;
+      if(sub&&(today-sub)/86400000>hideDays) return false;
+    }
+    return true;
+  });
+
+  // Internal tasks: lọc kỳ theo deadline + loại (map LC rawType→GAS type)
+  const _iPR = (currentPeriod && currentPeriod!=='all') ? (currentPeriod==='custom'?customRange:getDateRange(currentPeriod)) : null;
+  const intRows = [...contentOrders,...contentTasks,...internalTasks.filter(t=>!t._fromContentOrder)].filter(t=>{
+    if(_iPR) {
+      const _dl=parseDl({deadline:t.deadline||t.plannedDate||''});
+      if(_dl) { const _to=new Date(_iPR.to.getTime()+86400000); if(!(_dl>=_iPR.from&&_dl<_to)) return false; }
+    }
+    if(filters.type) {
+      const gasType = t._fromContent ? t.type : (_LC_TO_GAS[t._rawType||'']||t._rawType||'');
+      if(gasType!==filters.type) return false;
+    }
+    if(_overdueFilter){ const _idl=parseDl({deadline:t.deadline||t.plannedDate||''}); if(!_idl||_idl>=today) return false; }
+    if(activeDept&&normDept(t.department)!==normDept(activeDept)) return false;
+    if(statusFilter&&t.status!==statusFilter) return false;
+    if(kw&&!normVN(`${t.title||''}${t.projectName||''}${t.requester||''}${t.assignedTo||''}${t.adminNote||''}${t.department||''}${t.d_channel||''}${t.d_topic||''}`).includes(kw)) return false;
+    return true;
+  });
+  return {rows, intRows};
 }
 function updateStats() {
-  const base=urlDept?allOrders.filter(o=>o.department===urlDept):allOrders;
-  const all=[...base,...contentOrders,...contentTasks,...internalTasks.filter(t=>!t._fromContentOrder)];
+  const {rows, intRows} = getFilteredRows();
+  const all=[...rows,...intRows];
   const active=all.filter(o=>o.status!=='hoan-thanh'&&o.status!=='huy');
-  const feedback=all.filter(o=>o.status==='feedback').length;
   const overdue=active.filter(o=>{ const d=dlDiff({...o,deadline:o.deadline||o.plannedDate||''}); return d!==null&&d<0; });
   document.getElementById('st-total').textContent=all.length;
   document.getElementById('st-overdue').textContent=overdue.length;
@@ -790,7 +829,7 @@ function buildTypeChips() {
     const b=document.createElement('button'); b.type='button';
     b.className='chip type-chip'+(filters.type===val?' active':'');
     b.textContent=label;
-    b.onclick=()=>{ filters.type=filters.type===val?'':val; buildTypeChips(); render(); };
+    b.onclick=()=>{ filters.type=filters.type===val?'':val; buildTypeChips(); updateStats(); render(); };
     c.appendChild(b);
   };
   mk('','Tất cả');
@@ -819,43 +858,8 @@ function setStatusFilter(val){
 }
 
 function render() {
-  const kw=normVN(document.getElementById('f-kw').value);
-  const hideOld=document.getElementById('hide-old').checked;
-  const hideDays=parseInt(document.getElementById('hide-days').value);
-  const activeDept=urlDept||deptFilter;
-
-  let rows=filterByPeriod(allOrders,currentPeriod).filter(o=>{
-    if(_overdueFilter){ const _dl=parseDl(o); if(!_dl||_dl>=today) return false; }
-    if(activeDept && normDept(o.department)!==normDept(activeDept)) return false;
-    if(filters.type && o.type!==filters.type) return false;
-    if(statusFilter && o.status!==statusFilter) return false;
-    if(kw && !normVN(`${o.projectName}${o.department}${o.id}${o.projectCode||''}${o.requester||''}${o.assignedTo||''}${o.resultText||''}${o.adminNote||''}${o.clientNote||''}`).includes(kw)) return false;
-    if(hideOld&&hideDays>0&&o.status==='hoan-thanh') {
-      const sub=o.submittedAt?new Date(o.submittedAt):null;
-      if(sub&&(today-sub)/86400000>hideDays) return false;
-    }
-    return true;
-  });
-  rows=sortedList(rows);
-
-  // Internal + content tasks + content orders
-  // Internal tasks: lọc kỳ theo deadline + loại (map LC rawType→GAS type)
-  const _iPR = (currentPeriod && currentPeriod!=='all') ? (currentPeriod==='custom'?customRange:getDateRange(currentPeriod)) : null;
-  const allIntRows = [...contentOrders,...contentTasks,...internalTasks.filter(t=>!t._fromContentOrder)].filter(t=>{
-    if(_iPR) {
-      const _dl=parseDl({deadline:t.deadline||t.plannedDate||''});
-      if(_dl) { const _to=new Date(_iPR.to.getTime()+86400000); if(!(_dl>=_iPR.from&&_dl<_to)) return false; }
-    }
-    if(filters.type) {
-      const gasType = t._fromContent ? t.type : (_LC_TO_GAS[t._rawType||'']||t._rawType||'');
-      if(gasType!==filters.type) return false;
-    }
-    if(_overdueFilter){ const _idl=parseDl({deadline:t.deadline||t.plannedDate||''}); if(!_idl||_idl>=today) return false; }
-    if(activeDept&&normDept(t.department)!==normDept(activeDept)) return false;
-    if(statusFilter&&t.status!==statusFilter) return false;
-    if(kw&&!normVN(`${t.title||''}${t.projectName||''}${t.requester||''}${t.assignedTo||''}${t.adminNote||''}${t.department||''}${t.d_channel||''}${t.d_topic||''}`).includes(kw)) return false;
-    return true;
-  });
+  const {rows: filteredRows, intRows: allIntRows} = getFilteredRows();
+  const rows=sortedList(filteredRows);
   const allRows=[
     ...rows.map(r=>({...r,_isInt:false})),
     ...allIntRows.map(t=>({...t,_isInt:true,deadline:t.deadline||t.plannedDate||''}))
