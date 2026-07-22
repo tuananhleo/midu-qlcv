@@ -720,6 +720,7 @@ Sau đó có thể dùng `2_push_and_deploy.bat` để push GitHub + deploy Fire
 
 | Task | Mô tả | File |
 |------|-------|------|
+| #64 | **Đồng bộ tự động khi Content xoá/sửa/thêm** — không cần bấm "Tải lại" nữa. Chi tiết bên dưới. | admin.html, tracker.html |
 | #63 | **Fix nghiêm trọng: 1 board lỗi thoáng qua làm sập TOÀN BỘ Lịch Content, kể cả board không liên quan.** Chi tiết bên dưới. | admin.html, tracker.html |
 | #62 | **Tìm kiếm bỏ qua dấu tiếng Việt** (`normVN()`) + bổ sung field `requester` còn thiếu cho Content Order/Task, để ô tìm kiếm thực sự tìm được theo "Người yêu cầu". Chi tiết bên dưới. | admin.html, tracker.html |
 | #61 | **Fix nút "📋 Sao chép" không copy được** (đặc biệt link và đường dẫn ổ cứng). Chi tiết bên dưới. | admin.html, tracker.html |
@@ -921,6 +922,26 @@ Vì lỗi "admin thiếu việc" đã tái diễn ít nhất 2 lần (Task #58, 
 **Đã verify bằng cách giả lập lỗi thật:** ép `fetch` ném lỗi có chủ đích riêng cho board `khanh-huyen`, gọi lại `_loadContentTasks()+_loadContentOrders()` → kết quả: Kim Oanh vẫn đủ 36/36 task, chỉ thiếu đúng phần Khánh Huyền (18/19 order, đúng bằng số lượng giả lập lỗi) — không còn hiện tượng "sập cả 2 board vì 1 board lỗi" nữa.
 
 **Bài học chung:** khi có nhiều nguồn dữ liệu độc lập tải song song qua `Promise.all`, **luôn đặt try/catch bên trong từng phần tử của `.map()`**, không đặt 1 try/catch chung bọc ngoài cả `Promise.all` — nếu không, 1 nguồn lỗi sẽ kéo sập toàn bộ các nguồn khác dù chúng hoàn toàn ổn.
+
+---
+
+### Task #64 — Xoá bên Content phải tự phản ánh sang trang phòng
+
+**Yêu cầu:** "khi phía trang content xóa công việc thì bên trang của phòng cũng bị xóa nhé".
+
+**Trước khi sửa:** dữ liệu Content luôn được lấy mới từ Supabase mỗi lần `_loadContentTasks()`/`_loadContentOrders()` chạy — nên xoá bên Content **vốn đã** tự mất bên phòng, nhưng chỉ khi có 1 lần tải lại mới (F5, hoặc bấm nút "↻ Tải lại"/"↻ Lịch Content"). Không có ai chủ động tải lại thì màn hình vẫn hiện dữ liệu cũ (đã xoá) tới khi nào tải lại.
+- **tracker.html:** vốn đã có sẵn cơ chế tự tải lại toàn bộ (kể cả Content) mỗi **120 giây** (`resetRefreshTimer()`), nên vấn đề này gần như không tồn tại ở đây.
+- **admin.html:** chỉ tự đồng bộ **một lần duy nhất**, 5 giây sau khi mở trang (`setTimeout(_autoSyncContent, 5000)`) — sau đó đứng yên, phải bấm tay.
+
+**Fix (admin.html):** thêm `_periodicContentSync()` — bản không tiếng động của `_autoSyncContent()` (không khoá nút, không hiện toast), chạy lặp lại mỗi **90 giây** qua `setInterval`. Mỗi lần chạy: tải lại channels + tasks + orders từ Supabase, `updateStats()` luôn, còn `render()` (vẽ lại danh sách) thì **bỏ qua nếu đang có ô nhập liệu nào đang được focus** (`_hasActiveInput()`) — tránh render() đè mất nội dung người dùng đang gõ dở (vd đang gõ tên vào ô Phân công trên card Content Order nhưng chưa bấm Lưu).
+
+**Fix kèm theo (tracker.html):** tuy đã có auto-reload 120s sẵn, nhưng chưa có lớp bảo vệ này — thêm `_hasActiveInput()` y hệt, áp vào bước render cuối của `loadOrders()`, để tránh cùng rủi ro mất nội dung đang gõ khi tự làm mới trúng lúc đang sửa.
+
+**Đã verify bằng dữ liệu thật:**
+- Giả lập Content xoá 1 task (chặn fetch, lọc bỏ item đó khỏi response) → gọi `_periodicContentSync()` → số task giảm đúng 1, item bị xoá xác nhận biến mất khỏi `contentTasks`
+- Focus vào ô tìm kiếm rồi gọi `_periodicContentSync()` → xác nhận DOM danh sách **không đổi** (bỏ qua render), dữ liệu nền vẫn cập nhật ngầm để lần render kế tiếp là đúng
+
+**Kết quả:** xoá/sửa/thêm bên Content giờ tự phản ánh sang admin.html trong tối đa ~90 giây, tracker.html trong tối đa ~120 giây — không cần ai bấm tay, và không có rủi ro mất thao tác đang làm dở.
 
 ---
 

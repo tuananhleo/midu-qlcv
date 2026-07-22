@@ -1182,6 +1182,7 @@ function afterLogin() {
   // Admin: preload users list để dùng cho assignee dropdown
   if (perm().canUserMgmt) loadAllUsers();
   setTimeout(_autoSyncContent, 5000); // đợi loadAll xong
+  if(!_contentSyncInterval) _contentSyncInterval=setInterval(_periodicContentSync, 90000);
 }
 
 function applyRoleUI() {
@@ -3248,6 +3249,23 @@ async function _autoSyncContent(){
   }finally{
     if(btn){btn.disabled=false;btn.textContent='↻ Lịch Content';}
   }
+}
+// Đồng bộ nền định kỳ (không toast, không khoá nút) — để việc bài Content bị xoá/sửa/thêm
+// bên trang Content phản ánh sang đây mà không cần bấm "Tải lại" thủ công.
+let _contentSyncInterval=null;
+function _hasActiveInput(){
+  const el=document.activeElement;
+  return !!el && ['INPUT','TEXTAREA','SELECT'].includes(el.tagName);
+}
+async function _periodicContentSync(){
+  try{
+    await _loadContentChannels();
+    await Promise.all([_loadContentTasks(), _loadContentOrders()]);
+    updateStats();
+    // Không render khi đang có ô đang gõ dở (form sửa nội bộ, ô phân công trên card...)
+    // để tránh render() ghi đè mất nội dung chưa lưu.
+    if(!_hasActiveInput()) render();
+  }catch(e){ console.warn('[periodic content sync]', e.message); }
 }
 // ── Auto-complete feedback sau 24h ─────────────────────────────
 async function _autoCompleteFeedback24h() {

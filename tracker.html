@@ -710,9 +710,15 @@ async function loadOrders(notify=false) {
   } else { setConn('error'); }
 
   // ── B6: Render cuối + luôn tắt spinner ──────────────────────────
-  try { updateStats(); buildDeptChips(); buildTypeChips(); buildStatusChips(); updatePeriodLabel(); render(); } catch(e){}
+  // Không render đè khi đang có ô đang gõ dở (auto-reload mỗi 120s có thể trúng lúc
+  // đang sửa Phân công/Trạng thái/Link kết quả trên card) — tránh mất nội dung chưa lưu.
+  try { updateStats(); buildDeptChips(); buildTypeChips(); buildStatusChips(); updatePeriodLabel(); if(!_hasActiveInput()) render(); } catch(e){}
   document.getElementById('loading-state').classList.add('hidden');
   document.getElementById('list').classList.remove('hidden');
+}
+function _hasActiveInput(){
+  const el=document.activeElement;
+  return !!el && ['INPUT','TEXTAREA','SELECT'].includes(el.tagName);
 }
 
 function setConn(state) {
