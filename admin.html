@@ -1389,13 +1389,17 @@ function filterByStat(type) {
 }
 // Dùng chung bởi render() và updateStats() — để ô thống kê (Tổng/Trễ/Đang làm/Hoàn thành)
 // luôn khớp đúng tập dữ liệu đang hiển thị bên dưới, thay vì đếm toàn bộ không lọc.
+// Nhân viên (employee) chỉ được xem việc phân công cho mình — dùng chung cho đơn GAS
+// và Internal Task. KHÔNG áp cho Content Order/Content Task (đồng bộ từ Lịch Content):
+// nhóm content tự cập nhật bên trang Content của họ, admin.html chỉ hiển thị để phòng
+// theo dõi chung, nên cố ý để cả team nhìn thấy hết, không giới hạn theo người.
+function _isAssignedToMe(assignedToStr){
+  const assigned=(assignedToStr||'').split(',').map(s=>s.trim());
+  return assigned.includes(currentUser?.displayName||'__none__');
+}
 function getFilteredRows(){
   const kw=normVN(document.getElementById('f-kw').value);
-  // Nhân viên chỉ thấy order được phân công cho mình
-  const baseOrders = perm().viewAll ? allOrders : allOrders.filter(o => {
-    const assigned = (o.assignedTo||'').split(',').map(s=>s.trim());
-    return assigned.includes(currentUser?.displayName||'__none__');
-  });
+  const baseOrders = perm().viewAll ? allOrders : allOrders.filter(o => _isAssignedToMe(o.assignedTo));
   const rows=filterByPeriod(baseOrders,currentPeriod).filter(o=>{
     if(_overdueFilter){ const _dl=parseDl(o); if(!_dl||_dl>=today) return false; }
     if(filters.dept   && normDept(o.department)!==normDept(filters.dept)) return false;
@@ -1406,8 +1410,11 @@ function getFilteredRows(){
   });
 
   // Internal tasks: lọc kỳ theo deadline + loại (map LC rawType→GAS type)
+  // Nhân viên chỉ thấy Internal Task phân công cho mình (giống đơn GAS) — KHÔNG áp cho
+  // contentOrders/contentTasks, xem giải thích ở _isAssignedToMe().
+  const baseInternal = internalTasks.filter(t=>!t._fromContentOrder && (perm().viewAll || _isAssignedToMe(t.assignedTo)));
   const _intPeriodRange = (currentPeriod && currentPeriod!=='all') ? (currentPeriod==='custom'?customRange:getDateRange(currentPeriod)) : null;
-  const intRows = [...contentOrders,...contentTasks,...internalTasks.filter(t=>!t._fromContentOrder)].filter(t=>{
+  const intRows = [...contentOrders,...contentTasks,...baseInternal].filter(t=>{
     if(_intPeriodRange) {
       const _dl=parseDl({deadline:t.deadline||t.plannedDate||''});
       if(_dl) {
@@ -2197,9 +2204,10 @@ function buildChartTime(){
   const pad=n=>String(n).padStart(2,'0');
 
   reportOrders.forEach(o=>{
-    // Content order/task/internal task không có submittedAt (chỉ GAS order mới có) — dùng
-    // deadline/plannedDate làm mốc thời gian thay thế, tránh biểu đồ bỏ sót gần hết dữ liệu.
-    const d=parseDate(o.submittedAt)||parseDl(o);
+    // Content order/task/internal task không có submittedAt (chỉ GAS order mới có) — ưu tiên
+    // createdAt (internal task tự tạo), rồi mới tới deadline/plannedDate, tránh biểu đồ bỏ sót
+    // gần hết dữ liệu.
+    const d=parseDate(o.submittedAt)||parseDate(o.createdAt)||parseDl(o);
     if(!d) return;
     let key;
     if(currentPeriod==='today')  key=`${pad(d.getHours())}:00`;

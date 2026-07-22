@@ -1,5 +1,5 @@
 # MIDU QLCV — Tài liệu hệ thống
-> Cập nhật lần cuối: 20/07/2026  
+> Cập nhật lần cuối: 22/07/2026  
 > Tác giả: Tuan Anh Leo (nguyentuananh.maps@gmail.com)
 
 ---
@@ -127,6 +127,8 @@ Trang Content (`content-marketing.pages.dev`, file cục bộ `Content-Da-kenh-1
 
 > Nếu mất quyền ghi Supabase → vào Supabase Dashboard → Authentication → Policies → bảng `plan_data` → kiểm tra policy cho anon key.
 
+> ⚠️ **Sự cố dữ liệu (22/07/2026):** phát hiện `content-plan-tasks-v2--khanh-huyen` (toàn bộ lịch content của Khánh Huyền) rỗng hoàn toàn (`value:[]`) trong khi `content-plan-orders-v1--khanh-huyen` vẫn còn 1 order (`TK-260717-001`) tham chiếu tới 1 task đã không còn tồn tại trong mảng rỗng đó — khả năng cao thao tác xoá 1 task trên trang Content đã quét sạch nhầm toàn bộ mảng thay vì chỉ 1 phần tử (khác Task #63 — lần đó là lỗi hiển thị thoáng qua ở admin/tracker, lần này là mất dữ liệu thật trên Supabase). Đã xác nhận với Khánh Huyền và xoá order rác còn sót lại (không xoá được gì thêm vì file Content không thuộc repo này). Nếu lịch content của cô ấy vẫn trống sau khi xác nhận lại, cần báo lỗi bên phía file Content (`Content-Da-kenh-1-file.html`) để xử lý tận gốc.
+
 ---
 
 ## 5. localStorage keys
@@ -227,7 +229,9 @@ Admin có thể tạo thêm vai trò custom ngoài 5 vai trò này.
 | `leader` | **Tất cả** | ❌ | ❌ | ❌ | ❌ | ✅ |
 | `employee` | **Chỉ của mình** | ❌ | ❌ | ❌ | ❌ | ❌ |
 
-> Employee chỉ thấy đơn có `assignedTo` khớp với `displayName` của họ.
+> Employee chỉ thấy đơn có `assignedTo` khớp với `displayName` của họ (hỗ trợ đơn gán nhiều người, phân tách bằng dấu phẩy).
+>
+> **Ngoại lệ cố ý:** giới hạn "Chỉ của mình" áp dụng cho **đơn GAS** và **Internal Task** (việc tạo tay trong Tracker), nhưng **KHÔNG áp dụng cho Content Order/Content Task** (đồng bộ từ Lịch Content) — employee vẫn thấy toàn bộ card Lịch Content của mọi người, vì nhóm content tự cập nhật bên trang Content của họ, admin.html chỉ hiển thị để phòng theo dõi chung (xem Task #72).
 
 **Quyền phân công (assign):**
 
@@ -720,6 +724,12 @@ Sau đó có thể dùng `2_push_and_deploy.bat` để push GitHub + deploy Fire
 
 | Task | Mô tả | File |
 |------|-------|------|
+| #72 | **Fix lỗ hổng phân quyền: Internal Task không giới hạn theo người phụ trách** — employee đăng nhập đang thấy TẤT CẢ việc nội bộ tự tạo (Tracker), không riêng việc gán cho mình, khác với đơn GAS (đã giới hạn đúng từ trước). Đã xác nhận với người dùng: Content Order/Content Task **cố ý** không giới hạn (nhóm content tự cập nhật ở trang riêng), chỉ Internal Task cần sửa cho khớp với đơn GAS. Chi tiết bên dưới. | admin.html |
+| #71 | **Chuẩn hoá tên người phụ trách trong báo cáo** — field `coord` bên Lịch Content là ô nhập tự do nên cùng 1 người bị ghi nhiều kiểu ("Huy AI", "A Huy thiết kế", "An thiết kế"...). Thêm bảng alias `_ASSIGNEE_ALIAS` gộp về đúng tên chuẩn, chỉ ảnh hưởng hiển thị báo cáo, không sửa dữ liệu gốc. Chi tiết bên dưới. | admin.html |
+| #70 | **Fix hàng loạt lỗi số liệu tab Báo cáo + thiết kế lại giao diện**. Chi tiết bên dưới. | admin.html, tracker.html |
+| #69 | **Đổi link Lịch Content** từ `content-kim-oanh.pages.dev` sang domain chuẩn mới `content-marketing.pages.dev` (hằng số `CONTENT_APP_URL`). | admin.html, tracker.html |
+| #68 | **Tối ưu tốc độ tải Lịch Content**: song song hoá fetch channels (trước đây tuần tự từng key, chậm gấp N lần), thêm timeout 8s cho mọi fetch Content, fix race condition channels/tasks ở tracker.html, fix admin.html thiếu cache `contentTasks` (`KEY_CT_CACHE`) khiến mỗi lần F5 tạm thời mất hết card "📅 Lịch Content" vài giây trước khi tải lại đủ. Chi tiết bên dưới. | admin.html, tracker.html |
+| #67 | **Tracker.html chỉ xem, không sửa được gì nữa** — bỏ dropdown đổi trạng thái Content Task (trước đây tracker public không đăng nhập vẫn sửa được), xoá luôn các hàm ghi Supabase không còn nút nào gọi tới (`saveLcResult`, `saveLcStatus`, `_writeBackContentOrder`, `_writeBackContentTask`, `_saveLcTaskStatus`) — trang public vẫn có thể bị gọi tay qua console nếu hàm còn tồn tại dù không có UI. | tracker.html |
 | #66 | **Content Task giờ sửa được trạng thái**, ghi ngược về Supabase (trước đây chỉ xem). Chi tiết bên dưới. | admin.html, tracker.html |
 | #65 | **Thêm trạng thái "🚫 Hủy"** — trước đây Content đánh dấu "Huỷ" bị gộp chung vào "Hoàn thành", sai lệch số liệu. Chi tiết bên dưới. | admin.html, tracker.html |
 | #64 | **Đồng bộ tự động khi Content xoá/sửa/thêm** — không cần bấm "Tải lại" nữa. Chi tiết bên dưới. | admin.html, tracker.html |
@@ -730,8 +740,8 @@ Sau đó có thể dùng `2_push_and_deploy.bat` để push GitHub + deploy Fire
 | #59 | **Deep-link "Mở bài này"**: nút mở Lịch Content giờ nhảy thẳng vào đúng bài (tự chuyển board + tuần + highlight) thay vì chỉ mở trang chủ rồi phải tự tìm. Áp dụng cho cả content task và content order (nếu có `taskId` gốc). | admin.html, tracker.html |
 | #58 | **Fix đồng bộ Lịch Content bị đứt + admin thiếu việc so với tracker (nghiêm trọng)**. Chi tiết bên dưới. | admin.html, tracker.html |
 | #54 | ~~Báo cáo tách nguồn~~: thêm bộ lọc Nguồn (Tất cả / Từ phòng ban / Nội bộ MKT) vào tab Báo cáo. **⚠️ Đã kiểm tra 20/07/2026: `currentSource`/`setSource()` KHÔNG còn tồn tại trong admin.html hiện tại** — có thể đã bị revert hoặc chưa từng merge đầy đủ. Dòng lịch sử này giữ lại để tra cứu, không phản ánh code hiện tại. | admin.html |
-| #53 | **Tăng tốc load**: kiến trúc cache-first 6 bước — đọc ALL cache trước (0ms), render ngay, song song GAS+Supabase (timeout 8s), render lại sau Supabase, render lại sau GAS. Áp dụng cả admin `loadAll()` và tracker `loadOrders()`. Thêm `KEY_CT_CACHE` cho contentTasks. | admin.html, tracker.html |
-| #52 | **Báo cáo nâng cao**: (1) Không hiện "Không có order nào" khi đang tải, (2) Breakdown loại order hiện TẤT CẢ type kể cả count 0, (3) Thêm chart + bảng theo người phân công (click xem chi tiết). | admin.html |
+| #53 | ~~Tăng tốc load~~: kiến trúc cache-first 6 bước — đọc ALL cache trước (0ms), render ngay, song song GAS+Supabase (timeout 8s), render lại sau Supabase, render lại sau GAS. Áp dụng cả admin `loadAll()` và tracker `loadOrders()`. Thêm `KEY_CT_CACHE` cho contentTasks. **⚠️ Đã kiểm tra 22/07/2026: `KEY_CT_CACHE` KHÔNG tồn tại trong admin.html thực tế** (chỉ có ở tracker.html) — `showCached()` không đọc cache contentTasks, khiến mỗi lần F5 admin tạm mất card Lịch Content vài giây. Đã vá lại ở Task #68. | admin.html, tracker.html |
+| #52 | ~~Báo cáo nâng cao~~: (1) Không hiện "Không có order nào" khi đang tải, (2) Breakdown loại order hiện TẤT CẢ type kể cả count 0, (3) Thêm chart + bảng theo người phân công (click xem chi tiết). **⚠️ Đã kiểm tra 22/07/2026: mục (3) KHÔNG tồn tại trong admin.html thực tế** (không có `chart-assignee`/hàm liên quan nào) — chưa từng merge đầy đủ hoặc bị mất. Đã làm lại từ đầu ở Task #70. | admin.html |
 | #50 | ~~Fix báo cáo~~: thêm `'internal':'🏠 Nội bộ MKT'` vào `TYPE_MAP`, thêm bảng count+% dưới donut chart. **⚠️ Đã kiểm tra 20/07/2026: mục `'internal'` KHÔNG có trong `TYPE_MAP` thực tế** — có thể bị mất khi merge/revert sau đó. Đây chính là 1 trong 2 nguyên nhân của Task #60. Phần bảng count+% dưới donut chart thì vẫn còn. | admin.html |
 | #49 | **Fix zero stats**: hybrid render — render ngay sau Supabase, re-render sau GAS. | admin.html, tracker.html |
 | #48 | Channel name thật thay cho ID, modal xem chi tiết content, CONTENT_SOURCES config-driven | admin.html, tracker.html |
@@ -782,6 +792,8 @@ const d=parseDate(o.submittedAt)||parseDate(o.createdAt)||parseDl(o);
 ```
 
 Ưu tiên: `submittedAt` (GAS orders) → `createdAt` (internalTasks) → `deadline` (contentOrders fallback).
+
+**⚠️ Đã kiểm tra 22/07/2026: fix này KHÔNG còn tồn tại trong `buildChartTime()` thực tế** — code chỉ còn `parseDate(o.submittedAt)` trơ trọi, y hệt "trước" ở trên, khiến người dùng report lại đúng triệu chứng cũ ("Biểu đồ theo thời gian order chưa chạy"). Đã áp lại đúng fallback 3 tầng này trong Task #70.
 
 ---
 
@@ -971,6 +983,88 @@ Vì lỗi "admin thiếu việc" đã tái diễn ít nhất 2 lần (Task #58, 
 
 **⚠️ Sự cố xảy ra lúc verify (20-22/07/2026) — bài học quan trọng cho lần sau:** lúc test `_writeBackContentTask()`, mock `fetch` lọc theo `url.includes('content-plan-tasks-v2')` — nhưng **endpoint ghi (POST) dùng chung 1 URL `/rest/v1/plan_data` cho mọi bảng, định danh board nằm trong BODY chứ không phải URL**. Mock lọc sai khiến request POST thật lọt qua, **ghi đè "Huỷ" lên task `seed-1` thật của Kim Oanh**. Phát hiện và khôi phục lại đúng trạng thái gốc ("Đã đăng") ngay trong vài phút, xác nhận lại bằng cách đọc lại dữ liệu.
 - **Quy tắc bắt buộc từ nay:** khi test bất kỳ hàm nào có gọi `fetch(...,{method:'POST'...})` tới Supabase, **PHẢI chặn toàn bộ `window.fetch` vô điều kiện** (không lọc theo URL) trong lúc test, trả về dữ liệu giả lập cho cả GET lẫn POST — không được tin tưởng lọc theo chuỗi URL vì endpoint ghi thường dùng chung 1 URL cho nhiều bảng khác nhau.
+
+---
+
+### Task #67 — Tracker.html chỉ xem, dọn hàm ghi Supabase mồ côi
+
+**Bối cảnh:** rà lại thấy `tracker.html` (trang public, không đăng nhập) vẫn có 2 hàm `saveLcResult()`/`saveLcStatus()` ghi thẳng Supabase cho Content Order — không có nút/onclick nào gọi tới (dead code) nhưng vẫn gọi tay được qua console vì hàm ở global scope. Cũng phát hiện dropdown đổi trạng thái Content Task (Task #66) đang lộ trên tracker, trong khi chỉ nên sửa được ở admin.html.
+
+**Fix:** xoá hẳn `saveLcResult`, `saveLcStatus`, `_writeBackContentOrder`, và bỏ dropdown + `_writeBackContentTask`/`_saveLcTaskStatus`/`_LC_TASK_STATUS_REVERSE` khỏi tracker.html — card Content Task giờ chỉ hiện badge trạng thái tĩnh + nút "Mở bài này". Toàn bộ khả năng ghi dữ liệu Content giờ chỉ còn ở admin.html (có đăng nhập).
+
+---
+
+### Task #68 — Tối ưu tốc độ tải Lịch Content + fix race + fix thiếu cache
+
+**3 vấn đề độc lập, sửa cùng lượt:**
+
+1. **`_loadContentChannels()` fetch tuần tự.** Cả admin.html lẫn tracker.html đọc 3 key kênh (1 cũ + 2 board) bằng vòng lặp `for...of` có `await` bên trong → 3 round-trip nối tiếp thay vì song song. Fix: `Promise.all`, áp kết quả theo đúng thứ tự mảng để giữ nguyên ưu tiên ghi đè khi trùng id kênh.
+2. **Thiếu timeout.** Mọi fetch Content (channels/tasks/orders) không có `AbortSignal.timeout` — 1 board phản hồi chậm có thể treo cả quá trình tải/tải lại vô thời hạn. Thêm timeout 8s cho tất cả, đồng bộ với GAS fetch đã có sẵn.
+3. **Race condition ở tracker.html:** `loadOrders()` gộp chung `_loadContentChannels()` + `loadContentTasks()` + `loadContentOrders()` vào 1 `Promise.all` — vi phạm đúng yêu cầu đã ghi ở mục 9.1 ("phải load xong channels trước tasks"), khiến card thỉnh thoảng hiện ID kênh thô thay vì tên. Tách lại: đợi channels xong rồi mới `Promise.all` tasks+orders.
+4. **admin.html thiếu cache `contentTasks`.** Khác với tracker.html, admin.html chưa từng lưu/đọc cache cho `contentTasks` (không có `KEY_CT_CACHE`). Hệ quả: mỗi lần F5, `showCached()` render ngay bằng cache của `allOrders`+`contentOrders` nhưng `contentTasks` luôn rỗng cho tới khi Supabase tải xong (~vài giây) → card "📅 Lịch Content" biến mất tạm thời rồi hiện lại đủ. Đã thêm `KEY_CT_CACHE='midu_ct_cache'` (trùng key với tracker.html vì cùng origin, dùng chung localStorage), ghi trong `_loadContentTasks()`, đọc trong `showCached()`.
+
+---
+
+### Task #69 — Đổi domain Lịch Content
+
+Domain deploy thật của trang Content đổi từ `content-kim-oanh.pages.dev` sang `content-marketing.pages.dev`. Cập nhật hằng số `CONTENT_APP_URL` ở cả admin.html và tracker.html, và toàn bộ tham chiếu domain cũ trong tài liệu này (trừ các dòng lịch sử ở Task #58 mang tính ghi chép thời điểm, giữ nguyên không sửa).
+
+---
+
+### Task #70 — Fix hàng loạt lỗi số liệu tab Báo cáo + thiết kế lại giao diện
+
+**Yêu cầu gốc (thiết kế lại):** "Làm tiếp nhé" (đồng ý sau khi xem mockup) → sau khi thiết kế lại xong, người dùng test trên dữ liệu thật và phản hồi nguyên văn:
+> "Đã có rồi nhưng không có nội bộ nhé, nội bộ chính là phòng marketing truyền thông rồi, báo cáo theo hạng mục công việc như content, thiết kế, chạy ads… Biểu đồ theo thời gian order chưa chạy, thêm báo cáo theo người được phân công, À 1 order có thể phân công 2 người phụ trách chứ"
+
+4 yêu cầu trong 1 câu ứng với đúng 4 mục fix bên dưới (mục 5 gồm cả yêu cầu thêm báo cáo mới lẫn lưu ý 1 order có nhiều người phụ trách).
+
+**Thiết kế lại (admin.html):**
+- 4 ô KPI (Tổng/Hoàn thành/Đang xử lý/Trễ deadline) đổi sang dạng tile có icon + viền màu trái theo ý nghĩa (dùng bảng màu status cố định: tốt = xanh lá, cảnh báo/trễ = đỏ).
+- Thêm nút "📋 Xem dạng bảng" chuyển 3-4 biểu đồ phân tích sang bảng số liệu (đọc/copy số chính xác hơn biểu đồ khi nhiều nhóm).
+- Bảng màu biểu đồ "Theo loại order" (`TYPE_COLORS` cũ: indigo/violet/hồng/cam/xanh lá/xám) test bằng công cụ kiểm mù màu (dataviz skill) thì FAIL — 2 màu tím-indigo cạnh nhau gần như không phân biệt được, xám đọc thành "không màu". Thay bằng bộ 8 màu `CAT_PALETTE` đã kiểm chứng, gán theo VỊ TRÍ trong `TYPE_MAP` (cố định, không theo thứ tự xuất hiện trong data đang lọc) qua hàm `getTypeColor()`.
+
+**Fix lỗi số liệu phát hiện được:**
+1. **Biểu đồ "Theo trạng thái" chỉ đếm 3/5 trạng thái** (`chua-lam`/`dang-xu-ly`/`hoan-thanh`) — thiếu hẳn `feedback` và `huy` dù đã tồn tại từ Task #65. Sửa `buildChartStatus()` dùng đúng `statusConfig` đầy đủ (gồm cả trạng thái tuỳ chỉnh admin tự thêm).
+2. **Content Order bị gán cứng `type:'internal'`** thay vì hạng mục thật (thiết kế/content/ads...) — dồn hết vào 1 mục mơ hồ trên biểu đồ "Theo loại order". Sửa dùng `_LC_TO_GAS[o._rawType]` (map có sẵn) để xếp đúng nhóm, áp dụng ở cả `_loadContentOrders()` lẫn override object trong `_updateInternal()`.
+3. **"Nội bộ MKT" bị tách thành 1 phòng ban ảo** trên biểu đồ "Theo phòng ban" — Content Order/Task/internal task mặc định gán `department:'Nội bộ MKT'` (chuỗi không khớp tên phòng thật). Đổi default thành `'Marketing – Truyền thông'` ở toàn bộ chỗ gán (6 chỗ trong admin.html, 1 chỗ trong tracker.html còn bị gõ sai thành "Truyền thông Marketing" — sửa luôn).
+4. **Biểu đồ "Order theo thời gian" bỏ sót gần hết dữ liệu** — xem lại kỹ hơn ở Task #56: fix 3-tầng fallback (`submittedAt`→`createdAt`→`deadline`) đã tài liệu hoá trước đây KHÔNG còn trong code thật, chỉ còn `parseDate(o.submittedAt)` trơ trọi (Content order/task/internal task không có field này → toàn bộ bị loại). Áp lại đúng fallback 3 tầng.
+5. **Thêm mới báo cáo "Theo người phụ trách"** (biểu đồ + bảng + drill-down) — tính năng này tài liệu cũ (Task #52) từng ghi đã có nhưng kiểm tra thực tế không tồn tại. Điểm quan trọng: **1 order có thể gán nhiều người** (`assignedTo` dạng "A, B") — hàm `_splitAssignees()` tách chuỗi và cộng order đó vào tổng của TỪNG người, không tính gộp 1 lần cho cả cụm tên.
+
+**Sự cố xảy ra ngay sau khi deploy — bài học quan trọng:** bản đầu tiên lồng `<span id="r-done-pct">` vào bên trong `<div id="r-done">` để hiển thị % cạnh số. Code `document.getElementById('r-done').textContent=done` xoá sạch luôn thẻ con `r-done-pct`, khiến dòng gán tiếp theo `document.getElementById('r-done-pct').textContent=...` gọi vào phần tử vừa bị xoá (`null`) → ném lỗi, `renderReport()` dừng giữa chừng, toàn bộ phần sau (Đang xử lý/Trễ deadline/4 biểu đồ/bảng) đứng im ("Báo cáo trống rỗng"). **Quy tắc rút ra:** không đặt 1 id sẽ bị `.textContent=` ghi đè làm cha của bất kỳ id nào khác cần giữ lại — nếu cần hiển thị 2 giá trị cạnh nhau, dùng 2 phần tử NGANG HÀNG (sibling), không lồng nhau.
+
+---
+
+### Task #71 — Chuẩn hoá tên người phụ trách trong báo cáo
+
+**Yêu cầu (nguyên văn):**
+> "Phần báo cáo theo tên người được phân công cần tối ưu, không còn Huy AI, anh Huy thiết kế hay An thiết kế, trao đổi với anh về danh sách nhân sự để làm rõ"
+
+**Vấn đề:** field `coord` bên Lịch Content (Task #70 mục 5) là ô nhập tự do, không ràng buộc theo danh sách tài khoản — nên cùng 1 người bị ghi nhiều kiểu khác nhau qua thời gian, ví dụ thực tế lấy từ Supabase board Kim Oanh: `"Huy AI"`, `"A Huy thiết kế"`, `"An thiết kế"` bên cạnh phần lớn (33/40) task bỏ trống coord.
+
+**Xác nhận với người dùng (không đoán):**
+
+| Biến thể gốc | → Tên chuẩn |
+|---|---|
+| Huy AI | Đặng Ngọc Huy |
+| A Huy thiết kế / anh Huy thiết kế | Lê Ngọc Huy |
+| An thiết kế | Bùi Thành An |
+| (trống) / Khác | Giữ nguyên hành vi cũ — tính vào tên người tạo bài (VD: Kim Oanh) |
+
+**Fix:** thêm bảng `_ASSIGNEE_ALIAS` (admin.html), áp dụng trong `_splitAssignees()` qua hàm `_normAssignee()` — chuẩn hoá không phân biệt hoa/thường. **Chỉ ảnh hưởng cách hiển thị trong báo cáo** (biểu đồ/bảng/drill-down "Theo người phụ trách"), không sửa dữ liệu gốc trên Supabase — an toàn, không cần đụng vào file Content.
+
+---
+
+### Task #72 — Fix lỗ hổng phân quyền: Internal Task không giới hạn theo người phụ trách
+
+**Câu hỏi gốc:** "Với phần logic tạo tài khoản cho nhân viên vào cập nhật tiến độ vẫn ok chứ, logic việc đó thế nào, chỉ nhìn được công việc của mình phụ trách hay nhìn được tất cả"
+
+**Rà lại code (`getFilteredRows()`) phát hiện:** phần lọc theo nhân viên (`baseOrders`, dựa trên `perm().viewAll`) chỉ áp dụng cho **đơn GAS**. Biến `intRows` (gộp `contentOrders` + `contentTasks` + `internalTasks`) không hề có bước lọc theo người — nghĩa là 1 tài khoản `employee` đăng nhập vẫn thấy **toàn bộ** Content Order, Content Task, và Internal Task của mọi người, trái với tài liệu ghi "Chỉ của mình".
+
+**Xác nhận với người dùng, tách làm 2 trường hợp khác nhau:**
+- **Content Order/Content Task (Lịch Content):** giữ nguyên KHÔNG giới hạn — nguyên văn: "ở lịch content thì thôi, các bạn content sẽ cập nhật ở trang của content", tức đây là bảng theo dõi chung của phòng, nhóm content tự làm việc ở trang riêng của họ nên không cần giấu việc của nhau trong admin.html.
+- **Internal Task (việc tạo tay trong tab Tracker, nút "+ Thêm việc nội bộ"):** **cần giới hạn** cho khớp với đơn GAS — nguyên văn xác nhận: "Giới hạn theo người phụ trách (Recommended)".
+
+**Fix:** thêm hàm dùng chung `_isAssignedToMe(assignedToStr)` (tách theo dấu phẩy, so khớp `currentUser.displayName`), áp dụng cho cả `baseOrders` (đơn GAS, không đổi hành vi) và `internalTasks` (mới thêm) trong `getFilteredRows()`. `contentOrders`/`contentTasks` giữ nguyên không lọc.
 
 ---
 
