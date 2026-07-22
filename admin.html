@@ -2065,9 +2065,22 @@ function renderReport(){
   buildProjectGroups();
   buildReportTables();
 }
+// Chuẩn hoá tên người phụ trách cho báo cáo — field "coord" bên Lịch Content là ô nhập tự do
+// (không ràng buộc theo danh sách tài khoản), nên cùng 1 người bị ghi nhiều kiểu khác nhau.
+// Chỉ ảnh hưởng cách HIỂN THỊ trong báo cáo, không sửa dữ liệu gốc trên Supabase/GAS.
+const _ASSIGNEE_ALIAS={
+  'huy ai':'Đặng Ngọc Huy',
+  'a huy thiết kế':'Lê Ngọc Huy',
+  'anh huy thiết kế':'Lê Ngọc Huy',
+  'an thiết kế':'Bùi Thành An',
+};
+function _normAssignee(name){
+  const key=name.trim().toLowerCase();
+  return _ASSIGNEE_ALIAS[key]||name.trim();
+}
 // Tách assignedTo (chuỗi phân cách bởi dấu phẩy, 1 order có thể có nhiều người phụ trách)
-// thành mảng tên — dùng chung cho biểu đồ, bảng và drill-down "Theo người phụ trách".
-function _splitAssignees(o){ return (o.assignedTo||'').split(',').map(s=>s.trim()).filter(Boolean); }
+// thành mảng tên đã chuẩn hoá — dùng chung cho biểu đồ, bảng và drill-down "Theo người phụ trách".
+function _splitAssignees(o){ return (o.assignedTo||'').split(',').map(s=>_normAssignee(s)).filter(Boolean); }
 function toggleReportTable(){
   const cv=document.getElementById('report-charts-view'), tv=document.getElementById('report-table-view'), btn=document.getElementById('report-tbl-toggle');
   const showingTable=!tv.classList.contains('hidden');
