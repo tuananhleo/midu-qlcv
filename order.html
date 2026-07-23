@@ -578,28 +578,34 @@ async function scheduleCheckerLoad() {
     ]);
     var ordersRes = results[0], lichRes = results[1];
     var today = new Date(); today.setHours(0,0,0,0);
+    // Lấy cả lịch sử gần đây (14 ngày trước) lẫn sắp tới — trước đây chỉ lọc lịch TƯƠNG
+    // LAI và loại bỏ hẳn trạng thái "Đã bắn", nên lịch mới bắn gần đây không hiện ra,
+    // trong khi mục đích là giúp người gửi thấy CẢ những gì vừa bắn để tránh trùng lịch.
+    var pastLimit = new Date(today.getTime() - 14*86400000);
 
     var fromOrders = (ordersRes.orders||[])
-      .filter(function(o){ return o.type==='lich-truyen-thong' && o.status!=='hoan-thanh' && o.deadline; })
+      .filter(function(o){ return o.type==='lich-truyen-thong' && o.deadline; })
       .map(function(o){ return { dt: new Date(o.deadline), gio: o.d_gio_ban_bot||o.deadlineTime||'', chuongTrinh: o.d_chuong_trinh||o.projectName||'(chưa đặt tên)', congCu: o.d_cong_cu||'' }; });
 
     var fromSheet = (lichRes.entries||[])
-      .filter(function(e){ return e.ngayBot && String(e.trangThai||'').trim().toLowerCase()!=='đã bắn'; })
+      .filter(function(e){ return e.ngayBot; })
       .map(function(e){ return { dt: new Date(e.ngayBot), gio: e.gioBot||'', chuongTrinh: e.chuongTrinh||'(chưa đặt tên)', congCu: e.congCu||'' }; });
 
-    var upcoming = fromOrders.concat(fromSheet)
-      .filter(function(x){ return !isNaN(x.dt) && x.dt >= today; })
+    var all = fromOrders.concat(fromSheet)
+      .filter(function(x){ return !isNaN(x.dt) && x.dt >= pastLimit; })
       .sort(function(a,b){ return a.dt - b.dt; })
-      .slice(0,15);
+      .slice(-20);
 
-    if (!upcoming.length) { el.textContent = 'Chưa có lịch nào sắp tới.'; return; }
-    el.innerHTML = upcoming.map(function(x) {
+    if (!all.length) { el.textContent = 'Chưa có lịch nào.'; return; }
+    el.innerHTML = all.map(function(x) {
       var diff = Math.round((x.dt - today)/(1000*60*60*24));
-      var label = diff===0 ? 'Hôm nay' : diff===1 ? 'Ngày mai' : 'Còn '+diff+' ngày';
+      var isPast = diff < 0;
+      var label = diff===0 ? 'Hôm nay' : diff===1 ? 'Ngày mai' : diff===-1 ? 'Hôm qua' : isPast ? (Math.abs(diff)+' ngày trước') : 'Còn '+diff+' ngày';
       var fmt = x.dt.toLocaleDateString('vi-VN',{weekday:'short',day:'2-digit',month:'2-digit'});
-      return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:4px 0;border-bottom:1px solid rgba(6,182,212,.1)">'
-        + '<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _escapeHtml(x.chuongTrinh) + (x.congCu ? ' <span style="opacity:.65">· '+_escapeHtml(x.congCu)+'</span>' : '') + '</span>'
-        + '<span style="color:#06b6d4;font-weight:700;white-space:nowrap;flex-shrink:0">' + fmt + (x.gio?' · '+_escapeHtml(x.gio):'') + ' · ' + label + '</span>'
+      var color = isPast ? 'var(--text3)' : '#06b6d4';
+      return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:4px 0;border-bottom:1px solid rgba(6,182,212,.1)' + (isPast?';opacity:.65':'') + '">'
+        + '<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (isPast?'✅ ':'') + _escapeHtml(x.chuongTrinh) + (x.congCu ? ' <span style="opacity:.65">· '+_escapeHtml(x.congCu)+'</span>' : '') + '</span>'
+        + '<span style="color:'+color+';font-weight:700;white-space:nowrap;flex-shrink:0">' + fmt + (x.gio?' · '+_escapeHtml(x.gio):'') + ' · ' + label + '</span>'
         + '</div>';
     }).join('');
   } catch(e) { if(el) el.textContent = 'Không thể tải lịch.'; }

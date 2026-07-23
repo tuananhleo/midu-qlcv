@@ -1009,7 +1009,7 @@ function _newInternal(data){
     createdBy:currentUser?.displayName||'',
     type:'internal', department:'Marketing – Truyền thông'
   };
-  internalTasks.push(t); _saveInternal(); return t;
+  internalTasks.push(t); _saveInternal(); _mirrorOrderToSheet(t); return t;
 }
 function _updateInternal(id,fields){
   // Content orders: cập nhật trong contentOrders và lưu override vào internalTasks
@@ -1047,6 +1047,8 @@ function _updateInternal(id,fields){
     // Ghi ngược trạng thái + kết quả về Lịch Content (Supabase)
     const lcStatus=({'chua-lam':'Chưa làm','dang-xu-ly':'Đang làm','feedback':'Chờ feedback','hoan-thanh':'Hoàn thành'})[co.status]||'Chưa làm';
     _writeBackContentOrder(co._contentOrderId, co.linkResult||'', lcStatus, co._ws);
+    _mirrorOrderToSheet(co); // nếu chưa từng mirror thì ghi mới; nếu rồi thì no-op (đã có guard trong hàm)
+    _mirrorUpdateSheet(co.id, fields);
     return;
   }
   const t=internalTasks.find(x=>x.id===id); if(!t) return;
@@ -1063,6 +1065,7 @@ function _updateInternal(id,fields){
   if(fields.status==='hoan-thanh'&&!t.completedBy) fields.completedBy=currentUser?.displayName||'Admin';
   if(fields.status&&fields.status!=='hoan-thanh') fields.completedBy='';
   Object.assign(t,fields); _saveInternal();
+  _mirrorUpdateSheet(t.id, fields);
 }
 _loadInternal();
 
@@ -3286,6 +3289,42 @@ function _contentDeepLink(ws, taskId){
 function _getHiddenIds(){ try{return new Set(JSON.parse(localStorage.getItem(KEY_CONTENT_HIDDEN)||'[]'));}catch(e){return new Set();} }
 function _addHiddenId(id){ const s=_getHiddenIds(); s.add(id); localStorage.setItem(KEY_CONTENT_HIDDEN,JSON.stringify([...s])); }
 
+// ── Sao lưu Content Order / Content Task / Internal Task vào sheet "Orders" ──────
+// Mục đích: sheet Orders có đủ MỌI việc (không chỉ đơn gửi qua order.html) để làm
+// bản ghi tổng hợp/backup, dùng lại đúng 2 action addOrder/updateOrder đã có sẵn cho
+// order thường — không cần sửa gì thêm ở GAS. Chỉ ghi MỚI 1 lần khi thấy lần đầu
+// (đánh dấu vào localStorage để không ghi trùng dòng ở mỗi lượt đồng bộ định kỳ),
+// các lần sau chỉ update nếu đã từng ghi mới thành công. KHÔNG áp dụng cho Lịch
+// T.Thông (_fromLichTT) — loại đó đã có sheet riêng, mirror vào đây sẽ phá mục đích
+// tách riêng để tránh phình sheet Orders.
+const KEY_MIRRORED_IDS = 'midu_mirrored_sheet_ids';
+function _getMirroredIds(){ try{return new Set(JSON.parse(localStorage.getItem(KEY_MIRRORED_IDS)||'[]'));}catch(e){return new Set();} }
+function _addMirroredId(id){ const s=_getMirroredIds(); s.add(id); localStorage.setItem(KEY_MIRRORED_IDS,JSON.stringify([...s])); }
+async function _mirrorOrderToSheet(order){
+  if(!order?.id || order._fromLichTT || _getMirroredIds().has(order.id)) return;
+  try{
+    const sourceLabel=order._fromContentOrder?'Content Order':order._fromContent?'Content Task':'Việc nội bộ';
+    const payload={
+      id:order.id, type:order.type||'khac',
+      submittedAt:order.submittedAt||new Date().toLocaleString('vi-VN',{hour12:false}),
+      requester:order.requester||'', department:order.department||'',
+      projectName:order.projectName||order.title||'', projectCode:order.projectCode||'',
+      deadline:order.deadline||order.plannedDate||'', priority:order.priority||'trung-binh',
+      note:`Sao lưu tự động · nguồn: ${sourceLabel}`,
+      status:order.status||'chua-lam', assignedTo:order.assignedTo||'', linkResult:order.linkResult||'',
+      adminNote:order.adminNote||'',
+    };
+    const resp=await fetch(getGasUrl(),{method:'POST',body:JSON.stringify({action:'addOrder',order:payload})});
+    const data=await resp.json();
+    if(data && !data.error) _addMirroredId(order.id);
+  }catch(e){ console.warn('[Mirror→Sheet] lỗi ghi mới:', e.message); }
+}
+async function _mirrorUpdateSheet(id, fields){
+  if(!id || !_getMirroredIds().has(id)) return;
+  try{ await fetch(getGasUrl(),{method:'POST',body:JSON.stringify({action:'updateOrder', id, updates:fields})}); }
+  catch(e){ console.warn('[Mirror→Sheet] lỗi update:', e.message); }
+}
+
 async function _loadContentChannels(){
   const hdrs={'apikey':_SB_KEY,'Authorization':'Bearer '+_SB_KEY};
   _contentChannelMap={};
@@ -3339,6 +3378,7 @@ async function _loadContentTasks(){
   }));
   contentTasks=perSource.flat();
   try { localStorage.setItem(KEY_CT_CACHE, JSON.stringify(contentTasks)); } catch(e) {}
+  contentTasks.forEach(t=>_mirrorOrderToSheet(t)); // sao lưu vào sheet Orders (chỉ ghi mới lần đầu)
 }
 
 
@@ -3447,6 +3487,7 @@ async function _loadContentOrders(){
   contentOrders=perSource.flat();
   // Cache để load nhanh lần sau
   try { localStorage.setItem(KEY_CO_CACHE, JSON.stringify(contentOrders)); } catch(e) {}
+  contentOrders.forEach(o=>_mirrorOrderToSheet(o)); // sao lưu vào sheet Orders (chỉ ghi mới lần đầu)
 }
 
 // Lịch T.Thông — sheet riêng (tách khỏi sheet Orders để không phình to theo tần suất
@@ -3543,6 +3584,7 @@ async function _saveLcTaskStatus(taskId, selectEl){
   t.status=newStatus; t._contentStatus=_LC_TASK_STATUS_REVERSE[newStatus]||t._contentStatus;
   updateStats(); render();
   await _writeBackContentTask(t._contentTaskId, newStatus, t._ws);
+  _mirrorOrderToSheet(t); _mirrorUpdateSheet(t.id, {status:newStatus});
 }
 async function _autoSyncContent(){
   const btn=document.getElementById('sync-content-btn');

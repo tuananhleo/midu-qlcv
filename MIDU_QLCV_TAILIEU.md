@@ -1,5 +1,5 @@
 # MIDU QLCV — Tài liệu hệ thống
-> Cập nhật lần cuối: 22/07/2026  
+> Cập nhật lần cuối: 23/07/2026  
 > Tác giả: Tuan Anh Leo (nguyentuananh.maps@gmail.com)
 
 ---
@@ -16,7 +16,7 @@ Hệ thống quản lý công việc nội bộ phòng Marketing – Truyền th
 | Admin | https://tuananhleo.github.io/midu-qlcv/admin.html | admin.html |
 | Theo dõi | https://tuananhleo.github.io/midu-qlcv/tracker.html | tracker.html |
 
-**Thư mục làm việc:** `Z:\DU LIEU MIDU\MIDU\KHOI KINH DOANH VA TIEP THI\MARKETING-TRUYEN THONG\PHAN MEM QLCV\`  
+**Thư mục làm việc:** `Z:\DU LIEU 2\MIDU\KHOI KINH DOANH VA TIEP THI\MARKETING-TRUYENTHONG\PHAN MEM QLCV\` (đổi từ `Z:\DU LIEU MIDU\MIDU\KHOI KINH DOANH VA TIEP THI\MARKETING-TRUYEN THONG\PHAN MEM QLCV\` ngày 23/07/2026 — folder cũ có thể vẫn còn tồn tại song song, đã copy đầy đủ + verify git log khớp, cần tự xoá tay folder cũ sau khi xác nhận không còn dùng)  
 **GitHub repo:** https://github.com/tuananhleo/midu-qlcv (nhánh `main`)
 
 ---
@@ -724,6 +724,8 @@ Sau đó có thể dùng `2_push_and_deploy.bat` để push GitHub + deploy Fire
 
 | Task | Mô tả | File |
 |------|-------|------|
+| #75 | **Sao lưu tự động Content Order/Content Task/Internal Task vào sheet "Orders"** — theo yêu cầu "tất cả các công việc cần được lưu về sheet này". Dùng lại đúng 2 action có sẵn `addOrder`/`updateOrder` (không cần sửa GAS). Chỉ ghi MỚI 1 lần khi thấy lần đầu (đánh dấu qua `KEY_MIRRORED_IDS` trong localStorage để không trùng dòng ở mỗi lượt đồng bộ định kỳ), lần sau chỉ update khi có thay đổi trạng thái/phân công/link kết quả. **Không áp dụng cho Lịch T.Thông** (đã tách sheet riêng ở #73, mirror vào đây sẽ phá mục đích chống phình sheet). Chi tiết bên dưới. | admin.html |
+| #74 | **Fix panel "Lịch bắn gần nhất" trên order.html chỉ hiện lịch tương lai, bỏ sót lịch sử** — code cũ lọc `dt >= today` VÀ loại bỏ hẳn trạng thái "Đã bắn", nên lịch vừa bắn gần đây không hiện ra dù có dữ liệu thật, gây hiểu nhầm "chưa có lịch nào". Sửa: hiện cả lịch sử 14 ngày gần đây (đánh dấu ✅, làm mờ) lẫn lịch sắp tới, không loại trừ theo trạng thái. | order.html |
 | #73 | **Tách Lịch T.Thông khỏi sheet Orders** — order loại `lich-truyen-thong` gửi từ order.html giờ ghi thẳng vào sheet ngoài "LỊCH TRUYỀN THÔNG QUA BOT" (`LICH_TT_SHEET_ID`, thêm 6 cột: ID/Người yêu cầu/Phòng ban/Ưu tiên/Người phụ trách/Link kết quả) thay vì sheet "Orders" — tránh sheet Orders phình to theo tần suất lịch bắn bot (~1/ngày). Vẫn quản lý được như order bình thường trên admin.html (assign/trạng thái/link kết quả qua GAS action `updateLichTT`); tracker.html chỉ xem. Thêm panel "📅 Lịch bắn gần nhất" trên order.html (gộp `getOrders`+`getLichTT`) để người gửi tự tránh trùng lịch — không tự động chặn. `MIDU_MKT_Script.gs` đưa vào Git lần đầu (trước đây chưa từng track). | admin.html, tracker.html, order.html, MIDU_MKT_Script.gs |
 | #72 | **Fix lỗ hổng phân quyền: Internal Task không giới hạn theo người phụ trách** — employee đăng nhập đang thấy TẤT CẢ việc nội bộ tự tạo (Tracker), không riêng việc gán cho mình, khác với đơn GAS (đã giới hạn đúng từ trước). Đã xác nhận với người dùng: Content Order/Content Task **cố ý** không giới hạn (nhóm content tự cập nhật ở trang riêng), chỉ Internal Task cần sửa cho khớp với đơn GAS. Chi tiết bên dưới. | admin.html |
 | #71 | **Chuẩn hoá tên người phụ trách trong báo cáo** — field `coord` bên Lịch Content là ô nhập tự do nên cùng 1 người bị ghi nhiều kiểu ("Huy AI", "A Huy thiết kế", "An thiết kế"...). Thêm bảng alias `_ASSIGNEE_ALIAS` gộp về đúng tên chuẩn, chỉ ảnh hưởng hiển thị báo cáo, không sửa dữ liệu gốc. Chi tiết bên dưới. | admin.html |
@@ -1066,6 +1068,28 @@ Domain deploy thật của trang Content đổi từ `content-kim-oanh.pages.dev
 - **Internal Task (việc tạo tay trong tab Tracker, nút "+ Thêm việc nội bộ"):** **cần giới hạn** cho khớp với đơn GAS — nguyên văn xác nhận: "Giới hạn theo người phụ trách (Recommended)".
 
 **Fix:** thêm hàm dùng chung `_isAssignedToMe(assignedToStr)` (tách theo dấu phẩy, so khớp `currentUser.displayName`), áp dụng cho cả `baseOrders` (đơn GAS, không đổi hành vi) và `internalTasks` (mới thêm) trong `getFilteredRows()`. `contentOrders`/`contentTasks` giữ nguyên không lọc.
+
+---
+
+### Task #74 — Fix panel "Lịch bắn gần nhất" bỏ sót lịch sử
+
+**Vấn đề:** `scheduleCheckerLoad()` (order.html, thêm ở Task #73) lọc `x.dt >= today` (chỉ tương lai) và loại hẳn entry có trạng thái "Đã bắn" — nên lịch vừa bắn hôm qua/hôm nay không hiện, trong khi mục đích chính là giúp người gửi thấy được lịch GẦN ĐÂY (cả đã bắn lẫn sắp bắn) để tự tránh trùng.
+
+**Fix:** đổi ngưỡng lọc thành `dt >= today - 14 ngày` (gộp cả lịch sử gần lẫn sắp tới), bỏ điều kiện loại trừ theo trạng thái. Lịch đã qua hiển thị mờ đi (`opacity:.65`) kèm ✅ và nhãn "X ngày trước" để phân biệt trực quan với lịch sắp tới.
+
+---
+
+### Task #75 — Sao lưu tự động mọi loại việc vào sheet "Orders"
+
+**Yêu cầu (nguyên văn):** "Tất cả các công việc cần được lưu về sheet này nữa nhé, có logic cho việc này chưa" — xác nhận phạm vi: cả Content Order lẫn Content Task lẫn Internal Task đều cần mirror.
+
+**Hiện trạng trước khi sửa:** chỉ đơn gửi qua order.html mới lưu vào sheet "Orders". Content Order/Task sống hẳn trong Supabase, Internal Task chỉ nằm trong `localStorage` — không có bản sao lưu nào ở Google Sheet, nghĩa là dữ liệu Internal Task có thể mất hoàn toàn nếu xoá dữ liệu trình duyệt hoặc đổi máy.
+
+**Fix (admin.html, không cần sửa GAS — dùng lại đúng action `addOrder`/`updateOrder` đã có sẵn):**
+- `_mirrorOrderToSheet(order)` — ghi 1 dòng mới vào sheet Orders, đánh dấu đã ghi qua `KEY_MIRRORED_IDS` (localStorage) để không ghi trùng ở các lượt đồng bộ định kỳ sau. Bỏ qua nếu `order._fromLichTT` (loại đó có sheet riêng, xem Task #73).
+- `_mirrorUpdateSheet(id, fields)` — chỉ update nếu id đã từng được `_mirrorOrderToSheet` ghi thành công (tránh update vào dòng không tồn tại).
+- Gọi ở 5 điểm: `_loadContentOrders()`/`_loadContentTasks()` (mirror khi thấy lần đầu), `_newInternal()` (mirror ngay khi tạo), `_updateInternal()` cả 2 nhánh (content order override + internal task thường — mirror update), `_saveLcTaskStatus()` (mirror update khi đổi trạng thái Content Task).
+- Cột "Ghi chú" (note) của dòng sao lưu ghi rõ nguồn gốc (VD: "Sao lưu tự động · nguồn: Content Order") để phân biệt với đơn gửi thật qua order.html khi xem trực tiếp trên Sheet.
 
 ---
 
