@@ -480,6 +480,7 @@ const KEY_INTERNAL       = 'midu_internal_tasks';
 const KEY_CONTENT_HIDDEN = 'midu_content_hidden';
 const KEY_CO_CACHE       = 'midu_content_orders_cache';
 const KEY_CT_CACHE       = 'midu_ct_cache';
+const KEY_LTT_CACHE      = 'midu_lichtt_cache';
 const KEY_CACHE          = 'midu_mkt_orders_cache';
 const _SB_URL = 'https://loqcqtuouagzaqwdmhji.supabase.co';
 const _SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxvcWNxdHVvdWFnemFxd2RtaGppIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMwNjUyNDgsImV4cCI6MjA5ODY0MTI0OH0.zoiWEgtNORL1ecxAgSpkZ3HMDaLP3nnpma3moM8QsDc';
@@ -508,6 +509,7 @@ const _CONTENT_STATUS_MAP = {
 let internalTasks = [];
 let contentTasks  = [];
 let contentOrders = [];
+let lichTTOrders  = []; // order Lịch T.Thông — sheet riêng (LICH_TT_SHEET_ID qua GAS), chỉ xem
 let _contentChannelMap = {}; // { 'ch-menaq7': 'Fanpage Midu MenaQ7', ... }
 
 // ── LC Order helpers ───────────────────────────────────────────
@@ -675,9 +677,10 @@ async function loadOrders(notify=false) {
   try { const c=JSON.parse(localStorage.getItem(KEY_CACHE)||'null'); if(c?.orders?.length){allOrders=c.orders;if(c.schema)dynamicSchema=c.schema;} } catch(e){}
   try { const c=JSON.parse(localStorage.getItem(KEY_CT_CACHE)||'null'); if(Array.isArray(c)&&c.length) contentTasks=c; } catch(e){}
   try { const c=JSON.parse(localStorage.getItem(KEY_CO_CACHE)||'null'); if(Array.isArray(c)&&c.length) contentOrders=c; } catch(e){}
+  try { const c=JSON.parse(localStorage.getItem(KEY_LTT_CACHE)||'null'); if(Array.isArray(c)&&c.length) lichTTOrders=c; } catch(e){}
 
   // ── B2: Render ngay nếu có cache ────────────────────────────────
-  const _hasData=()=>allOrders.length||contentOrders.length||contentTasks.length||internalTasks.filter(t=>!t._fromContentOrder).length;
+  const _hasData=()=>allOrders.length||contentOrders.length||contentTasks.length||lichTTOrders.length||internalTasks.filter(t=>!t._fromContentOrder).length;
   if(_hasData()){
     try { updateStats(); buildDeptChips(); buildTypeChips(); buildStatusChips(); updatePeriodLabel(); render(); } catch(e){}
     document.getElementById('loading-state').classList.add('hidden');
@@ -695,6 +698,7 @@ async function loadOrders(notify=false) {
   await Promise.all([
     loadContentTasks().catch(e=>console.warn('[ContentTasks]',e.message)),
     loadContentOrders().catch(e=>console.warn('[ContentOrders]',e.message)),
+    loadLichTT().catch(e=>console.warn('[LichTT]',e.message)),
   ]);
   if(_hasData()){
     try { updateStats(); buildDeptChips(); buildTypeChips(); buildStatusChips(); updatePeriodLabel(); render(); } catch(e){}
@@ -776,13 +780,13 @@ function getFilteredRows(){
 
   // Internal tasks: lọc kỳ theo deadline + loại (map LC rawType→GAS type)
   const _iPR = (currentPeriod && currentPeriod!=='all') ? (currentPeriod==='custom'?customRange:getDateRange(currentPeriod)) : null;
-  const intRows = [...contentOrders,...contentTasks,...internalTasks.filter(t=>!t._fromContentOrder)].filter(t=>{
+  const intRows = [...contentOrders,...contentTasks,...lichTTOrders,...internalTasks.filter(t=>!t._fromContentOrder)].filter(t=>{
     if(_iPR) {
       const _dl=parseDl({deadline:t.deadline||t.plannedDate||''});
       if(_dl) { const _to=new Date(_iPR.to.getTime()+86400000); if(!(_dl>=_iPR.from&&_dl<_to)) return false; }
     }
     if(filters.type) {
-      const gasType = t._fromContent ? t.type : (_LC_TO_GAS[t._rawType||'']||t._rawType||'');
+      const gasType = (t._fromContent||t._fromLichTT) ? t.type : (_LC_TO_GAS[t._rawType||'']||t._rawType||'');
       if(gasType!==filters.type) return false;
     }
     if(_overdueFilter){ const _idl=parseDl({deadline:t.deadline||t.plannedDate||''}); if(!_idl||_idl>=today) return false; }
@@ -1039,6 +1043,35 @@ function renderIntCard(t) {
     </div>`;
   }
 
+  // ── Lịch T.Thông — chỉ xem (sửa trạng thái/phân công chỉ làm được ở admin.html) ──
+  if(t._fromLichTT){
+    const e=t._rawEntry||{};
+    return `<div class="${cardCls}">
+      <div class="p-4">
+        <div class="flex flex-wrap items-center gap-2 mb-1">
+          <span class="meta-tag" style="background:rgba(6,182,212,.15);color:#06b6d4">📅 Lịch T.Thông</span>
+          ${e.congCu?`<span class="meta-tag" style="background:rgba(6,182,212,.1);color:#0891b2">🛠️ ${e.congCu}</span>`:''}
+          ${t.department?`<span class="meta-tag">🏢 ${t.department}</span>`:''}
+          <span class="px-2 py-0.5 rounded-full text-xs font-bold" style="background:${s.bg};color:${s.color}">${s.label}</span>
+          <span class="ml-auto font-mono text-xs" style="color:var(--ttext3)">${t._lichTTId||t.id}</span>
+        </div>
+        <div class="font-bold text-sm mb-3" style="color:var(--ttext)">${t.projectName||'Không tên'}</div>
+        <div class="flex flex-wrap gap-x-6 gap-y-1 text-xs mb-2">
+          ${t.requester?`<div><span style="color:var(--ttext3)">Người yêu cầu: </span><span class="font-medium" style="color:var(--ttext2)">${t.requester}</span></div>`:''}
+          <div><span style="color:var(--ttext3)">Ngày bắn bot: </span><span class="${dlCls}" style="${!dlCls?'color:var(--ttext2)':''}">${dlStr}${dlTimeStr}${dlBadge}</span></div>
+          ${e.page?`<div><span style="color:var(--ttext3)">Page: </span><span style="color:var(--ttext2)">${e.page}</span></div>`:''}
+          ${t.assignedTo?`<div><span style="color:var(--ttext3)">Phụ trách: </span><span class="font-medium" style="color:var(--ttext2)">👤 ${t.assignedTo}</span></div>`:''}
+        </div>
+        ${e.noiDung?`<div class="text-xs italic mb-2" style="color:var(--ttext3)">📝 ${e.noiDung}</div>`:''}
+      </div>
+    ${t.linkResult?`<div class="info-strip space-y-2"><div class="flex items-center gap-2 flex-wrap">
+        <span class="text-xs flex-shrink-0" style="color:var(--ttext3)">🔗 Kết quả:</span>
+        ${isUrl(t.linkResult)?`<a href="${t.linkResult}" target="_blank" rel="noopener" class="text-xs text-indigo-400 underline break-all flex-1">${t.linkResult}</a>`:`<span class="text-xs break-all flex-1" style="color:var(--ttext2)">${t.linkResult}</span>`}
+        <button type="button" onclick="copyLink(this)" data-copy="${escapeHtml(t.linkResult||'')}" class="btn btn-ghost flex-shrink-0" style="padding:4px 8px;font-size:.75rem">📋 Sao chép</button>
+      </div></div>`:''}
+    </div>`;
+  }
+
   // ── Content task từ Lịch Content — chỉ xem (tracker là trang public, không đăng nhập;
   // sửa trạng thái ghi ngược về Supabase chỉ cho phép ở admin.html, xem Task #66) ──
   if(t._fromContent){
@@ -1252,7 +1285,9 @@ async function loadContentOrders(){
           refLink, adminNote:'',
           priority:o.priority==='Cao'?'cao':o.priority==='Thấp'?'thap':'trung-binh',
           createdBy:'Lịch Content · '+(o.requester||src.name),
-          type:'internal', department:o.department||'Marketing – Truyền thông',
+          // type: map về đúng hạng mục GAS (khớp với fix tương ứng ở admin.html) thay vì
+          // 'internal' chung chung — dùng nhất quán cho chip lọc "Loại công việc".
+          type:_LC_TO_GAS[o.type]||'khac', department:o.department||'Marketing – Truyền thông',
           d_channel:(_contentChannelMap[o.channelId]||o.channelId)||'',
         };
       });
@@ -1262,6 +1297,37 @@ async function loadContentOrders(){
   // Cache để load nhanh lần sau
   try { localStorage.setItem(KEY_CO_CACHE, JSON.stringify(contentOrders)); } catch(_e) {}
   }catch(e){console.warn('[loadContentOrders]',e.message);}
+}
+
+// Lịch T.Thông — sheet riêng (LICH_TT_SHEET_ID qua GAS). Tracker chỉ xem, không sửa
+// (sửa trạng thái/phân công chỉ làm được ở admin.html).
+async function loadLichTT(){
+  try{
+    const resp=await fetch(`${getGasUrl()}?action=getLichTT`,{signal:AbortSignal.timeout(8000)});
+    if(!resp.ok) return;
+    const data=await resp.json();
+    lichTTOrders=(data.entries||[]).filter(e=>e.id).map(e=>{
+      const briefLines=[
+        e.gioBot?`Giờ bắn bot: ${e.gioBot}`:'',
+        e.page?`Page/Tài khoản: ${e.page}`:'',
+        e.congCu?`Công cụ: ${e.congCu}`:'',
+        e.doiTuong?`Đối tượng: ${e.doiTuong}`:'',
+        e.noiDung?`Nội dung: ${e.noiDung}`:'',
+      ].filter(Boolean);
+      return {
+        id:'ltt-'+e.id, _internal:true, _fromLichTT:true, _lichTTId:e.id, _rawEntry:e,
+        title:e.chuongTrinh||'(Chưa đặt tên)', projectName:e.chuongTrinh||'(Chưa đặt tên)',
+        requester:e.requester||'', department:e.department||'Marketing – Truyền thông',
+        assignedTo:e.assignedTo||'',
+        deadline:e.ngayBot||'', deadlineTime:e.gioBot||'', plannedDate:e.ngayBot||'',
+        status:e.status||'chua-lam', linkResult:e.linkResult||'',
+        priority:e.priority||'trung-binh',
+        type:'lich-truyen-thong', createdBy:e.requester||'',
+        adminNote:briefLines.join('\n'),
+      };
+    });
+    try { localStorage.setItem(KEY_LTT_CACHE, JSON.stringify(lichTTOrders)); } catch(e) {}
+  }catch(e){ console.warn('[LichTT]', e.message); }
 }
 
 // ── Page init ──────────────────────────────────────────────────

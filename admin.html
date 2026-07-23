@@ -981,9 +981,11 @@ _loadConfigs();
 const KEY_INTERNAL = 'midu_internal_tasks';
 const KEY_CONTENT_HIDDEN = 'midu_content_hidden'; // IDs ẩn/xóa
 const KEY_CO_CACHE = 'midu_content_orders_cache';
+const KEY_LTT_CACHE = 'midu_lichtt_cache';
 let internalTasks  = [];
 let contentTasks   = []; // live từ Supabase, không lưu localStorage
 let contentOrders  = []; // orders từ lịch content Oanh (content-plan-orders-v1)
+let lichTTOrders   = []; // order Lịch T.Thông — sheet riêng (LICH_TT_SHEET_ID qua GAS), tách khỏi sheet Orders
 let _contentChannelMap = {}; // { 'ch-menaq7': 'Fanpage Midu MenaQ7', ... }
 function _loadInternal(){
   try{internalTasks=JSON.parse(localStorage.getItem(KEY_INTERNAL)||'[]');}catch(e){internalTasks=[];}
@@ -1289,8 +1291,12 @@ function showCached() {
     const ctCached = JSON.parse(localStorage.getItem(KEY_CT_CACHE)||'null');
     if (Array.isArray(ctCached) && ctCached.length) contentTasks = ctCached;
   } catch(e) {}
+  try {
+    const lttCached = JSON.parse(localStorage.getItem(KEY_LTT_CACHE)||'null');
+    if (Array.isArray(lttCached) && lttCached.length) lichTTOrders = lttCached;
+  } catch(e) {}
   // Render nếu có bất kỳ dữ liệu nào
-  if (allOrders.length || contentOrders.length || contentTasks.length || internalTasks.length) {
+  if (allOrders.length || contentOrders.length || contentTasks.length || lichTTOrders.length || internalTasks.length) {
     try { updateStats(); buildDeptChips(); buildTypeChips(); renderStatusChips(); updateListPeriodLabel(); render(); } catch(e) {}
     document.getElementById('loading-state').classList.add('hidden');
     document.getElementById('list').classList.remove('hidden');
@@ -1303,7 +1309,7 @@ async function loadAll(notify=false) {
   const gasSchema = fetch(`${getGasUrl()}?action=getFormSchema&_=${Date.now()}`, {signal:AbortSignal.timeout(15000)}).then(r=>r.json()).catch(()=>null);
   // Load Supabase (fast) and render immediately. Channels trước để tasks map ra tên kênh
   // thay vì ID thô (contentTasks đọc _contentChannelMap ngay lúc map, không phải lazy).
-  try { await _loadContentChannels(); await Promise.all([_loadContentTasks(), _loadContentOrders()]); } catch(e) { console.warn('[loadAll] supabase:', e.message); }
+  try { await _loadContentChannels(); await Promise.all([_loadContentTasks(), _loadContentOrders(), _loadLichTT()]); } catch(e) { console.warn('[loadAll] supabase:', e.message); }
   try { updateStats(); buildDeptChips(); buildTypeChips(); renderStatusChips(); render(); } catch(e) { console.error('[render] error:', e); }
   document.getElementById('loading-state').classList.add('hidden');
   document.getElementById('list').classList.remove('hidden');
@@ -1414,7 +1420,7 @@ function getFilteredRows(){
   // contentOrders/contentTasks, xem giải thích ở _isAssignedToMe().
   const baseInternal = internalTasks.filter(t=>!t._fromContentOrder && (perm().viewAll || _isAssignedToMe(t.assignedTo)));
   const _intPeriodRange = (currentPeriod && currentPeriod!=='all') ? (currentPeriod==='custom'?customRange:getDateRange(currentPeriod)) : null;
-  const intRows = [...contentOrders,...contentTasks,...baseInternal].filter(t=>{
+  const intRows = [...contentOrders,...contentTasks,...lichTTOrders,...baseInternal].filter(t=>{
     if(_intPeriodRange) {
       const _dl=parseDl({deadline:t.deadline||t.plannedDate||''});
       if(_dl) {
@@ -1423,7 +1429,7 @@ function getFilteredRows(){
       }
     }
     if(filters.type) {
-      const gasType=t._fromContent?t.type:(_LC_TO_GAS[t._rawType||'']||t._rawType||'');
+      const gasType=(t._fromContent||t._fromLichTT)?t.type:(_LC_TO_GAS[t._rawType||'']||t._rawType||'');
       if(gasType!==filters.type) return false;
     }
     if(_overdueFilter){ const _idl=parseDl({deadline:t.deadline||t.plannedDate||''}); if(!_idl||_idl>=today) return false; }
@@ -1651,6 +1657,55 @@ function renderIntCard(t){
         <div class="flex-shrink-0 flex gap-1.5 items-end">
           <div><label>&nbsp;</label><button type="button" onclick="_saveLcCard('${t.id}','${lcId}')" class="btn btn-primary">💾 Lưu</button></div>
           <div><label>&nbsp;</label><button type="button" onclick="openEditInternal('${t.id}')" class="btn btn-ghost">✏️ Sửa</button></div>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  // ── Lịch T.Thông — sheet riêng (LICH_TT_SHEET_ID), quản lý như order bình
+  // thường (phân công/trạng thái/link kết quả) nhưng ghi vào GAS action updateLichTT.
+  if(t._fromLichTT){
+    const e=t._rawEntry||{};
+    const lttId='ltt_'+t.id.replace(/[^a-z0-9]/gi,'_');
+    return `<div class="${cardCls}">
+      <div class="p-4">
+        <div class="flex flex-wrap items-center gap-2 mb-1">
+          <span class="meta-tag" style="background:rgba(6,182,212,.15);color:#06b6d4">📅 Lịch T.Thông</span>
+          ${e.congCu?`<span class="meta-tag" style="background:rgba(6,182,212,.1);color:#0891b2">🛠️ ${e.congCu}</span>`:''}
+          ${t.department?`<span class="meta-tag">🏢 ${t.department}</span>`:''}
+          <span class="px-2 py-0.5 rounded-full text-xs font-bold" style="background:${s.bg};color:${s.color}">${s.label}</span>
+          <span class="ml-auto text-xs font-mono" style="color:var(--atext3)">${t._lichTTId||t.id}</span>
+        </div>
+        <div class="font-bold text-sm mb-3" style="color:var(--atext)">${t.projectName||'Không tên'}</div>
+        <div class="flex flex-wrap gap-x-6 gap-y-1 text-xs mb-2">
+          ${t.requester?`<div><span style="color:var(--atext3)">Người yêu cầu: </span><span class="font-medium" style="color:var(--atext2)">${t.requester}</span></div>`:''}
+          <div><span style="color:var(--atext3)">Ngày bắn bot: </span><span class="${dlCls}">${dlStr}${dlTimeStr}${dlBadge}</span></div>
+          ${e.page?`<div><span style="color:var(--atext3)">Page: </span><span style="color:var(--atext2)">${e.page}</span></div>`:''}
+          ${e.doiTuong?`<div><span style="color:var(--atext3)">Đối tượng: </span><span style="color:var(--atext2)">${e.doiTuong}</span></div>`:''}
+          ${t.assignedTo?`<div><span style="color:var(--atext3)">Phân công: </span><span class="font-medium" style="color:var(--atext2)">👤 ${t.assignedTo}</span></div>`:''}
+        </div>
+        ${e.noiDung?`<div class="text-xs italic mb-2" style="color:var(--atext3)">📝 ${e.noiDung}</div>`:''}
+        ${t.linkResult?`<div class="mt-2 pt-2 border-t" style="border-color:var(--acborder)">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="text-xs flex-shrink-0" style="color:var(--atext3)">🔗 Kết quả:</span>
+            ${isUrl(t.linkResult)?`<a href="${t.linkResult}" target="_blank" rel="noopener" class="text-xs text-indigo-400 underline break-all flex-1">${t.linkResult}</a>`:`<span class="text-xs break-all flex-1" style="color:var(--atext2)">${t.linkResult}</span>`}
+            <button type="button" onclick="copyLink(this)" data-copy="${escapeHtml(t.linkResult)}" class="btn btn-ghost flex-shrink-0" style="padding:4px 8px;font-size:.75rem">📋 Sao chép</button>
+            ${isUrl(t.linkResult)?`<a href="${t.linkResult}" target="_blank" rel="noopener" class="btn btn-ghost flex-shrink-0" style="padding:4px 8px;font-size:.75rem">🔗 Mở link</a>`:''}
+          </div>
+        </div>`:''}
+      </div>
+      <div class="admin-strip">
+        <div style="min-width:150px;flex:1"><label>Phân công</label>
+          <input id="${lttId}_asgn" type="text" class="cinp" value="${(t.assignedTo||'').replace(/"/g,'&quot;')}" placeholder="Tên người thực hiện...">
+        </div>
+        <div style="min-width:130px"><label>Trạng thái</label>
+          <select class="cinp" id="${lttId}_stat">${statusOpts}</select>
+        </div>
+        <div style="min-width:200px;flex:2"><label>Link kết quả</label>
+          <input id="${lttId}_link" type="text" class="cinp" value="${(t.linkResult||'').replace(/"/g,'&quot;')}" placeholder="https://...">
+        </div>
+        <div class="flex-shrink-0 flex gap-1.5 items-end">
+          <div><label>&nbsp;</label><button type="button" onclick="_saveLichTTCard('${t.id}','${lttId}')" class="btn btn-primary">💾 Lưu</button></div>
         </div>
       </div>
     </div>`;
@@ -2041,6 +2096,7 @@ function renderReport(){
     ...allOrders,
     ...contentOrders.map(t=>({...t,department:t.department||'Marketing – Truyền thông',type:t.type||'internal'})),
     ...contentTasks.map(t=>({...t,department:t.department||'Marketing – Truyền thông',type:t.type||'internal'})),
+    ...lichTTOrders,
     ...internalTasks.filter(t=>!contentOrders.find(co=>co._contentOrderId===t._contentOrderId)) // tránh duplicate
   ];
   reportOrders=filterByPeriod(allForReport,currentPeriod);
@@ -3393,6 +3449,56 @@ async function _loadContentOrders(){
   try { localStorage.setItem(KEY_CO_CACHE, JSON.stringify(contentOrders)); } catch(e) {}
 }
 
+// Lịch T.Thông — sheet riêng (tách khỏi sheet Orders để không phình to theo tần suất
+// lịch bắn bot, xem GAS: LICH_TT_SHEET_ID). Vẫn hiển thị/sửa như order bình thường.
+async function _loadLichTT(){
+  try{
+    const resp=await fetch(`${getGasUrl()}?action=getLichTT`,{signal:AbortSignal.timeout(8000)});
+    if(!resp.ok){ return; }
+    const data=await resp.json();
+    lichTTOrders=(data.entries||[]).filter(e=>e.id).map(e=>{
+      const briefLines=[
+        e.gioBot?`Giờ bắn bot: ${e.gioBot}`:'',
+        e.page?`Page/Tài khoản: ${e.page}`:'',
+        e.congCu?`Công cụ: ${e.congCu}`:'',
+        e.doiTuong?`Đối tượng: ${e.doiTuong}`:'',
+        e.noiDung?`Nội dung: ${e.noiDung}`:'',
+      ].filter(Boolean);
+      return {
+        id:'ltt-'+e.id, _internal:true, _fromLichTT:true, _lichTTId:e.id,
+        _rawEntry:e,
+        title:e.chuongTrinh||'(Chưa đặt tên)', projectName:e.chuongTrinh||'(Chưa đặt tên)',
+        requester:e.requester||'', department:e.department||'Marketing – Truyền thông',
+        assignedTo:e.assignedTo||'',
+        deadline:e.ngayBot||'', deadlineTime:e.gioBot||'', plannedDate:e.ngayBot||'',
+        status:e.status||'chua-lam', linkResult:e.linkResult||'',
+        priority:e.priority||'trung-binh',
+        type:'lich-truyen-thong', createdBy:e.requester||'',
+        adminNote:briefLines.join('\n'),
+      };
+    });
+    try { localStorage.setItem(KEY_LTT_CACHE, JSON.stringify(lichTTOrders)); } catch(e) {}
+  }catch(e){ console.warn('[LichTT]', e.message); }
+}
+// Cập nhật trạng thái/phân công/link kết quả cho 1 order Lịch T.Thông (ghi thẳng
+// vào sheet Lịch T.Thông qua GAS, không qua updateOrderData của sheet Orders).
+async function _updateLichTT(id, fields){
+  const t=lichTTOrders.find(x=>x.id===id); if(!t) return;
+  Object.assign(t,fields);
+  try{
+    await fetch(getGasUrl(),{method:'POST',body:JSON.stringify({action:'updateLichTT', id:t._lichTTId, updates:fields})});
+  }catch(e){ console.warn('[LichTT update]', e.message); }
+}
+function _saveLichTTCard(id, lcId){
+  const asgn=(document.getElementById(lcId+'_asgn')?.value||'').trim();
+  const stat=document.getElementById(lcId+'_stat')?.value||'';
+  const link=(document.getElementById(lcId+'_link')?.value||'').trim();
+  const fields={assignedTo:asgn, linkResult:link};
+  if(stat) fields.status=stat;
+  _updateLichTT(id, fields);
+  updateStats(); render();
+}
+
 // Ghi ngược deliverableLink + status về lịch content (content-plan-orders-v1--<workspaceId>)
 async function _writeBackContentOrder(orderId, deliverableLink, lcStatus, ws){
   if(!ws) return; // không rõ order thuộc board nào thì không đoán, tránh ghi nhầm board
@@ -3443,7 +3549,7 @@ async function _autoSyncContent(){
   if(btn){btn.disabled=true;btn.textContent='⏳ Đang tải...';}
   try{
     await _loadContentChannels();
-    await Promise.all([_loadContentTasks(), _loadContentOrders()]);
+    await Promise.all([_loadContentTasks(), _loadContentOrders(), _loadLichTT()]);
     updateStats(); render();
     showToast(`Lịch Content: ${contentOrders.length} order`,'success');
   }catch(e){
@@ -3462,7 +3568,7 @@ function _hasActiveInput(){
 async function _periodicContentSync(){
   try{
     await _loadContentChannels();
-    await Promise.all([_loadContentTasks(), _loadContentOrders()]);
+    await Promise.all([_loadContentTasks(), _loadContentOrders(), _loadLichTT()]);
     updateStats();
     // Không render khi đang có ô đang gõ dở (form sửa nội bộ, ô phân công trên card...)
     // để tránh render() ghi đè mất nội dung chưa lưu.
