@@ -1094,6 +1094,8 @@ Domain deploy thật của trang Content đổi từ `content-kim-oanh.pages.dev
 - Gọi ở 5 điểm: `_loadContentOrders()`/`_loadContentTasks()` (mirror khi thấy lần đầu), `_newInternal()` (mirror ngay khi tạo), `_updateInternal()` cả 2 nhánh (content order override + internal task thường — mirror update), `_saveLcTaskStatus()` (mirror update khi đổi trạng thái Content Task).
 - Cột "Ghi chú" (note) của dòng sao lưu ghi rõ nguồn gốc (VD: "Sao lưu tự động · nguồn: Content Order") để phân biệt với đơn gửi thật qua order.html khi xem trực tiếp trên Sheet.
 
+> ⚠️ **QUY TẮC BẮT BUỘC (đọc trước khi đụng vào bất cứ đâu dùng `allOrders`/`getOrders`):** sheet "Orders" giờ chứa 2 loại dòng trộn lẫn — đơn thật gửi qua order.html, VÀ bản sao lưu (mirror) của Content Order/Task/Internal Task. Sheet chỉ dùng để **backup**, KHÔNG được hiển thị lại dòng mirror ở bất kỳ đâu (danh sách, báo cáo, CSV, sync Firebase...) vì dữ liệu gốc của chúng đã hiển thị sẵn từ Supabase/localStorage — hiển thị thêm lần nữa sẽ bị trùng (xem sự cố thật đã xảy ra ở Task #79). Mọi chỗ đọc `allOrders`/`getOrders` mới thêm sau này **phải lọc qua `_isMirrorRow(o)`** (kiểm tra `o.note` bắt đầu bằng "Sao lưu") trước khi dùng — đã áp dụng sẵn ngay tại 2 điểm gán `allOrders` trong admin.html và tracker.html, nhưng nếu viết thêm 1 nguồn đọc `getOrders` mới (VD: 1 trang HTML mới, 1 script backfill mới) thì phải tự nhớ áp lại, không có gì tự động ngăn quên.
+
 ---
 
 ### Task #76 — Phân quyền tuỳ chỉnh theo từng người dùng
