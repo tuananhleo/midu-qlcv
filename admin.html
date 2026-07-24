@@ -1013,6 +1013,11 @@ function _loadInternal(){
   // Xóa các task cũ từ lịch content (đã chuyển sang contentTasks)
   internalTasks=internalTasks.filter(t=>!t._fromContent);
   _saveInternal();
+  // Sao lưu bù cho việc nội bộ đã tạo TỪ TRƯỚC khi có tính năng mirror (Task #75) —
+  // trước đây chỉ mirror lúc tạo/sửa mới, nên việc cũ chưa từng đụng tới sẽ không bao giờ
+  // được ghi vào sheet Orders nếu không quét lại ở đây mỗi lần tải trang. Có guard theo
+  // id trong _mirrorOrderToSheet nên gọi lại nhiều lần không tạo trùng dòng.
+  _mirrorAllSequential(internalTasks);
 }
 function _saveInternal(){ localStorage.setItem(KEY_INTERNAL,JSON.stringify(internalTasks)); }
 function _newInternal(data){
@@ -3397,6 +3402,13 @@ async function _mirrorUpdateSheet(id, fields){
   try{ await fetch(getGasUrl(),{method:'POST',body:JSON.stringify({action:'updateOrder', id, updates:fields})}); }
   catch(e){ console.warn('[Mirror→Sheet] lỗi update:', e.message); }
 }
+// Ghi TUẦN TỰ (không song song) — trước đây dùng .forEach bắn hết mọi request cùng lúc,
+// GAS free tier giới hạn số lượt thực thi đồng thời nên khi có vài chục item (content
+// task/order) cùng lúc, một phần request bị nghẽn/lỗi âm thầm (chỉ console.warn, không
+// ai thấy) → sheet chỉ có 1 phần, không đầy đủ như hiển thị trên admin/tracker.
+async function _mirrorAllSequential(items){
+  for(const it of items){ await _mirrorOrderToSheet(it); }
+}
 
 async function _loadContentChannels(){
   const hdrs={'apikey':_SB_KEY,'Authorization':'Bearer '+_SB_KEY};
@@ -3451,7 +3463,7 @@ async function _loadContentTasks(){
   }));
   contentTasks=perSource.flat();
   try { localStorage.setItem(KEY_CT_CACHE, JSON.stringify(contentTasks)); } catch(e) {}
-  contentTasks.forEach(t=>_mirrorOrderToSheet(t)); // sao lưu vào sheet Orders (chỉ ghi mới lần đầu)
+  _mirrorAllSequential(contentTasks); // sao lưu vào sheet Orders (chỉ ghi mới lần đầu, tuần tự)
 }
 
 
@@ -3560,7 +3572,7 @@ async function _loadContentOrders(){
   contentOrders=perSource.flat();
   // Cache để load nhanh lần sau
   try { localStorage.setItem(KEY_CO_CACHE, JSON.stringify(contentOrders)); } catch(e) {}
-  contentOrders.forEach(o=>_mirrorOrderToSheet(o)); // sao lưu vào sheet Orders (chỉ ghi mới lần đầu)
+  _mirrorAllSequential(contentOrders); // sao lưu vào sheet Orders (chỉ ghi mới lần đầu, tuần tự)
 }
 
 // Lịch T.Thông — sheet riêng (tách khỏi sheet Orders để không phình to theo tần suất
