@@ -562,6 +562,18 @@ function hashPw(pw) {
   return bytes.map(b => ('0' + (b & 0xFF).toString(16)).slice(-2)).join('');
 }
 
+// Cột 9-10 mở rộng: quyền tuỳ chỉnh theo TỪNG NGƯỜI DÙNG (không theo vai trò chung) +
+// hạng mục công việc được phép xem. Thêm ở cuối, không đụng 8 cột gốc.
+const USERS_NUM_COLS = 10;
+function _ensureUsersExtraCols(sh) {
+  const existing = sh.getRange(1, 9, 1, 2).getValues()[0];
+  let changed = false;
+  ['Quyền tuỳ chỉnh (JSON)', 'Hạng mục được xem (để trống = tất cả)'].forEach((h, i) => {
+    if (!existing[i]) { sh.getRange(1, 9 + i).setValue(h).setFontWeight('bold'); changed = true; }
+  });
+  if (changed) sh.getRange(1, 9, 1, 2).setBackground('#e0f2fe').setFontColor('#0c4a6e');
+}
+
 function getOrCreateUsersSheet() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sh = ss.getSheetByName(SHEET_USERS);
@@ -572,6 +584,7 @@ function getOrCreateUsersSheet() {
     sh.setFrozenRows(1);
     sh.setColumnWidth(1,120); sh.setColumnWidth(3,240); sh.setColumnWidth(5,160);
   }
+  _ensureUsersExtraCols(sh);
   // Tự tạo tài khoản admin mặc định nếu chưa có
   if (sh.getLastRow() <= 1) {
     sh.appendRow(['u_admin','admin',hashPw('Midu123'),'admin','Quản trị viên','','true',new Date().toISOString()]);
@@ -580,12 +593,19 @@ function getOrCreateUsersSheet() {
   return sh;
 }
 
+// Đọc quyền tuỳ chỉnh JSON an toàn — trả về {} nếu trống/lỗi (nghĩa là không override
+// gì, dùng nguyên quyền mặc định theo vai trò).
+function _parsePermOverrides(val) {
+  if (!val) return {};
+  try { const o = JSON.parse(val); return (o && typeof o === 'object') ? o : {}; } catch(e) { return {}; }
+}
+
 function loginUserData(username, password) {
   try {
     const sh = getOrCreateUsersSheet();
     const last = sh.getLastRow();
     if (last <= 1) return { error: 'Chưa có tài khoản. Vui lòng liên hệ quản trị viên.' };
-    const rows = sh.getRange(2,1,last-1,8).getValues();
+    const rows = sh.getRange(2,1,last-1,USERS_NUM_COLS).getValues();
     const hash = hashPw(password);
     const r = rows.find(row =>
       row[0] &&
@@ -594,7 +614,11 @@ function loginUserData(username, password) {
       row[6].toString() === 'true'
     );
     if (!r) return { error: 'Sai tên đăng nhập hoặc mật khẩu' };
-    return { user: { id:String(r[0]), username:String(r[1]), role:String(r[3]), displayName:String(r[4]), dept:String(r[5]) } };
+    return { user: {
+      id:String(r[0]), username:String(r[1]), role:String(r[3]), displayName:String(r[4]), dept:String(r[5]),
+      permOverrides: _parsePermOverrides(r[8]),
+      allowedTypes: String(r[9]||'').split(',').map(s=>s.trim()).filter(Boolean),
+    } };
   } catch(e) { return { error: e.toString() }; }
 }
 
@@ -603,13 +627,15 @@ function getUsersData() {
     const sh = getOrCreateUsersSheet();
     const last = sh.getLastRow();
     if (last <= 1) return { users: [] };
-    const rows = sh.getRange(2,1,last-1,8).getValues();
+    const rows = sh.getRange(2,1,last-1,USERS_NUM_COLS).getValues();
     const users = rows.filter(r=>r[0]).map(r=>({
       id: String(r[0]), username: String(r[1]),
       role: String(r[3]), roleLabel: ROLE_LABELS_GAS[r[3]] || r[3],
       displayName: String(r[4]), dept: String(r[5]),
       active: r[6].toString()==='true',
-      createdAt: r[7] ? new Date(r[7]).toLocaleDateString('vi-VN') : ''
+      createdAt: r[7] ? new Date(r[7]).toLocaleDateString('vi-VN') : '',
+      permOverrides: _parsePermOverrides(r[8]),
+      allowedTypes: String(r[9]||'').split(',').map(s=>s.trim()).filter(Boolean),
     }));
     return { users };
   } catch(e) { return { error: e.toString() }; }
@@ -625,8 +651,11 @@ function createUserData(user) {
       if (unames.includes((user.username||'').toLowerCase())) return { error: 'Tên đăng nhập đã tồn tại' };
     }
     const id = 'u_' + Date.now().toString(36);
+    const permJson = user.permOverrides ? JSON.stringify(user.permOverrides) : '';
+    const allowedTypes = Array.isArray(user.allowedTypes) ? user.allowedTypes.join(',') : '';
     sh.appendRow([id, user.username, hashPw(user.password||'Midu123'), user.role||'nv_thiet_ke',
-                  user.displayName||user.username, user.dept||'', 'true', new Date().toISOString()]);
+                  user.displayName||user.username, user.dept||'', 'true', new Date().toISOString(),
+                  permJson, allowedTypes]);
     return { success:true, id };
   } catch(e) { return { error: e.toString() }; }
 }
@@ -645,6 +674,8 @@ function updateUserData(id, updates) {
     if (updates.dept        !== undefined) sh.getRange(row,6).setValue(updates.dept);
     if (updates.active      !== undefined) sh.getRange(row,7).setValue(String(updates.active));
     if (updates.password    !== undefined) sh.getRange(row,3).setValue(hashPw(updates.password));
+    if (updates.permOverrides !== undefined) sh.getRange(row,9).setValue(JSON.stringify(updates.permOverrides||{}));
+    if (updates.allowedTypes  !== undefined) sh.getRange(row,10).setValue((updates.allowedTypes||[]).join(','));
     return { success:true };
   } catch(e) { return { error: e.toString() }; }
 }

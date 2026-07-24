@@ -300,7 +300,7 @@
 
 <!-- USER FORM MODAL (add/edit) -->
 <div id="user-form-modal" class="modal-bg hidden" onclick="if(event.target===this)closeUserForm()">
-  <div class="modal-box fade-up" style="max-width:420px">
+  <div class="modal-box fade-up" style="max-width:460px">
     <div class="flex items-center justify-between mb-5">
       <h3 id="uf-title" class="font-black" style="color:var(--atext)">Thêm người dùng</h3>
       <button type="button" onclick="closeUserForm()" style="color:var(--atext3);font-size:1.5rem;line-height:1">×</button>
@@ -319,8 +319,16 @@
         <input id="uf-password" type="password" class="inp" autocomplete="new-password">
       </div>
       <div>
-        <label>Vai trò</label>
-        <select id="uf-role" class="inp"></select>
+        <label>Vai trò <span style="font-weight:400;text-transform:none;color:var(--atext3)">(mặc định ban đầu — 2 mục dưới đây ghi đè riêng cho người này)</span></label>
+        <select id="uf-role" class="inp" onchange="_ufApplyRoleDefaults()"></select>
+      </div>
+      <div class="pt-2 border-t" style="border-color:var(--aborder)">
+        <label class="mb-1.5">Quyền tuỳ chỉnh <span style="font-weight:400;text-transform:none;color:var(--atext3)">(đè lên mặc định vai trò, riêng cho người này)</span></label>
+        <div id="uf-perm-checks" class="grid grid-cols-2 gap-1.5" style="font-size:.78rem"></div>
+      </div>
+      <div class="pt-2 border-t" style="border-color:var(--aborder)">
+        <label class="mb-1.5">Hạng mục công việc được xem <span style="font-weight:400;text-transform:none;color:var(--atext3)">(để trống = xem tất cả)</span></label>
+        <div id="uf-type-checks" class="flex flex-wrap gap-1.5"></div>
       </div>
     </div>
     <p id="uf-err" class="text-red-400 text-xs mt-3 hidden"></p>
@@ -922,7 +930,20 @@ function getRolePerm(id) {
 // Dynamic ROLE_LABELS (backward compat)
 const ROLE_LABELS = new Proxy({}, { get: (_,id) => getRoleLabel(id) });
 const ROLE_PERMS  = new Proxy({}, { get: (_,id) => getRolePerm(id) });
-const perm = () => getRolePerm(currentUser?.role || 'employee');
+// Quyền hiệu lực = mặc định theo vai trò, ĐÈ bởi override riêng của từng người dùng
+// (currentUser.permOverrides — chỉ ghi đè đúng key có mặt, key nào không có thì giữ
+// nguyên mặc định vai trò). Theo yêu cầu: cấu hình theo từng người, không theo vai trò.
+function perm(){
+  const base = getRolePerm(currentUser?.role || 'employee');
+  const ov = currentUser?.permOverrides || {};
+  return { ...base, ...ov };
+}
+// null = không giới hạn (xem được mọi hạng mục). Mảng rỗng coi như null (tránh cấu
+// hình lỡ tay ẩn hết mọi thứ) — phải có ít nhất 1 mục mới thực sự giới hạn.
+function getAllowedTypes(){
+  const t = currentUser?.allowedTypes;
+  return (Array.isArray(t) && t.length) ? t : null;
+}
 
 let currentUser = null; // { id, username, displayName, role, dept }
 let allUsers    = [];   // cache từ GAS
@@ -1408,8 +1429,13 @@ function _isAssignedToMe(assignedToStr){
 }
 function getFilteredRows(){
   const kw=normVN(document.getElementById('f-kw').value);
+  // Hạng mục công việc được phép xem — cấu hình riêng theo từng người dùng (Cài đặt >
+  // Quản lý người dùng). null = không giới hạn. Áp dụng THÊM VÀO (không thay thế) quy
+  // tắc "chỉ xem việc của mình" của employee — cả 2 điều kiện phải đúng mới hiện ra.
+  const allowedTypes = getAllowedTypes();
   const baseOrders = perm().viewAll ? allOrders : allOrders.filter(o => _isAssignedToMe(o.assignedTo));
   const rows=filterByPeriod(baseOrders,currentPeriod).filter(o=>{
+    if(allowedTypes && !allowedTypes.includes(o.type)) return false;
     if(_overdueFilter){ const _dl=parseDl(o); if(!_dl||_dl>=today) return false; }
     if(filters.dept   && normDept(o.department)!==normDept(filters.dept)) return false;
     if(filters.type   && o.type!==filters.type)       return false;
@@ -1431,10 +1457,12 @@ function getFilteredRows(){
         if(!(_dl>=_intPeriodRange.from && _dl<_to)) return false;
       }
     }
-    if(filters.type) {
-      const gasType=(t._fromContent||t._fromLichTT)?t.type:(_LC_TO_GAS[t._rawType||'']||t._rawType||'');
-      if(gasType!==filters.type) return false;
-    }
+    // Internal task thường (không phải content order/task) không có _rawType — trước đây
+    // rơi về chuỗi rỗng '' thay vì đúng type='internal' của nó, khiến chip lọc "Loại" và
+    // giờ cả giới hạn hạng mục không bao giờ khớp được. Thêm t.type làm fallback cuối.
+    const gasType=(t._fromContent||t._fromLichTT)?t.type:(_LC_TO_GAS[t._rawType||'']||t._rawType||t.type||'');
+    if(allowedTypes && !allowedTypes.includes(gasType)) return false;
+    if(filters.type && gasType!==filters.type) return false;
     if(_overdueFilter){ const _idl=parseDl({deadline:t.deadline||t.plannedDate||''}); if(!_idl||_idl>=today) return false; }
     if(filters.dept&&normDept(t.department)!==normDept(filters.dept)) return false;
     if(filters.status&&t.status!==filters.status) return false;
@@ -3028,6 +3056,11 @@ function openUserForm(userId, prefillName) {
   document.getElementById('uf-username').disabled = !!u; // không đổi username sau khi tạo
   const pwLabel = document.getElementById('uf-pw-label');
   pwLabel.textContent = u ? 'Đặt lại mật khẩu (bỏ trống = giữ nguyên)' : 'Mật khẩu';
+  // Quyền tuỳ chỉnh: nếu đang sửa người có sẵn override thì dùng override đó đè lên mặc
+  // định vai trò; nếu tạo mới thì dùng nguyên mặc định vai trò đã chọn.
+  const effPerm = { ...getRolePerm(u?.role || 'nv_thiet_ke'), ...(u?.permOverrides||{}) };
+  _renderUfPermChecks(effPerm);
+  _renderUfTypeChecks(u?.allowedTypes || []);
   document.getElementById('uf-err').classList.add('hidden');
   document.getElementById('user-form-modal').classList.remove('hidden');
   // Focus vào username để tiện sửa
@@ -3035,11 +3068,44 @@ function openUserForm(userId, prefillName) {
 }
 function closeUserForm() { document.getElementById('user-form-modal').classList.add('hidden'); }
 
+// 6 quyền cấu hình được theo từng người dùng (đè lên mặc định vai trò).
+const _UF_PERM_KEYS = [
+  {key:'viewAll',        label:'Xem tất cả (không chỉ việc của mình)'},
+  {key:'canDelete',      label:'Xoá đơn'},
+  {key:'canSettings',    label:'Cài đặt hệ thống'},
+  {key:'canFormBuilder', label:'Form Builder'},
+  {key:'canUserMgmt',    label:'Quản lý người dùng'},
+  {key:'canReport',      label:'Xem báo cáo'},
+];
+function _renderUfPermChecks(effPerm){
+  document.getElementById('uf-perm-checks').innerHTML = _UF_PERM_KEYS.map(p=>`
+    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;color:var(--atext2)">
+      <input type="checkbox" id="uf-perm-${p.key}" ${effPerm[p.key]?'checked':''}>
+      ${p.label}
+    </label>`).join('');
+}
+function _renderUfTypeChecks(selected){
+  const sel = new Set(selected);
+  document.getElementById('uf-type-checks').innerHTML = Object.entries(TYPE_MAP).map(([id,label])=>`
+    <label class="chip" style="cursor:pointer;display:inline-flex;align-items:center;gap:4px;${sel.has(id)?'background:#6366f1;color:#fff;border-color:#6366f1':''}">
+      <input type="checkbox" class="uf-type-ck" value="${id}" ${sel.has(id)?'checked':''} style="accent-color:#6366f1" onchange="this.closest('label').style.background=this.checked?'#6366f1':'';this.closest('label').style.color=this.checked?'#fff':'';this.closest('label').style.borderColor=this.checked?'#6366f1':''">
+      ${label}
+    </label>`).join('');
+}
+// Khi đổi vai trò trong lúc thêm/sửa — làm mới lại các ô quyền theo mặc định vai trò mới
+// (không đụng tới Hạng mục đã chọn, vì đó là lựa chọn độc lập với vai trò).
+function _ufApplyRoleDefaults(){
+  const role = document.getElementById('uf-role').value;
+  _renderUfPermChecks(getRolePerm(role));
+}
+
 async function saveUserForm() {
   const displayName = document.getElementById('uf-displayName').value.trim();
   const username    = document.getElementById('uf-username').value.trim();
   const password    = document.getElementById('uf-password').value;
   const role        = document.getElementById('uf-role').value;
+  const permOverrides = Object.fromEntries(_UF_PERM_KEYS.map(p=>[p.key, document.getElementById('uf-perm-'+p.key).checked]));
+  const allowedTypes = [...document.querySelectorAll('.uf-type-ck:checked')].map(c=>c.value);
   const errEl = document.getElementById('uf-err');
   const btn   = document.getElementById('uf-save-btn');
   if (!displayName) { errEl.textContent='Vui lòng nhập tên hiển thị'; errEl.classList.remove('hidden'); return; }
@@ -3049,14 +3115,21 @@ async function saveUserForm() {
   try {
     let d;
     if (_editingUserId) {
-      const updates = { displayName, role };
+      const updates = { displayName, role, permOverrides, allowedTypes };
       if (password) updates.password = password;
       d = await fetch(getGasUrl(), { method:'POST', body:JSON.stringify({ action:'updateUser', id:_editingUserId, updates }) }).then(r=>r.json());
     } else {
-      d = await fetch(getGasUrl(), { method:'POST', body:JSON.stringify({ action:'createUser', user:{ username, password:password||'Midu123', displayName, role } }) }).then(r=>r.json());
+      d = await fetch(getGasUrl(), { method:'POST', body:JSON.stringify({ action:'createUser', user:{ username, password:password||'Midu123', displayName, role, permOverrides, allowedTypes } }) }).then(r=>r.json());
     }
     if (d.error) throw new Error(d.error);
     await loadAllUsers();
+    // Nếu vừa sửa đúng người đang đăng nhập → cập nhật currentUser ngay để áp quyền mới
+    // liền, không cần đăng xuất/đăng nhập lại.
+    if (currentUser && _editingUserId === currentUser.id) {
+      currentUser = { ...currentUser, displayName, role, permOverrides, allowedTypes };
+      sessionStorage.setItem('midu_mkt_session', JSON.stringify(currentUser));
+      applyRoleUI();
+    }
     closeUserForm();
     renderUserList();
     showToast(_editingUserId ? '✓ Đã cập nhật người dùng' : '✓ Đã tạo người dùng');

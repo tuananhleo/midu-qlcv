@@ -232,6 +232,8 @@ Admin có thể tạo thêm vai trò custom ngoài 5 vai trò này.
 > Employee chỉ thấy đơn có `assignedTo` khớp với `displayName` của họ (hỗ trợ đơn gán nhiều người, phân tách bằng dấu phẩy).
 >
 > **Ngoại lệ cố ý:** giới hạn "Chỉ của mình" áp dụng cho **đơn GAS** và **Internal Task** (việc tạo tay trong Tracker), nhưng **KHÔNG áp dụng cho Content Order/Content Task** (đồng bộ từ Lịch Content) — employee vẫn thấy toàn bộ card Lịch Content của mọi người, vì nhóm content tự cập nhật bên trang Content của họ, admin.html chỉ hiển thị để phòng theo dõi chung (xem Task #72).
+>
+> **Từ Task #76:** bảng 3 cấp trên chỉ là MẶC ĐỊNH BAN ĐẦU theo vai trò — mỗi người dùng (modal "Quản lý người dùng") có thể được cấu hình override riêng cho cả 6 quyền này, cộng thêm giới hạn "hạng mục công việc được xem" (áp dụng thêm vào, không thay thế, quy tắc "Chỉ của mình" của employee).
 
 **Quyền phân công (assign):**
 
@@ -724,6 +726,7 @@ Sau đó có thể dùng `2_push_and_deploy.bat` để push GitHub + deploy Fire
 
 | Task | Mô tả | File |
 |------|-------|------|
+| #76 | **Phân quyền tuỳ chỉnh theo TỪNG NGƯỜI DÙNG** — trước đây quyền hoàn toàn cố định theo 3 mức admin/leader/employee, không có khái niệm giới hạn theo hạng mục công việc. Giờ mỗi người dùng (modal "Quản lý người dùng") có thể override riêng: 6 quyền (xem tất cả/xoá/cài đặt/Form Builder/quản lý user/báo cáo) + danh sách hạng mục công việc được xem (để trống = tất cả). Giới hạn hạng mục là ĐIỀU KIỆN THÊM VÀO, không thay thế quy tắc "chỉ xem việc của mình" của employee. Cần **deploy lại GAS** (thêm cột 9-10 sheet Users) để có hiệu lực. Chi tiết bên dưới. | admin.html, MIDU_MKT_Script.gs |
 | #75 | **Sao lưu tự động Content Order/Content Task/Internal Task vào sheet "Orders"** — theo yêu cầu "tất cả các công việc cần được lưu về sheet này". Dùng lại đúng 2 action có sẵn `addOrder`/`updateOrder` (không cần sửa GAS). Chỉ ghi MỚI 1 lần khi thấy lần đầu (đánh dấu qua `KEY_MIRRORED_IDS` trong localStorage để không trùng dòng ở mỗi lượt đồng bộ định kỳ), lần sau chỉ update khi có thay đổi trạng thái/phân công/link kết quả. **Không áp dụng cho Lịch T.Thông** (đã tách sheet riêng ở #73, mirror vào đây sẽ phá mục đích chống phình sheet). Chi tiết bên dưới. | admin.html |
 | #74 | **Fix panel "Lịch bắn gần nhất" trên order.html chỉ hiện lịch tương lai, bỏ sót lịch sử** — code cũ lọc `dt >= today` VÀ loại bỏ hẳn trạng thái "Đã bắn", nên lịch vừa bắn gần đây không hiện ra dù có dữ liệu thật, gây hiểu nhầm "chưa có lịch nào". Sửa: hiện cả lịch sử 14 ngày gần đây (đánh dấu ✅, làm mờ) lẫn lịch sắp tới, không loại trừ theo trạng thái. | order.html |
 | #73 | **Tách Lịch T.Thông khỏi sheet Orders** — order loại `lich-truyen-thong` gửi từ order.html giờ ghi thẳng vào sheet ngoài "LỊCH TRUYỀN THÔNG QUA BOT" (`LICH_TT_SHEET_ID`, thêm 6 cột: ID/Người yêu cầu/Phòng ban/Ưu tiên/Người phụ trách/Link kết quả) thay vì sheet "Orders" — tránh sheet Orders phình to theo tần suất lịch bắn bot (~1/ngày). Vẫn quản lý được như order bình thường trên admin.html (assign/trạng thái/link kết quả qua GAS action `updateLichTT`); tracker.html chỉ xem. Thêm panel "📅 Lịch bắn gần nhất" trên order.html (gộp `getOrders`+`getLichTT`) để người gửi tự tránh trùng lịch — không tự động chặn. `MIDU_MKT_Script.gs` đưa vào Git lần đầu (trước đây chưa từng track). | admin.html, tracker.html, order.html, MIDU_MKT_Script.gs |
@@ -1090,6 +1093,29 @@ Domain deploy thật của trang Content đổi từ `content-kim-oanh.pages.dev
 - `_mirrorUpdateSheet(id, fields)` — chỉ update nếu id đã từng được `_mirrorOrderToSheet` ghi thành công (tránh update vào dòng không tồn tại).
 - Gọi ở 5 điểm: `_loadContentOrders()`/`_loadContentTasks()` (mirror khi thấy lần đầu), `_newInternal()` (mirror ngay khi tạo), `_updateInternal()` cả 2 nhánh (content order override + internal task thường — mirror update), `_saveLcTaskStatus()` (mirror update khi đổi trạng thái Content Task).
 - Cột "Ghi chú" (note) của dòng sao lưu ghi rõ nguồn gốc (VD: "Sao lưu tự động · nguồn: Content Order") để phân biệt với đơn gửi thật qua order.html khi xem trực tiếp trên Sheet.
+
+---
+
+### Task #76 — Phân quyền tuỳ chỉnh theo từng người dùng
+
+**Yêu cầu (nguyên văn):** "Xử lý việc phân cấp phân quyền cho người dùng nữa nhé. Cho anh tùy chọn phân cấp và tùy chọn hạng mục công việc nhân viên, leader được xem. Nói chung là mở hết để anh tự cấu hình."
+
+**Xác nhận phạm vi với người dùng:**
+- Giới hạn hạng mục công việc cấu hình theo **từng người dùng riêng lẻ**, không theo vai trò chung.
+- Giới hạn hạng mục là điều kiện **THÊM VÀO** quy tắc "employee chỉ xem việc của mình" (Task #72), không thay thế — 1 order phải thoả cả 2 điều kiện mới hiện ra.
+- Cả 6 quyền còn lại (xem tất cả/xoá/cài đặt/Form Builder/quản lý user/báo cáo) cũng chuyển từ cố định theo 3 mức admin/leader/employee sang **tuỳ chỉnh được theo từng người**.
+
+**Trước khi sửa:** `PERM_LEVELS` (3 mức cố định) là nguồn quyền duy nhất, gắn cứng theo `role` của user — không có cách nào cấu hình khác cho 1 cá nhân cụ thể, và hoàn toàn chưa có khái niệm giới hạn theo hạng mục (`type`) ở bất kỳ đâu.
+
+**Fix:**
+- **GAS (`MIDU_MKT_Script.gs`):** thêm cột 9-10 vào sheet "Users" — `permOverrides` (JSON: `{viewAll,canDelete,canSettings,canFormBuilder,canUserMgmt,canReport}`) và `allowedTypes` (chuỗi phân cách dấu phẩy, rỗng = không giới hạn). `loginUserData`/`getUsersData`/`createUserData`/`updateUserData` đọc/ghi 2 cột này.
+- **admin.html:** `perm()` giờ = `{...getRolePerm(role), ...currentUser.permOverrides}` (override đè lên mặc định vai trò, chỉ đè đúng key có mặt). `getAllowedTypes()` trả về mảng hoặc `null` (không giới hạn). Áp dụng trong `getFilteredRows()` cho cả đơn GAS lẫn Content Order/Task/Internal Task (dùng chung biến `gasType` đã có sẵn để tính đúng hạng mục, kể cả Content Order được map qua `_LC_TO_GAS`).
+- **Modal "Quản lý người dùng":** thêm 6 checkbox quyền + checklist hạng mục công việc (theo `TYPE_MAP`, tự động theo cả loại tuỳ chỉnh admin thêm qua Form Builder). Đổi vai trò trong form sẽ nạp lại quyền theo mặc định vai trò mới (không đụng hạng mục đã chọn, vì đó là lựa chọn độc lập).
+- Nếu admin tự sửa quyền của chính tài khoản đang đăng nhập → áp dụng ngay lập tức, không cần đăng xuất/đăng nhập lại.
+
+**Bài học phụ khi sửa:** phát hiện `internalTasks` (việc nội bộ tạo tay, không phải Content Order/Task) trước giờ luôn tính `gasType` ra chuỗi rỗng `''` thay vì đúng `type:'internal'` của nó (do thiếu `_rawType`) — khiến chip lọc "Loại công việc" không bao giờ khớp được với việc nội bộ. Thêm `t.type` làm fallback cuối trong công thức tính `gasType`, sửa luôn cả bug cũ này.
+
+**⚠️ Cần deploy lại GAS** (thêm cột mới vào sheet Users) thì tính năng mới có hiệu lực — chưa deploy thì mọi thứ vẫn chạy như cũ (permOverrides/allowedTypes trả về rỗng, không ảnh hưởng gì).
 
 ---
 
