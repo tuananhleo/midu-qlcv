@@ -476,6 +476,9 @@ const FIELD_LABELS = {
 };
 let dynamicSchema = {};
 let allOrders = [], filters = {type:''}, deptFilter = '';
+// Dòng "Sao lưu tự động/bù" (Task #75/#77) là bản backup của Content Order/Task/Internal
+// Task đã hiển thị sẵn từ nguồn gốc — phải loại khỏi allOrders, nếu không hiện trùng 2 lần.
+const _isMirrorRow = o => /^Sao lưu/.test(o?.note||'');
 const KEY_INTERNAL       = 'midu_internal_tasks';
 const KEY_CONTENT_HIDDEN = 'midu_content_hidden';
 const KEY_CO_CACHE       = 'midu_content_orders_cache';
@@ -674,7 +677,7 @@ async function loadOrders(notify=false) {
   document.getElementById('list').classList.add('hidden');
 
   // ── B1: Load cache ngay lập tức (0ms) ──────────────────────────
-  try { const c=JSON.parse(localStorage.getItem(KEY_CACHE)||'null'); if(c?.orders?.length){allOrders=c.orders;if(c.schema)dynamicSchema=c.schema;} } catch(e){}
+  try { const c=JSON.parse(localStorage.getItem(KEY_CACHE)||'null'); if(c?.orders?.length){allOrders=c.orders.filter(o=>!_isMirrorRow(o));if(c.schema)dynamicSchema=c.schema;} } catch(e){}
   try { const c=JSON.parse(localStorage.getItem(KEY_CT_CACHE)||'null'); if(Array.isArray(c)&&c.length) contentTasks=c; } catch(e){}
   try { const c=JSON.parse(localStorage.getItem(KEY_CO_CACHE)||'null'); if(Array.isArray(c)&&c.length) contentOrders=c; } catch(e){}
   try { const c=JSON.parse(localStorage.getItem(KEY_LTT_CACHE)||'null'); if(Array.isArray(c)&&c.length) lichTTOrders=c; } catch(e){}
@@ -709,7 +712,7 @@ async function loadOrders(notify=false) {
   // ── B5: Chờ GAS ─────────────────────────────────────────────────
   const gasResult=await gasPromise;
   if(gasResult){
-    const fresh=gasResult.orders||[];
+    const fresh=(gasResult.orders||[]).filter(o=>!_isMirrorRow(o));
     if(fresh.length>0) allOrders=fresh; else if(allOrders.length===0) allOrders=fresh;
     if(gasResult.schema) dynamicSchema=gasResult.schema;
     try { localStorage.setItem(KEY_CACHE,JSON.stringify({orders:allOrders,schema:dynamicSchema})); } catch(e){}

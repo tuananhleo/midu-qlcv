@@ -1179,6 +1179,10 @@ const DEFAULT_FORM_SCHEMA = {
 let dynamicSchema = {};
 let formSchema    = {};
 let allOrders     = [];
+// Dòng "Sao lưu tự động/bù" (Task #75/#77) là bản backup của Content Order/Task/Internal
+// Task đã hiển thị sẵn từ nguồn gốc (Supabase/localStorage) — phải loại khỏi allOrders
+// ngay khi gán, nếu không sẽ hiện trùng 2 lần trên list lẫn báo cáo/CSV/Firebase sync.
+const _isMirrorRow = o => /^Sao lưu/.test(o?.note||'');
 let filters       = {dept:'', type:'', status:''};
 let _overdueFilter = false;
 let currentPeriod = 'month';
@@ -1308,7 +1312,7 @@ function showCached() {
   try {
     const cached = JSON.parse(localStorage.getItem(KEY_CACHE)||'null');
     if (cached?.orders?.length) {
-      allOrders = cached.orders;
+      allOrders = cached.orders.filter(o=>!_isMirrorRow(o));
       if (cached.schema) dynamicSchema = cached.schema;
     }
   } catch(e) {}
@@ -1346,7 +1350,7 @@ async function loadAll(notify=false) {
   try {
     const [ordRes, fmRes] = await Promise.all([gasOrders, gasSchema]);
     if (ordRes) {
-      allOrders = ordRes.orders || ordRes.data || (Array.isArray(ordRes) ? ordRes : []);
+      allOrders = (ordRes.orders || ordRes.data || (Array.isArray(ordRes) ? ordRes : [])).filter(o=>!_isMirrorRow(o));
       if (ordRes.schema) dynamicSchema = ordRes.schema;
       try { localStorage.setItem(KEY_CACHE, JSON.stringify({orders: allOrders, schema: dynamicSchema})); } catch(e) {}
     }

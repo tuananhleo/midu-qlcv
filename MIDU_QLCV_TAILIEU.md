@@ -1159,6 +1159,18 @@ Domain deploy thật của trang Content đổi từ `content-kim-oanh.pages.dev
 
 ---
 
+### Task #79 — Fix lỗi trùng lặp: mọi việc mirror vào sheet bị hiển thị lại 2 lần
+
+**Phát hiện qua ảnh chụp màn hình người dùng gửi:** cùng 1 việc ("Fanpage Học viện PNVM — Đếm ngược 24h diễn ra khóa 3") xuất hiện thành 2 card riêng biệt trên admin.html: 1 card `lco-mruh8w4njtzjd4` (ghi chú "Sao lưu bù (backfill) · nguồn: Content Order") và 1 card `TK-260721-018` (card Content Order thật, đọc trực tiếp từ Supabase). Câu hỏi gốc: "Admin và tracker sao nhiều công việc thế, hình như bị double này".
+
+**Nguyên nhân gốc — lỗi thiết kế ở Task #75, không phải lỗi mới phát sinh:** tính năng sao lưu (mirror) được thiết kế để CHỈ backup dữ liệu vào sheet "Orders" phòng khi mất dữ liệu — nhưng lại quên rằng chính sheet "Orders" đó cũng là nguồn dữ liệu chính (`allOrders`, qua `getOrders`) mà admin.html/tracker.html vẫn hiển thị thành card đơn bình thường, không có bước lọc loại trừ bản sao lưu ra khỏi danh sách hiển thị. Hệ quả: từ lúc Task #75 chạy, **mọi** Content Order/Content Task từng được mirror đều hiện 2 lần — 1 lần từ nguồn thật (Supabase), 1 lần từ bản sao lưu (sheet). Kiểm tra thực tế lúc phát hiện: **toàn bộ 61 dòng trong sheet "Orders" đều là dòng mirror** (20 Content Order + 41 Content Task, 0 đơn thật gửi qua order.html) — nghĩa là danh sách chính ở admin.html/tracker.html khi đó đang hiển thị trùng 100%.
+
+**Fix:** thêm hàm dùng chung `_isMirrorRow(o)` (kiểm tra `o.note` bắt đầu bằng "Sao lưu" — đúng tiền tố đã gắn sẵn từ Task #75/#77 để phân biệt dòng backup) ở cả admin.html và tracker.html, lọc ngay tại 2 điểm gán `allOrders` (đọc cache localStorage và đọc trực tiếp từ `getOrders`) — lọc ở gốc để áp dụng đồng nhất cho mọi chỗ dùng `allOrders` (danh sách chính, báo cáo, xuất CSV, đồng bộ Firebase), không chỉ lọc riêng ở `getFilteredRows()`.
+
+**Lưu ý:** sheet "Orders" vẫn giữ đầy đủ các dòng mirror — chỉ ẩn khỏi giao diện hiển thị, không xoá. Nếu sau này cần xem/audit dữ liệu sao lưu thô, vẫn mở trực tiếp Google Sheet để xem (cột "Ghi chú" phân biệt rõ nguồn gốc).
+
+---
+
 ## 14. Liên kết nhanh
 
 | Tên | URL |
