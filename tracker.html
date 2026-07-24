@@ -614,7 +614,7 @@ async function loadContentTasks() {
           d_channelId:ct.channelId||'',
           d_topic:(ct.idea||ct.content||'').trim(),
           d_content_type:ct.type||ct.format||'Bài đăng',
-          linkResult:ct.postUrl||ct.result||ct.link||ct.deliverableLink||'',
+          linkResult:ct.contentLink||'',
           adminNote:`Lịch Content · ${src.name} · Kênh: ${(_contentChannelMap[ct.channelId]||ct.channelId)||'–'}${ct.status?' · '+ct.status:''}`,
           _channel:(_contentChannelMap[ct.channelId]||ct.channelId)||'', _contentStatus:ct.status||''
         }));

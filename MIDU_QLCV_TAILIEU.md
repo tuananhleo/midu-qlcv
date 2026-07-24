@@ -1135,9 +1135,27 @@ Domain deploy thật của trang Content đổi từ `content-kim-oanh.pages.dev
 
 **Sự cố phụ phát sinh khi backfill:** trong lúc script backfill đang chạy, có 1 tab trình duyệt khác đang mở admin.html BẢN CŨ (chưa có fix `_mirrorAllSequential`) — cả 2 tiến trình cùng lúc quyết định mirror 1 số item giống nhau, và vì `addOrderData()` (GAS) không có bước kiểm tra trùng ID (luôn `appendRow`), kết quả là 9 dòng bị ghi trùng 2 lần. Phát hiện qua script đếm trùng lặp theo ID, xử lý bằng cách gọi `deleteOrder` (action GAS có sẵn) đúng 1 lần cho mỗi ID trùng — hàm này xoá đúng 1 dòng đầu tiên khớp (`indexOf`), giữ lại đúng 1 bản. Xác nhận cuối: 60 dòng, 0 trùng lặp.
 
-**Trả lời câu hỏi liên quan của người dùng:**
-- **"Lưu vào sheet lại chưa có kết quả (Kết quả/linkResult) à?"** — không phải lỗi mirror. Kiểm tra trực tiếp dữ liệu gốc trên Supabase (VD task `cont-mril0rux0orwgl`, trạng thái "Đã đăng") cho thấy bản ghi gốc bên Lịch Content **không hề có field** `postUrl`/`result`/`link`/`deliverableLink` — nghĩa là hầu hết Content Task chỉ lưu nội dung bài viết (caption), không lưu link bài đã đăng ở nguồn, nên cột "Kết quả" trống là phản ánh đúng thực tế dữ liệu gốc, không phải mirror bỏ sót.
+**Trả lời câu hỏi liên quan của người dùng (kết luận ban đầu SAI, đã đính chính ở Task #78):**
+- ~~"Lưu vào sheet lại chưa có kết quả (Kết quả/linkResult) à?" — không phải lỗi mirror, do dữ liệu gốc không có link.~~ **Sai — xem Task #78: đây thực sự là 1 bug, đã sửa.**
 - **"Order mới sắp tới có tự động lưu vào sheet không?"** — có, nhưng cơ chế là client-side: mỗi khi có người **mở admin.html** (tải trang hoặc mỗi 90 giây trong lúc đang mở), code sẽ tự quét và ghi bù bất kỳ việc nào chưa có trong sheet. Đây **không phải** tiến trình server chạy nền 24/7 — nếu không ai mở admin.html trong thời gian dài, việc mới bên Content sẽ đợi tới lần mở tiếp theo mới được ghi (không mất dữ liệu, chỉ trễ).
+
+---
+
+### Task #78 — Đính chính Task #77: field link kết quả của Content Task bị map sai, không phải do thiếu dữ liệu
+
+**Bối cảnh:** người dùng hỏi lại "K lấy được kết quả à, ở admin cũng có kết quả các đầu việc của content?" sau khi Task #77 kết luận (sai) rằng cột "Kết quả" trống là do dữ liệu gốc không có link.
+
+**Kiểm tra lại kỹ hơn phát hiện:** field link bài đăng thật sự bên Lịch Content tên là **`contentLink`** (kèm `contentLinkLabel`) — không phải `postUrl`/`result`/`link`/`deliverableLink` như đã đoán và code tại Task #75/#77. 9/38 Content Task có trạng thái "Đã đăng" thực sự có `contentLink` hợp lệ (dạng URL Google Docs/Sheets), nhưng bị bỏ sót hoàn toàn vì đoán sai tên field.
+
+**Bug thứ 2, nặng hơn:** card "📅 Lịch Content" (Content Task, nhánh `if(t._fromContent)` trong `renderIntCard()`, admin.html) **chưa từng có phần hiển thị "Kết quả" nào cả** — chỉ có 1 ô đổi trạng thái, khác với card Content Order và card Lịch T.Thông (cả 2 đều có sẵn khối hiển thị link). Trong khi đó tracker.html đã có sẵn khối hiển thị "Kết quả" cho Content Task từ trước nhưng cũng bị vô hiệu hoá vì cùng lỗi tên field.
+
+**Fix:**
+- `admin.html` `_loadContentTasks()`: thêm `linkResult:ct.contentLink||''` vào object map (trước đây hoàn toàn không có field này).
+- `admin.html` `renderIntCard()` nhánh `_fromContent`: thêm khối hiển thị "🔗 Kết quả" (link + nút sao chép/mở link) giống hệt kiểu đã dùng ở Content Order/Lịch T.Thông — trước đây thiếu hẳn.
+- `tracker.html` `loadContentTasks()`: sửa `linkResult:ct.postUrl||ct.result||ct.link||ct.deliverableLink||''` → `linkResult:ct.contentLink||''` (khối hiển thị đã có sẵn, chỉ cần map đúng field).
+- Chạy 1 script sửa bù (`fix_content_task_links.js`, ngoài repo) cho 9 dòng Content Task đã mirror vào sheet Orders trước đó với `linkResult` rỗng oan — gọi `updateOrder` cập nhật đúng link. Kết quả: từ 2/60 dòng có Kết quả lên 11/60.
+
+**Bài học:** kết luận "không phải bug" ở Task #77 đưa ra chỉ dựa trên kiểm tra field cứng đã đoán sẵn (`postUrl`/`result`/`link`/`deliverableLink`), chưa quét toàn bộ tên field thực tế xuất hiện trong dữ liệu — lần sau cần liệt kê hết `Object.keys()` của dữ liệu nguồn trước khi kết luận "dữ liệu không có", tránh lặp lại kiểu sai này.
 
 ---
 

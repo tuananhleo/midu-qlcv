@@ -1768,6 +1768,14 @@ function renderIntCard(t){
         ${t.createdBy?`<div><span style="color:var(--atext3)">Tạo bởi: </span><span style="color:var(--atext2)">${t.createdBy}</span></div>`:''}
       </div>
       ${t.adminNote?`<div class="mt-2 text-xs px-3 py-2 rounded-lg" style="color:var(--atext3);background:var(--abg3);border:1px solid var(--aborder);white-space:pre-line">📝 ${t.adminNote}</div>`:''}
+      ${t.linkResult?`<div class="mt-2 pt-2 border-t" style="border-color:var(--acborder)">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="text-xs flex-shrink-0" style="color:var(--atext3)">🔗 Kết quả:</span>
+          ${isUrl(t.linkResult)?`<a href="${t.linkResult}" target="_blank" rel="noopener" class="text-xs text-indigo-400 underline break-all flex-1">${t.linkResult}</a>`:`<span class="text-xs break-all flex-1" style="color:var(--atext2)">${t.linkResult}</span>`}
+          <button type="button" onclick="copyLink(this)" data-copy="${escapeHtml(t.linkResult)}" class="btn btn-ghost flex-shrink-0" style="padding:4px 8px;font-size:.75rem">📋 Sao chép</button>
+          ${isUrl(t.linkResult)?`<a href="${t.linkResult}" target="_blank" rel="noopener" class="btn btn-ghost flex-shrink-0" style="padding:4px 8px;font-size:.75rem">🔗 Mở link</a>`:''}
+        </div>
+      </div>`:''}
       ${t._sourceUrl?`<div class="mt-2"><a href="${t._sourceUrl}" target="_blank" rel="noopener" class="btn btn-ghost" style="font-size:.72rem;padding:3px 10px">↗ Mở bài này trên Lịch Content</a></div>`:''}
     </div>
     <div class="admin-strip">
@@ -3453,6 +3461,7 @@ async function _loadContentTasks(){
         assignedTo:(ct.coord&&ct.coord.trim()&&ct.coord.trim()!=='Khác'?ct.coord.trim():src.name),
         plannedDate:ct.date||'', deadline:ct.date||'',
         status:_CONTENT_STATUS_MAP[ct.status||'']||statusConfig[0]?.id||'chua-lam',
+        linkResult:ct.contentLink||'',
         adminNote:`Lịch Content · ${src.name} · Kênh: ${chName||'–'}${ct.status?' · '+ct.status:''}`,
         priority:priorityConfig.find(p=>p.isDefault)?.id||'trung-binh',
         createdBy:'Lịch Content · '+src.name, type:'content', department:'Marketing – Truyền thông',
