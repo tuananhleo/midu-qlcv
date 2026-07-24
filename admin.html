@@ -123,6 +123,10 @@
   [data-theme="light"] .report-tbl td { border-bottom-color:rgba(0,0,0,.06); }
   .report-tbl tr:hover td { background:rgba(99,102,241,.06); }
   .report-dot { display:inline-block; width:9px; height:9px; border-radius:2px; margin-right:6px; vertical-align:middle; }
+  /* Nhãn số lượng/% hiện thường trực dưới mỗi biểu đồ — không cần bấm "Xem dạng bảng" mới thấy */
+  .report-inline-labels { display:flex; flex-wrap:wrap; gap:6px 10px; margin-top:10px; padding-top:10px; border-top:1px solid var(--aborder); }
+  .report-inline-chip { font-size:.72rem; color:var(--atext2); white-space:nowrap; }
+  .report-inline-chip b { color:var(--atext); font-weight:800; }
   .period-btn { padding:5px 14px; border-radius:8px; font-size:.75rem; font-weight:700; cursor:pointer; border:1.5px solid var(--aborder); background:var(--abg2); color:var(--atext3); transition:.15s; }
   .period-btn.active { background:#6366f1; border-color:#6366f1; color:#fff; }
   .tab-btn { padding:7px 18px; border-radius:10px; font-size:.8rem; font-weight:700; cursor:pointer; border:1.5px solid transparent; color:var(--atext3); background:transparent; transition:.15s; }
@@ -791,22 +795,26 @@
         <div class="chart-box" onclick="drillByField('type')" title="Click để xem chi tiết">
           <p class="text-xs font-bold uppercase tracking-widest mb-3" style="color:var(--atext3)">📊 Theo loại order</p>
           <div style="height:220px;position:relative"><canvas id="chart-type"></canvas></div>
+          <div class="report-inline-labels" id="lbl-type" onclick="event.stopPropagation()"></div>
         </div>
         <div class="chart-box" onclick="drillByField('department')" title="Click để xem chi tiết">
           <p class="text-xs font-bold uppercase tracking-widest mb-3" style="color:var(--atext3)">🏢 Theo phòng ban</p>
           <div style="height:220px;position:relative"><canvas id="chart-dept"></canvas></div>
+          <div class="report-inline-labels" id="lbl-dept" onclick="event.stopPropagation()"></div>
         </div>
         <div class="chart-box" onclick="drillByField('status')" title="Click để xem chi tiết">
           <p class="text-xs font-bold uppercase tracking-widest mb-3" style="color:var(--atext3)">🔄 Theo trạng thái</p>
           <div style="height:220px;position:relative"><canvas id="chart-status"></canvas></div>
+          <div class="report-inline-labels" id="lbl-status" onclick="event.stopPropagation()"></div>
         </div>
-        <div class="chart-box">
+        <div class="chart-box" style="cursor:default" title="Click vào biểu đồ để xem việc trong ngày đó">
           <p class="text-xs font-bold uppercase tracking-widest mb-3" style="color:var(--atext3)">📅 Order theo thời gian</p>
           <div style="height:220px;position:relative"><canvas id="chart-time"></canvas></div>
         </div>
         <div class="chart-box" style="grid-column:1/-1" title="Click để xem chi tiết">
           <p class="text-xs font-bold uppercase tracking-widest mb-3" style="color:var(--atext3)">👤 Theo người phụ trách</p>
           <div style="height:220px;position:relative"><canvas id="chart-assignee"></canvas></div>
+          <div class="report-inline-labels" id="lbl-assignee" onclick="event.stopPropagation()"></div>
         </div>
       </div>
 
@@ -2248,6 +2256,15 @@ function getTypeColor(typeKey){
   return idx>=0 ? CAT_PALETTE[idx%CAT_PALETTE.length] : '#64748b';
 }
 
+// Nhãn số lượng/% hiện thường trực ngay dưới biểu đồ (không cần bấm "Xem dạng bảng").
+// entries: [{label, count, dot?, icon?}]. total mặc định = tổng count trong entries.
+function _renderInlineLabels(elId, entries, total){
+  const el=document.getElementById(elId); if(!el) return;
+  const t=total ?? entries.reduce((s,e)=>s+e.count,0);
+  el.innerHTML = entries.length ? entries.map(e=>
+    `<span class="report-inline-chip">${e.dot?`<span class="report-dot" style="background:${e.dot}"></span>`:''}${e.icon?e.icon+' ':''}${e.label}: <b>${e.count}</b>${t?` (${Math.round(e.count/t*100)}%)`:''}</span>`
+  ).join('') : `<span class="report-inline-chip" style="color:var(--atext3)">Không có dữ liệu</span>`;
+}
 function buildChartType(){
   const cd=getChartDefaults();
   const counts={};
@@ -2264,6 +2281,7 @@ function buildChartType(){
       plugins:{...cd.plugins,tooltip:{callbacks:{label:ctx=>`${ctx.label}: ${ctx.raw} order`}}}
     }
   });
+  _renderInlineLabels('lbl-type', Object.keys(counts).map(k=>({label:TYPE_MAP[k]||k,count:counts[k],dot:getTypeColor(k)})));
 }
 function buildChartDept(){
   const cd=getChartDefaults();
@@ -2280,6 +2298,7 @@ function buildChartDept(){
       plugins:{...cd.plugins,legend:{display:false}}
     }
   });
+  _renderInlineLabels('lbl-dept', sorted.map(([k,v])=>({label:k,count:v})));
 }
 function buildChartStatus(){
   const cd=getChartDefaults();
@@ -2299,6 +2318,25 @@ function buildChartStatus(){
       plugins:{...cd.plugins,legend:{display:false}}
     }
   });
+  _renderInlineLabels('lbl-status', statusConfig.map((sc,i)=>({label:sc.label,count:counts[i],dot:sc.color||'#64748b',icon:sc.icon||''})));
+}
+// Key thời gian của 1 order theo period đang chọn — dùng chung cho việc gom nhóm vẽ biểu đồ
+// VÀ cho drill-down khi bấm vào 1 điểm trên biểu đồ (phải tính đúng như lúc gom nhóm để khớp).
+function _timeKeyFor(o){
+  // Content order/task/internal task không có submittedAt (chỉ GAS order mới có) — ưu tiên
+  // createdAt (internal task tự tạo), rồi mới tới deadline/plannedDate, tránh biểu đồ bỏ sót
+  // gần hết dữ liệu.
+  const d=parseDate(o.submittedAt)||parseDate(o.createdAt)||parseDl(o);
+  if(!d) return null;
+  const pad=n=>String(n).padStart(2,'0');
+  if(currentPeriod==='today')  return `${pad(d.getHours())}:00`;
+  else if(currentPeriod==='week')  return ['CN','T2','T3','T4','T5','T6','T7'][d.getDay()];
+  else if(currentPeriod==='month') return `${pad(d.getDate())}/${pad(d.getMonth()+1)}`;
+  else if(currentPeriod==='year')  return `T${d.getMonth()+1}`;
+  else return `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()}`;
+}
+function openDrillDownTime(key){
+  _renderDrillList(reportOrders.filter(o=>_timeKeyFor(o)===key), `📅 ${key}`);
 }
 function buildChartTime(){
   const cd=getChartDefaults();
@@ -2308,17 +2346,8 @@ function buildChartTime(){
   const pad=n=>String(n).padStart(2,'0');
 
   reportOrders.forEach(o=>{
-    // Content order/task/internal task không có submittedAt (chỉ GAS order mới có) — ưu tiên
-    // createdAt (internal task tự tạo), rồi mới tới deadline/plannedDate, tránh biểu đồ bỏ sót
-    // gần hết dữ liệu.
-    const d=parseDate(o.submittedAt)||parseDate(o.createdAt)||parseDl(o);
-    if(!d) return;
-    let key;
-    if(currentPeriod==='today')  key=`${pad(d.getHours())}:00`;
-    else if(currentPeriod==='week')  key=['CN','T2','T3','T4','T5','T6','T7'][d.getDay()];
-    else if(currentPeriod==='month') key=`${pad(d.getDate())}/${pad(d.getMonth()+1)}`;
-    else if(currentPeriod==='year')  key=`T${d.getMonth()+1}`;
-    else key=`${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()}`;
+    const key=_timeKeyFor(o);
+    if(!key) return;
     groups[key]=(groups[key]||0)+1;
   });
 
@@ -2342,8 +2371,13 @@ function buildChartTime(){
       datasets:[{label:'Order gửi',data:allKeys.map(k=>groups[k]||0),backgroundColor:CAT_PALETTE[0]+'33',borderColor:CAT_PALETTE[0],borderWidth:2,pointRadius:3,pointHoverRadius:5,fill:true,tension:.3}]
     },
     options:{...cd,
+      // mode:'index',intersect:false — cho phép bấm bất kỳ đâu theo cột X (không cần trúng
+      // đúng điểm nhỏ trên đường line) để xem chi tiết việc trong ngày/khung giờ đó.
+      interaction:{mode:'index',intersect:false},
+      onClick:(_,els)=>{if(els.length){openDrillDownTime(allKeys[els[0].index]);}},
+      onHover:(evt,els)=>{evt.native.target.style.cursor=els.length?'pointer':'default';},
       scales:{x:{ticks:{color:cd._axC,maxTicksLimit:12},grid:{color:cd._gc}},y:{ticks:{color:cd._axC,stepSize:1},grid:{color:cd._gc}}},
-      plugins:{...cd.plugins,legend:{display:false}}
+      plugins:{...cd.plugins,legend:{display:false},tooltip:{callbacks:{label:ctx=>`${ctx.raw} việc — bấm để xem chi tiết`}}}
     }
   });
 }
@@ -2364,6 +2398,7 @@ function buildChartAssignee(){
       plugins:{...cd.plugins,legend:{display:false}}
     }
   });
+  _renderInlineLabels('lbl-assignee', sorted.map(([k,v])=>({label:'👤 '+k,count:v})));
 }
 function buildProjectGroups(){
   const groups={};
