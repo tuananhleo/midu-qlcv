@@ -1,5 +1,5 @@
 # MIDU QLCV — Tài liệu hệ thống
-> Cập nhật lần cuối: 23/07/2026  
+> Cập nhật lần cuối: 24/07/2026  
 > Tác giả: Tuan Anh Leo (nguyentuananh.maps@gmail.com)
 
 ---
@@ -1116,6 +1116,28 @@ Domain deploy thật của trang Content đổi từ `content-kim-oanh.pages.dev
 **Bài học phụ khi sửa:** phát hiện `internalTasks` (việc nội bộ tạo tay, không phải Content Order/Task) trước giờ luôn tính `gasType` ra chuỗi rỗng `''` thay vì đúng `type:'internal'` của nó (do thiếu `_rawType`) — khiến chip lọc "Loại công việc" không bao giờ khớp được với việc nội bộ. Thêm `t.type` làm fallback cuối trong công thức tính `gasType`, sửa luôn cả bug cũ này.
 
 **⚠️ Cần deploy lại GAS** (thêm cột mới vào sheet Users) thì tính năng mới có hiệu lực — chưa deploy thì mọi thứ vẫn chạy như cũ (permOverrides/allowedTypes trả về rỗng, không ảnh hưởng gì).
+
+---
+
+### Task #77 — Fix lỗi ghi trùng dòng khi sao lưu vào sheet + backfill dữ liệu cũ
+
+**Bối cảnh:** sau Task #75, người dùng nhiều lần kiểm tra thực tế và phản ánh sheet "Orders" vẫn thiếu việc — nguyên văn qua nhiều lượt: "Thấy rồi nhé, nhưng các đầu việc khác lại chưa được lưu vào đây", "File sheet quản lý công việc chưa có đầy đủ công việc như trong admin và tracker", và chốt lại dứt khoát: **"Làm gì cũng được, nhưng phải lưu được hết công việc vào sheet nhé"**.
+
+**Nguyên nhân gốc — 2 lỗi độc lập:**
+1. **Không có bước ghi bù cho dữ liệu đã tồn tại từ trước.** `_mirrorOrderToSheet()` (Task #75) chỉ được gọi tại đúng thời điểm 1 việc được tạo mới/tải lần đầu — mọi Content Order/Content Task/Internal Task đã có sẵn TRƯỚC khi Task #75 triển khai không bao giờ được ghi bù, vì không có đoạn code nào quét lại toàn bộ dữ liệu cũ.
+2. **Ghi đồng thời vượt giới hạn thực thi song song của GAS.** 3 điểm gọi mirror (`_loadContentOrders`, `_loadContentTasks`, `_loadInternal`) dùng `.forEach(o=>_mirrorOrderToSheet(o))` — bắn hàng chục request `POST` không đợi nhau cùng lúc. Google Apps Script giới hạn số lượt thực thi đồng thời trên 1 project; vượt ngưỡng khiến một số request thất bại âm thầm (chỉ `console.warn`, không có cảnh báo nào tới người dùng) → giải thích đúng hiện tượng "thiếu ngẫu nhiên, không theo quy luật rõ ràng" mà người dùng quan sát được.
+
+**Fix:**
+- Thêm bước ghi bù toàn bộ (`internalTasks.forEach(...)` → gọi mirror) ngay trong `_loadInternal()`, chạy mỗi lần tải trang.
+- Thêm hàm `_mirrorAllSequential(items)` — vòng lặp `for...of` + `await` tuần tự (không song song), thay thế toàn bộ 3 chỗ `.forEach` cũ ở `_loadContentOrders()`, `_loadContentTasks()`, `_loadInternal()`. Đánh đổi: chậm hơn vài giây khi có nhiều việc chưa mirror, nhưng không còn request nào bị GAS từ chối âm thầm.
+
+**Xử lý dữ liệu cũ bị thiếu (một lần, không lặp lại):** vì cơ chế mirror chạy trong trình duyệt (client-side), không có cách nào server tự quét lại toàn bộ lịch sử — viết 1 script Node.js độc lập (`backfill_mirror.js`, chạy 1 lần ngoài repo, không phải file sản phẩm) lặp lại đúng logic map dữ liệu của admin.html, so sánh ID với sheet hiện có, rồi gọi `addOrder` tuần tự (giãn cách 250ms/lượt) cho từng dòng còn thiếu. Kết quả: ghi bù thành công 48 dòng.
+
+**Sự cố phụ phát sinh khi backfill:** trong lúc script backfill đang chạy, có 1 tab trình duyệt khác đang mở admin.html BẢN CŨ (chưa có fix `_mirrorAllSequential`) — cả 2 tiến trình cùng lúc quyết định mirror 1 số item giống nhau, và vì `addOrderData()` (GAS) không có bước kiểm tra trùng ID (luôn `appendRow`), kết quả là 9 dòng bị ghi trùng 2 lần. Phát hiện qua script đếm trùng lặp theo ID, xử lý bằng cách gọi `deleteOrder` (action GAS có sẵn) đúng 1 lần cho mỗi ID trùng — hàm này xoá đúng 1 dòng đầu tiên khớp (`indexOf`), giữ lại đúng 1 bản. Xác nhận cuối: 60 dòng, 0 trùng lặp.
+
+**Trả lời câu hỏi liên quan của người dùng:**
+- **"Lưu vào sheet lại chưa có kết quả (Kết quả/linkResult) à?"** — không phải lỗi mirror. Kiểm tra trực tiếp dữ liệu gốc trên Supabase (VD task `cont-mril0rux0orwgl`, trạng thái "Đã đăng") cho thấy bản ghi gốc bên Lịch Content **không hề có field** `postUrl`/`result`/`link`/`deliverableLink` — nghĩa là hầu hết Content Task chỉ lưu nội dung bài viết (caption), không lưu link bài đã đăng ở nguồn, nên cột "Kết quả" trống là phản ánh đúng thực tế dữ liệu gốc, không phải mirror bỏ sót.
+- **"Order mới sắp tới có tự động lưu vào sheet không?"** — có, nhưng cơ chế là client-side: mỗi khi có người **mở admin.html** (tải trang hoặc mỗi 90 giây trong lúc đang mở), code sẽ tự quét và ghi bù bất kỳ việc nào chưa có trong sheet. Đây **không phải** tiến trình server chạy nền 24/7 — nếu không ai mở admin.html trong thời gian dài, việc mới bên Content sẽ đợi tới lần mở tiếp theo mới được ghi (không mất dữ liệu, chỉ trễ).
 
 ---
 
