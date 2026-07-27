@@ -1191,6 +1191,20 @@ Domain deploy thật của trang Content đổi từ `content-kim-oanh.pages.dev
 
 ---
 
+### Task #81 — Chênh lệch số lượng giữa sheet (67) và admin/tracker (66): không phải bug, do 1 dòng "ghost"
+
+**Câu hỏi gốc:** "Số lượng công việc trên sheet chưa khớp admin và tracker" → xác nhận cụ thể: sheet 67, admin/tracker 66.
+
+**Đối chiếu trực tiếp với Supabase (nguồn thật của Lịch Content):** Content Order 21/21 và Content Task 45/45 đều đã mirror đủ vào sheet, không thiếu cái nào. Vậy 67 dòng sheet = 66 việc đang tồn tại thật (21+45) + **1 dòng dư** — dò ngược từng ID `lco-`/`cont-` trong sheet với dữ liệu Supabase hiện tại, phát hiện đúng 1 dòng không còn khớp: `cont-mryp7x35i83oth` (bài "Đau đầu có phải dấu hiệu của ĐỘT QUỴ?") — đã bị **xoá bên Lịch Content SAU KHI đã được mirror vào sheet**.
+
+**Kết luận:** đây không phải lỗi ghi trùng hay bỏ sót — sheet chỉ đơn giản **không tự xoá dòng mirror khi nguồn gốc bị xoá** (đúng vai trò "sao lưu": giữ lại dữ liệu kể cả khi bản gốc mất đi), trong khi admin.html/tracker.html chỉ hiển thị dữ liệu đang sống từ Supabase nên không thấy dòng đó nữa. Chênh lệch 67 vs 66 = đúng 1 dòng "ghost" này, không hơn không kém.
+
+**Xử lý:** người dùng xác nhận muốn xoá dòng ghost để khớp số tuyệt đối, chấp nhận đánh đổi mất bản ghi lịch sử của việc đã xoá — gọi `deleteOrder` xoá `cont-mryp7x35i83oth`. Kết quả: sheet còn **66 dòng**, khớp đúng admin/tracker.
+
+**Lưu ý cho về sau:** đây là hành vi TỰ NHIÊN của cơ chế mirror (Task #75), không phải bug — mỗi khi 1 Content Order/Task bị xoá bên Lịch Content sau khi đã mirror, sheet sẽ dư đúng 1 dòng ghost cho việc đó. Nếu muốn số liệu sheet luôn khớp tuyệt đối với admin/tracker về lâu dài, cần thêm cơ chế tự dọn ghost (chưa làm, vì đánh đổi là mất lịch sử của việc đã xoá — cần hỏi ý kiến người dùng trước khi tự động hoá việc này).
+
+---
+
 ## 14. Liên kết nhanh
 
 | Tên | URL |
