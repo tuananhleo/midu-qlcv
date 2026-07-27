@@ -1021,11 +1021,12 @@ function _loadInternal(){
   // Xóa các task cũ từ lịch content (đã chuyển sang contentTasks)
   internalTasks=internalTasks.filter(t=>!t._fromContent);
   _saveInternal();
-  // Sao lưu bù cho việc nội bộ đã tạo TỪ TRƯỚC khi có tính năng mirror (Task #75) —
-  // trước đây chỉ mirror lúc tạo/sửa mới, nên việc cũ chưa từng đụng tới sẽ không bao giờ
-  // được ghi vào sheet Orders nếu không quét lại ở đây mỗi lần tải trang. Có guard theo
-  // id trong _mirrorOrderToSheet nên gọi lại nhiều lần không tạo trùng dòng.
-  _mirrorAllSequential(internalTasks);
+  // Sao lưu bù cho việc nội bộ đã tạo TỪ TRƯỚC khi có tính năng mirror (Task #75) — trước
+  // đây chỉ mirror lúc tạo/sửa mới, nên việc cũ chưa từng đụng tới sẽ không bao giờ được ghi
+  // vào sheet Orders nếu không quét lại mỗi lần tải trang. KHÔNG gọi mirror ở đây nữa (Task
+  // #80) — hàm này chạy ngay lúc parse script, trước khi có dữ liệu thật từ getOrders
+  // (_sheetOrderIds rỗng), mirror lúc này sẽ không chống trùng được gì. Việc quét-bù được
+  // dời sang loadAll() ngay sau khi _sheetOrderIds đã có dữ liệu thật từ sheet.
 }
 function _saveInternal(){ localStorage.setItem(KEY_INTERNAL,JSON.stringify(internalTasks)); }
 function _newInternal(data){
@@ -1191,6 +1192,20 @@ let allOrders     = [];
 // Task đã hiển thị sẵn từ nguồn gốc (Supabase/localStorage) — phải loại khỏi allOrders
 // ngay khi gán, nếu không sẽ hiện trùng 2 lần trên list lẫn báo cáo/CSV/Firebase sync.
 const _isMirrorRow = o => /^Sao lưu/.test(o?.note||'');
+// Toàn bộ ID hiện có trong sheet (bao gồm cả dòng mirror), lấy từ getOrders — nguồn sự thật
+// DÙNG CHUNG cho mọi trình duyệt, khác với KEY_MIRRORED_IDS (localStorage — chỉ máy này biết).
+// Task #80: nếu chỉ dựa vào KEY_MIRRORED_IDS, 1 người mở admin.html trên máy/trình duyệt khác
+// (hoặc xoá dữ liệu trình duyệt) sẽ tưởng chưa mirror và ghi trùng lại toàn bộ — đã xảy ra
+// thật (60 dòng → 196 dòng, có ID lặp tới 6 lần). _sheetOrderIds giúp mọi trình duyệt đều
+// thấy được dòng do trình duyệt KHÁC đã ghi, không chỉ dòng do chính nó ghi.
+let _sheetOrderIds = new Set();
+async function _refreshSheetOrderIds(){
+  try{
+    const r=await fetch(`${getGasUrl()}?action=getOrders`,{signal:AbortSignal.timeout(10000)}).then(x=>x.json());
+    const raw=r.orders||r.data||(Array.isArray(r)?r:[]);
+    _sheetOrderIds=new Set(raw.map(o=>o.id));
+  }catch(e){ console.warn('[refreshSheetOrderIds]',e.message); }
+}
 let filters       = {dept:'', type:'', status:''};
 let _overdueFilter = false;
 let currentPeriod = 'month';
@@ -1358,9 +1373,17 @@ async function loadAll(notify=false) {
   try {
     const [ordRes, fmRes] = await Promise.all([gasOrders, gasSchema]);
     if (ordRes) {
-      allOrders = (ordRes.orders || ordRes.data || (Array.isArray(ordRes) ? ordRes : [])).filter(o=>!_isMirrorRow(o));
+      const _raw = ordRes.orders || ordRes.data || (Array.isArray(ordRes) ? ordRes : []);
+      _sheetOrderIds = new Set(_raw.map(o=>o.id));
+      allOrders = _raw.filter(o=>!_isMirrorRow(o));
       if (ordRes.schema) dynamicSchema = ordRes.schema;
       try { localStorage.setItem(KEY_CACHE, JSON.stringify({orders: allOrders, schema: dynamicSchema})); } catch(e) {}
+      // Quét-bù mirror CHỈ ở đây (Task #80) — lúc này _sheetOrderIds đã có dữ liệu thật từ
+      // sheet (không phải rỗng như lúc _loadContentTasks/_loadContentOrders/_loadInternal
+      // chạy), nên chống trùng được cả khi nhiều trình duyệt/máy khác nhau cùng mở admin.html.
+      _mirrorAllSequential(contentOrders);
+      _mirrorAllSequential(contentTasks);
+      _mirrorAllSequential(internalTasks.filter(t=>!t._fromContentOrder));
     }
     if (fmRes?.schema && Object.keys(fmRes.schema).length) {
       formSchema = fmRes.schema;
@@ -3426,7 +3449,12 @@ const KEY_MIRRORED_IDS = 'midu_mirrored_sheet_ids';
 function _getMirroredIds(){ try{return new Set(JSON.parse(localStorage.getItem(KEY_MIRRORED_IDS)||'[]'));}catch(e){return new Set();} }
 function _addMirroredId(id){ const s=_getMirroredIds(); s.add(id); localStorage.setItem(KEY_MIRRORED_IDS,JSON.stringify([...s])); }
 async function _mirrorOrderToSheet(order){
-  if(!order?.id || order._fromLichTT || _getMirroredIds().has(order.id)) return;
+  if(!order?.id || order._fromLichTT) return;
+  if(_getMirroredIds().has(order.id)) return; // chính trình duyệt này đã ghi rồi
+  // Trình duyệt/máy KHÁC đã ghi dòng này vào sheet rồi (biết được nhờ _sheetOrderIds — lấy
+  // trực tiếp từ getOrders, dùng chung cho mọi người, khác với KEY_MIRRORED_IDS chỉ máy này
+  // biết) — chỉ cần tự đánh dấu cục bộ, KHÔNG ghi thêm dòng nữa (tránh trùng, xem Task #80).
+  if(_sheetOrderIds.has(order.id)){ _addMirroredId(order.id); return; }
   try{
     const sourceLabel=order._fromContentOrder?'Content Order':order._fromContent?'Content Task':'Việc nội bộ';
     const payload={
@@ -3441,11 +3469,17 @@ async function _mirrorOrderToSheet(order){
     };
     const resp=await fetch(getGasUrl(),{method:'POST',body:JSON.stringify({action:'addOrder',order:payload})});
     const data=await resp.json();
-    if(data && !data.error) _addMirroredId(order.id);
+    if(data && !data.error){ _addMirroredId(order.id); _sheetOrderIds.add(order.id); }
   }catch(e){ console.warn('[Mirror→Sheet] lỗi ghi mới:', e.message); }
 }
 async function _mirrorUpdateSheet(id, fields){
-  if(!id || !_getMirroredIds().has(id)) return;
+  if(!id) return;
+  // Chấp nhận cả trường hợp dòng đã tồn tại trong sheet do trình duyệt KHÁC mirror (tự chữa
+  // flag cục bộ luôn) — không chỉ dựa vào KEY_MIRRORED_IDS của riêng máy này.
+  if(!_getMirroredIds().has(id)){
+    if(!_sheetOrderIds.has(id)) return; // chưa từng có dòng nào trong sheet để update
+    _addMirroredId(id);
+  }
   try{ await fetch(getGasUrl(),{method:'POST',body:JSON.stringify({action:'updateOrder', id, updates:fields})}); }
   catch(e){ console.warn('[Mirror→Sheet] lỗi update:', e.message); }
 }
@@ -3511,7 +3545,9 @@ async function _loadContentTasks(){
   }));
   contentTasks=perSource.flat();
   try { localStorage.setItem(KEY_CT_CACHE, JSON.stringify(contentTasks)); } catch(e) {}
-  _mirrorAllSequential(contentTasks); // sao lưu vào sheet Orders (chỉ ghi mới lần đầu, tuần tự)
+  // Mirror sang sheet Orders KHÔNG gọi ở đây nữa (Task #80) — dời ra ngoài, tới sau khi
+  // _sheetOrderIds có dữ liệu thật từ getOrders, để chống trùng khi có nhiều trình duyệt
+  // cùng mở admin.html (xem loadAll()/_autoSyncContent()/_periodicContentSync()).
 }
 
 
@@ -3620,7 +3656,7 @@ async function _loadContentOrders(){
   contentOrders=perSource.flat();
   // Cache để load nhanh lần sau
   try { localStorage.setItem(KEY_CO_CACHE, JSON.stringify(contentOrders)); } catch(e) {}
-  _mirrorAllSequential(contentOrders); // sao lưu vào sheet Orders (chỉ ghi mới lần đầu, tuần tự)
+  // Mirror sang sheet Orders KHÔNG gọi ở đây nữa (Task #80) — xem ghi chú ở _loadContentTasks().
 }
 
 // Lịch T.Thông — sheet riêng (tách khỏi sheet Orders để không phình to theo tần suất
@@ -3726,6 +3762,11 @@ async function _autoSyncContent(){
     await _loadContentChannels();
     await Promise.all([_loadContentTasks(), _loadContentOrders(), _loadLichTT()]);
     updateStats(); render();
+    // Refresh _sheetOrderIds trước khi mirror (Task #80) — đảm bảo chống trùng dựa trên
+    // dữ liệu sheet mới nhất, không chỉ localStorage của riêng máy này.
+    await _refreshSheetOrderIds();
+    _mirrorAllSequential(contentOrders);
+    _mirrorAllSequential(contentTasks);
     showToast(`Lịch Content: ${contentOrders.length} order`,'success');
   }catch(e){
     console.error(e); showToast('Lỗi: '+e.message,'error');
@@ -3748,6 +3789,10 @@ async function _periodicContentSync(){
     // Không render khi đang có ô đang gõ dở (form sửa nội bộ, ô phân công trên card...)
     // để tránh render() ghi đè mất nội dung chưa lưu.
     if(!_hasActiveInput()) render();
+    // Refresh _sheetOrderIds trước khi mirror (Task #80) — xem giải thích ở _autoSyncContent().
+    await _refreshSheetOrderIds();
+    _mirrorAllSequential(contentOrders);
+    _mirrorAllSequential(contentTasks);
   }catch(e){ console.warn('[periodic content sync]', e.message); }
 }
 // ── Auto-complete feedback sau 24h ─────────────────────────────
