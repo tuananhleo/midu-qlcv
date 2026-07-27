@@ -231,13 +231,14 @@
   <div class="glass rounded-2xl p-4 mb-4 space-y-2.5">
     <!-- Kỳ thời gian -->
     <div class="flex flex-wrap items-center gap-1.5">
-      <span class="text-xs flex-shrink-0" style="color:var(--ttext3)">Kỳ:</span>
-      <button type="button" class="period-btn" onclick="setPeriod(this,'today')">Hôm nay</button>
-      <button type="button" class="period-btn" onclick="setPeriod(this,'last-week')">Tuần trước</button>
-      <button type="button" class="period-btn" onclick="setPeriod(this,'week')">Tuần này</button>
-      <button type="button" class="period-btn active" onclick="setPeriod(this,'month')">Tháng này</button>
-      <button type="button" class="period-btn" onclick="setPeriod(this,'year')">Năm này</button>
+      <span class="text-xs w-16 flex-shrink-0" style="color:var(--ttext3)">Kỳ:</span>
       <button type="button" class="period-btn" onclick="setPeriod(this,'all')">Tất cả</button>
+      <button type="button" class="period-btn active" onclick="setPeriod(this,'month')">Tháng này</button>
+      <button type="button" class="period-btn" onclick="setPeriod(this,'last-month')">Tháng trước</button>
+      <button type="button" class="period-btn" onclick="setPeriod(this,'week')">Tuần này</button>
+      <button type="button" class="period-btn" onclick="setPeriod(this,'last-week')">Tuần trước</button>
+      <button type="button" class="period-btn" onclick="setPeriod(this,'today')">Hôm nay</button>
+      <button type="button" class="period-btn" onclick="setPeriod(this,'yesterday')">Hôm qua</button>
       <button type="button" class="period-btn" id="period-btn-custom" onclick="openRangePicker()">📅 Tùy chỉnh</button>
       <span class="text-xs ml-1 italic" style="color:var(--ttext3)" id="period-label"></span>
     </div>
@@ -321,9 +322,11 @@ let _overdueFilter = false; // {from: Date, to: Date}
 function getDateRange(period) {
   const now=new Date(), d0=new Date(now.getFullYear(),now.getMonth(),now.getDate());
   if(period==='today') return {from:d0,to:new Date(d0.getTime()+86400000)};
+  if(period==='yesterday'){const y=new Date(d0.getTime()-86400000);return{from:y,to:d0};}
   if(period==='week'){const dow=d0.getDay()||7;const mon=new Date(d0.getTime()-(dow-1)*86400000);return{from:mon,to:new Date(mon.getTime()+7*86400000)};}
   if(period==='last-week'){const dow=d0.getDay()||7;const thisMon=new Date(d0.getTime()-(dow-1)*86400000);const lastMon=new Date(thisMon.getTime()-7*86400000);return{from:lastMon,to:new Date(thisMon.getTime()-86400000)};}
   if(period==='month') return {from:new Date(now.getFullYear(),now.getMonth(),1),to:new Date(now.getFullYear(),now.getMonth()+1,1)};
+  if(period==='last-month') return {from:new Date(now.getFullYear(),now.getMonth()-1,1),to:new Date(now.getFullYear(),now.getMonth(),1)};
   if(period==='year')  return {from:new Date(now.getFullYear(),0,1),to:new Date(now.getFullYear()+1,0,1)};
   return null;
 }
@@ -351,7 +354,7 @@ function setPeriod(el, period) {
 }
 function updatePeriodLabel() {
   const el=document.getElementById('period-label'); if(!el) return;
-  const labels={'today':'Hôm nay','week':'Tuần này','last-week':'Tuần trước','month':'Tháng này','year':'Năm này','all':'Tất cả thời gian'};
+  const labels={'today':'Hôm nay','yesterday':'Hôm qua','week':'Tuần này','last-week':'Tuần trước','month':'Tháng này','last-month':'Tháng trước','all':'Tất cả thời gian'};
   let lbl = labels[currentPeriod]||'';
   if(currentPeriod==='custom'&&customRange){
     const fmt=d=>`${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
