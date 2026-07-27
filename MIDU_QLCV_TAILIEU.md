@@ -1187,6 +1187,8 @@ Domain deploy thật của trang Content đổi từ `content-kim-oanh.pages.dev
 
 **⚠️ Lưu ý bắt buộc sau khi deploy fix này:** mọi tab admin.html/tracker.html đang mở ở bất kỳ máy nào đều cần **tải lại trang (F5)** để nạp code mới — tab cũ vẫn chạy code cũ trong bộ nhớ cho tới khi tải lại, và sẽ tiếp tục ghi trùng nếu để mở lâu (đúng nguyên nhân khiến 196→202 xảy ra ngay trong lúc dọn dẹp).
 
+**Xác nhận sau khi push code fix lên Git:** kiểm tra lại sheet Orders — vẫn giữ nguyên **67 dòng, 0 trùng lặp**, không phát sinh thêm dòng trùng nào kể từ lúc dọn xong. Cơ chế `_sheetOrderIds` hoạt động đúng như kỳ vọng.
+
 ---
 
 ## 14. Liên kết nhanh
