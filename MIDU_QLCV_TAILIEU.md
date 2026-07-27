@@ -1173,6 +1173,22 @@ Domain deploy thật của trang Content đổi từ `content-kim-oanh.pages.dev
 
 ---
 
+### Task #80 — Fix gốc rễ: 1 việc bị ghi thành nhiều dòng trong sheet (không chỉ hiện trùng, mà GHI trùng thật)
+
+**Câu hỏi gốc:** "Mà file sheet quản lý công việc, 1 đầu việc bị lưu nhiều dòng lắm" — khác với Task #79 (hiện trùng ở giao diện nhưng sheet chỉ có 1 dòng thật), lần này kiểm tra trực tiếp sheet phát hiện **bản thân dữ liệu trong sheet đã bị ghi trùng thật**: từ 60 dòng (sau khi dọn ở Task #77/#79) tăng lên **196 dòng**, có ID bị lặp tới **6 lần**.
+
+**Nguyên nhân gốc:** cơ chế chống ghi trùng của tính năng mirror (Task #75) chỉ dựa vào `KEY_MIRRORED_IDS` — một danh sách lưu trong `localStorage`, tức **chỉ máy/trình duyệt đang chạy nó biết được**. Khi có nhiều người (hoặc cùng 1 người dùng nhiều máy/trình duyệt khác nhau) cùng mở admin.html, mỗi trình duyệt đều có `localStorage` RIÊNG, ban đầu đều rỗng — mỗi trình duyệt đều "tưởng" chưa có ai mirror việc đó và tự ý ghi lại từ đầu. Vì GAS `addOrderData()` không có bước kiểm tra trùng ID phía server (luôn `appendRow`, đã biết từ Task #77), mỗi trình duyệt độc lập ghi 1 bản → N trình duyệt cùng mở = N bản ghi cho cùng 1 việc. Cơ chế này tự động lặp lại mỗi 90 giây (đồng bộ định kỳ) và mỗi lần tải trang, nên số dòng trùng tăng liên tục theo thời gian, không tự dừng.
+
+**Fix (thay đổi kiến trúc, không chỉ vá tạm):**
+- Thêm `_sheetOrderIds` — tập hợp ID lấy trực tiếp từ `getOrders` (dữ liệu thật trên sheet, DÙNG CHUNG cho mọi trình duyệt), khác hẳn `KEY_MIRRORED_IDS` (chỉ máy này biết). `_mirrorOrderToSheet()`/`_mirrorUpdateSheet()` giờ kiểm tra CẢ 2: nếu `_sheetOrderIds` đã có ID đó (do trình duyệt KHÁC ghi) thì tự đánh dấu cục bộ và bỏ qua, không ghi thêm.
+- Dời toàn bộ điểm gọi "quét-bù mirror" (`_mirrorAllSequential`) ra khỏi `_loadContentTasks()`/`_loadContentOrders()`/`_loadInternal()` — lúc các hàm này chạy, `_sheetOrderIds` chưa có dữ liệu thật (rỗng), mirror lúc đó không chống trùng được gì. Chuyển sang gọi ngay sau khi `_sheetOrderIds` đã được nạp từ `getOrders` thật: trong `loadAll()` (lúc tải trang), `_autoSyncContent()` (bấm nút "↻ Lịch Content"), và `_periodicContentSync()` (đồng bộ nền mỗi 90s) — cả 3 điểm đều tự refresh `_sheetOrderIds` trước khi mirror.
+
+**Dọn dữ liệu đã trùng:** chạy 1 script Node.js (`dedup_orders.js`, ngoài repo, cùng cách làm với Task #77/#79) gọi `deleteOrder` cho từng ID bị lặp tới khi chỉ còn đúng 1 dòng. Trong lúc dọn, phát hiện sheet còn tăng dòng thêm (196→202) do vẫn có 1 tab trình duyệt mở bản code CŨ (chưa có fix) đang tự đồng bộ nền — xác nhận đúng cơ chế gây lỗi. Kết quả cuối: **67 dòng, 0 trùng lặp**.
+
+**⚠️ Lưu ý bắt buộc sau khi deploy fix này:** mọi tab admin.html/tracker.html đang mở ở bất kỳ máy nào đều cần **tải lại trang (F5)** để nạp code mới — tab cũ vẫn chạy code cũ trong bộ nhớ cho tới khi tải lại, và sẽ tiếp tục ghi trùng nếu để mở lâu (đúng nguyên nhân khiến 196→202 xảy ra ngay trong lúc dọn dẹp).
+
+---
+
 ## 14. Liên kết nhanh
 
 | Tên | URL |
