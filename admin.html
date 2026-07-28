@@ -888,13 +888,39 @@ const getDepts     = () => { try { return JSON.parse(localStorage.getItem(KEY_DE
 
 // ── Phân quyền ────────────────────────────────────────────────
 // ── Hệ thống vai trò động ─────────────────────────────────────
-// 5 vai trò gốc (không xóa được)
+// Vai trò gốc (không xóa được) — 2 quản lý/trưởng nhóm + 3 cấp (Thực tập sinh/Tập sự/Nhân
+// viên) cho từng vị trí (Thiết kế/Media/CSKH/AI/Phần mềm/Xây kênh), khớp đúng cách phòng
+// Marketing – Truyền thông tổ chức nhân sự theo giai đoạn (xem sheet danh sách phòng).
+// Đặt trong BUILTIN_ROLES (code, dùng chung mọi trình duyệt) thay vì "vai trò tuỳ chỉnh"
+// (KEY_ROLES, chỉ lưu localStorage — máy khác sẽ không thấy tên/icon đẹp).
 const BUILTIN_ROLES = [
   { id:'admin',           label:'Quản trị viên',        icon:'🔑', permLevel:'admin'    },
   { id:'leader_thiet_ke', label:'Trưởng nhóm Thiết Kế', icon:'👑', permLevel:'leader'   },
   { id:'leader_media',    label:'Trưởng nhóm Media',    icon:'👑', permLevel:'leader'   },
-  { id:'nv_thiet_ke',     label:'Nhân viên Thiết Kế',   icon:'🎨', permLevel:'employee' },
-  { id:'nv_media',        label:'Nhân viên Media',       icon:'📸', permLevel:'employee' },
+
+  { id:'ts_thiet_ke',     label:'Thực tập sinh Thiết Kế', icon:'🌱', permLevel:'employee' },
+  { id:'tapsu_thiet_ke',  label:'Tập sự Thiết Kế',        icon:'🎨', permLevel:'employee' },
+  { id:'nv_thiet_ke',     label:'Nhân viên Thiết Kế',     icon:'🎨', permLevel:'employee' },
+
+  { id:'ts_media',        label:'Thực tập sinh Media',    icon:'🌱', permLevel:'employee' },
+  { id:'tapsu_media',     label:'Tập sự Media',           icon:'📸', permLevel:'employee' },
+  { id:'nv_media',        label:'Nhân viên Media',        icon:'📸', permLevel:'employee' },
+
+  { id:'ts_cskh',         label:'Thực tập sinh CSKH',     icon:'🌱', permLevel:'employee' },
+  { id:'tapsu_cskh',      label:'Tập sự CSKH',            icon:'🎧', permLevel:'employee' },
+  { id:'nv_cskh',         label:'Nhân viên CSKH',         icon:'🎧', permLevel:'employee' },
+
+  { id:'ts_ai',           label:'Thực tập sinh AI',       icon:'🌱', permLevel:'employee' },
+  { id:'tapsu_ai',        label:'Tập sự AI',              icon:'🤖', permLevel:'employee' },
+  { id:'nv_ai',           label:'Nhân viên AI',           icon:'🤖', permLevel:'employee' },
+
+  { id:'ts_phanmem',      label:'Thực tập sinh Phần mềm', icon:'🌱', permLevel:'employee' },
+  { id:'tapsu_phanmem',   label:'Tập sự Phần mềm',        icon:'💻', permLevel:'employee' },
+  { id:'nv_phanmem',      label:'Nhân viên Phần mềm',     icon:'💻', permLevel:'employee' },
+
+  { id:'ts_xaykenh',      label:'Thực tập sinh Xây kênh', icon:'🌱', permLevel:'employee' },
+  { id:'tapsu_xaykenh',   label:'Tập sự Xây kênh',        icon:'📡', permLevel:'employee' },
+  { id:'nv_xaykenh',      label:'Nhân viên Xây kênh',     icon:'📡', permLevel:'employee' },
 ];
 
 // 3 mức quyền cơ bản
