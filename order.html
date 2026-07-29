@@ -494,8 +494,13 @@ function renderTypeSections() {
         dateFormat: 'd/m/Y',
         altFormat: 'd/m/Y',
         disableMobile: true,
-        appendTo: document.body
+        appendTo: document.body,
+        // Xoá viền đỏ báo lỗi (do lần gửi trước thiếu deadline) ngay khi chọn ngày mới —
+        // trước đây viền đỏ bị giữ nguyên tới lần bấm Gửi tiếp theo mới mất, gây hiểu lầm
+        // là lỗi vẫn còn (và lộ ra đè lên góc lịch khi mở lại ô đó).
+        onChange: function(){ el.style.borderColor=''; }
       });
+      el.addEventListener('focus', function(){ el.style.borderColor=''; });
     });
     // time dùng <select> thay flatpickr
   }, 50);
