@@ -221,6 +221,7 @@ const TYPES = [
   { id:'content',         label:'Content',         icon:'✍️', sub:'Bài viết, caption, script...', color:'#38bdf8', colorRGB:'56,189,248' },
   { id:'lich-truyen-thong', label:'Lịch T.Thông', icon:'📅', sub:'Đặt lịch bắn bot, tin nhắn bán hàng...', color:'#06b6d4', colorRGB:'6,182,212' },
   { id:'khac',            label:'Khác',            icon:'📦', sub:'Yêu cầu khác...',            color:'#94a3b8', colorRGB:'148,163,184' },
+  { id:'du-an-tong-hop',  label:'Dự án tổng hợp',  icon:'📁', sub:'Brief chung gồm nhiều đầu việc (landing page, content, banner...)', color:'#eab308', colorRGB:'234,179,8' },
 ];
 const TYPE_MAP = Object.fromEntries(TYPES.map(t=>[t.id,t.icon+' '+t.label]));
 
@@ -272,6 +273,13 @@ const DEFAULT_FORM_SCHEMA = {
   'khac': [
     { id:'d_desc',     label:'Mô tả yêu cầu chi tiết',      type:'textarea', placeholder:'Mô tả đầy đủ yêu cầu của bạn...', span:2, rows:5 },
     { id:'d_ref_khac', label:'Link tài liệu / tham khảo',   type:'url',      placeholder:'https://...', span:2 },
+  ],
+  // Dùng lại đúng 2 field của loại "khac" (d_desc/d_ref_khac) — không cần thêm cột mới bên
+  // GAS. Đây là loại dành cho brief chung gồm nhiều đầu việc khác nhau (VD copy từ 1Office),
+  // admin sẽ dùng tính năng "Tách việc AI" để tách thành các order con đúng loại.
+  'du-an-tong-hop': [
+    { id:'d_desc',     label:'Dán nguyên văn bản mô tả dự án (càng chi tiết càng dễ tách việc đúng)', type:'textarea', placeholder:'Dán nguyên brief, liệt kê các đầu việc cần làm, deadline từng phần nếu có...', span:2, rows:8 },
+    { id:'d_ref_khac', label:'Link tài liệu / brief gốc (nếu có)', type:'url', placeholder:'https://...', span:2 },
   ],
   'lich-truyen-thong': [
     { id:'d_gio_ban_bot',  label:'Giờ bắn bot',          type:'text',     placeholder:'VD: 8h, 10h30, 19h...', span:1 },
