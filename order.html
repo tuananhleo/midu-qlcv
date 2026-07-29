@@ -104,25 +104,19 @@ label { display:block; font-size:.67rem; font-weight:800; letter-spacing:.06em; 
   }
   .flatpickr-months { padding:4px 0 8px; border-bottom:1px solid rgba(255,255,255,.08); margin-bottom:4px; }
   .flatpickr-month, .flatpickr-current-month, .flatpickr-monthDropdown-months, .numInput { color:#e2e8f0!important; background:transparent!important; fill:#e2e8f0!important; font-weight:700!important; }
-  /* Tailwind CDN reset input/select rất mạnh, làm ô năm (numInput) của flatpickr gần như
-     biến mất (co lại 0 width, mất hẳn khỏi mắt) — ép layout flex + kích thước rõ ràng để
-     đảm bảo LUÔN hiện đủ cả tháng lẫn năm, không phụ thuộc cascade của Tailwind. */
+  /* Tailwind CDN reset input/select rất mạnh, làm ô năm gốc (numInput) của flatpickr gần
+     như biến mất — thay hẳn bằng 1 dropdown <select> năm tự tạo (xem _fpBuildYearSelect
+     trong JS), cùng kiểu với dropdown chọn tháng, ép layout flex để 2 dropdown cân đối. */
   .flatpickr-current-month {
     display:flex!important; align-items:center!important; justify-content:center!important;
     gap:6px!important; width:100%!important; height:auto!important; padding:0!important; position:relative!important;
   }
-  .flatpickr-current-month select {
-    background:#1a2744!important; color:#e2e8f0!important; border:none!important;
-    font-weight:700!important; font-size:.95rem!important; padding:2px 4px!important; width:auto!important;
+  .flatpickr-current-month select, .flatpickr-current-month select.fp-year-select {
+    background:#1a2744!important; color:#e2e8f0!important; border:1px solid rgba(255,255,255,.12)!important;
+    border-radius:8px!important; font-weight:700!important; font-size:.9rem!important;
+    padding:3px 6px!important; width:auto!important; cursor:pointer!important;
   }
-  .numInputWrapper { display:inline-flex!important; align-items:center!important; width:auto!important; position:relative!important; }
-  .flatpickr-current-month input.numInput.cur-year {
-    display:inline-block!important; visibility:visible!important; opacity:1!important;
-    width:56px!important; min-width:56px!important; font-size:.95rem!important; font-weight:700!important;
-    padding:0!important; margin:0!important; text-align:left!important; -moz-appearance:textfield!important;
-  }
-  /* Ẩn 2 nút tăng/giảm năm (mũi tên nhỏ) — nhìn rối, dùng ô năm gõ trực tiếp gọn hơn */
-  .numInputWrapper span.arrowUp, .numInputWrapper span.arrowDown { display:none!important; }
+  .flatpickr-current-month select:hover { border-color:rgba(129,140,248,.5)!important; }
   .flatpickr-weekdays { background:transparent!important; margin-bottom:2px; }
   .flatpickr-weekday { color:#818cf8!important; background:transparent!important; font-size:.72rem!important; font-weight:700!important; }
   .flatpickr-day { color:#cbd5e1!important; border-radius:8px!important; border:none!important; font-size:.8rem!important; height:32px!important; line-height:32px!important; margin:1px!important; }
@@ -401,6 +395,37 @@ function _applySchema(schema) {
   } catch(e) {}
 })();
 
+// ── Flatpickr: thay ô năm (numInput) bằng dropdown <select> cho rõ ràng bấm chọn được,
+// cùng kiểu với dropdown chọn tháng để giao diện cân đối. ─────────────────────
+function _fpBuildYearSelect(instance){
+  const wrapper = instance.currentYearElement.parentNode; // .numInputWrapper
+  if (wrapper.dataset.fpYearDone) { _fpSyncYearSelect(instance); return; } // tránh tạo lại khi mở popup nhiều lần
+  wrapper.dataset.fpYearDone = '1';
+  const curYear = instance.currentYear;
+  const sel = document.createElement('select');
+  sel.className = 'fp-year-select';
+  for (let y = curYear - 3; y <= curYear + 5; y++) {
+    const opt = document.createElement('option');
+    opt.value = y; opt.textContent = y;
+    if (y === curYear) opt.selected = true;
+    sel.appendChild(opt);
+  }
+  sel.addEventListener('change', function(){ instance.changeYear(parseInt(this.value, 10)); });
+  wrapper.style.display = 'none'; // ẩn hẳn input năm + 2 nút mũi tên gốc
+  wrapper.parentNode.insertBefore(sel, wrapper.nextSibling);
+  instance._yearSelectEl = sel;
+}
+function _fpSyncYearSelect(instance){
+  if (!instance._yearSelectEl) return;
+  const y = instance.currentYear;
+  const hasOpt = [...instance._yearSelectEl.options].some(o => +o.value === y);
+  if (!hasOpt) { // năm ngoài khoảng đã sinh (bấm mũi tên tháng lâu) — thêm option mới
+    const opt = document.createElement('option'); opt.value = y; opt.textContent = y;
+    instance._yearSelectEl.appendChild(opt);
+  }
+  instance._yearSelectEl.value = y;
+}
+
 function buildDeptSelect(depts) {
   const sel = document.getElementById('f-department');
   const cur = sel.value || window._savedDept || '';
@@ -515,7 +540,13 @@ function renderTypeSections() {
         // Xoá viền đỏ báo lỗi (do lần gửi trước thiếu deadline) ngay khi chọn ngày mới —
         // trước đây viền đỏ bị giữ nguyên tới lần bấm Gửi tiếp theo mới mất, gây hiểu lầm
         // là lỗi vẫn còn (và lộ ra đè lên góc lịch khi mở lại ô đó).
-        onChange: function(){ el.style.borderColor=''; }
+        onChange: function(){ el.style.borderColor=''; },
+        // Ô năm gốc của flatpickr (input số + 2 nút mũi tên) dễ bị Tailwind reset đè mất
+        // và nhìn không rõ là bấm chọn được — thay hẳn bằng 1 dropdown <select> năm, cùng
+        // kiểu với dropdown chọn tháng để giao diện cân đối, rõ ràng là chọn được.
+        onReady: function(sel, str, instance){ _fpBuildYearSelect(instance); },
+        onMonthChange: function(sel, str, instance){ _fpSyncYearSelect(instance); },
+        onYearChange: function(sel, str, instance){ _fpSyncYearSelect(instance); }
       });
       el.addEventListener('focus', function(){ el.style.borderColor=''; });
     });
