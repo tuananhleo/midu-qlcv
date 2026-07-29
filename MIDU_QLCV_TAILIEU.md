@@ -1328,6 +1328,27 @@ Dùng đúng `--deploymentId` của deployment đang có (`AKfycbw5klIN8zAsl6cYS
 
 ---
 
+### Task #90 — Thêm loại order "Chatbot" (setup link đăng ký/điểm danh/thi)
+
+**Yêu cầu (nguyên văn):** "Bây giờ anh cần 1 loại order nữa là chatbot, việc này thường thì sẽ là setup các link đăng ký, link điểm danh, link thi... do Lê Thị Huyền và Khuất Thị Ngát phụ trách" → hỏi lại field cụ thể, xác nhận: "Cái này đơn giản thôi, chỉ cần tên chương trình, fanpage là gì, các thông tin cần thu trong link với 1 dòng lưu ý."
+
+**Fix (order.html, không cần thêm cột GAS/deploy lại — dùng lại field id có sẵn):**
+```
+'chatbot': [
+  { id:'d_chuong_trinh', label:'Tên chương trình' },              // dùng lại id của "Lịch T.Thông"
+  { id:'d_page',         label:'Fanpage' },                        // dùng lại id của "Lịch T.Thông"
+  { id:'d_noi_dung_bot', label:'Thông tin cần thu thập trong link' }, // dùng lại id của "Lịch T.Thông"
+  { id:'d_note_ads',     label:'Lưu ý' },                          // dùng lại id của "Chạy Ads"
+]
+```
+Mỗi field id chỉ cần trùng với field id ĐÃ CÓ ở bất kỳ loại nào khác (vì tất cả loại dùng chung 1 bộ cột cố định trên sheet Orders) — nhãn hiển thị (label) độc lập theo từng loại, không ảnh hưởng gì tới loại gốc đang dùng field đó.
+
+- `admin.html` + `tracker.html`: thêm `chatbot` vào `TYPE_MAP`/`DEFAULT_TYPES` (icon 🤖) để hiện đúng tên/icon thay vì id thô.
+
+**Lưu ý đặt tên:** loại này KHÁC với "📅 Lịch T.Thông" (đặt lịch bắn tin nhắn bot hàng loạt) — "Chatbot" ở đây chỉ là việc setup link thu thập thông tin (đăng ký/điểm danh/thi) cho 1 chương trình, dù cả 2 đều liên quan tới "bot". Không có xung đột kỹ thuật (2 type id khác nhau hoàn toàn: `chatbot` vs `lich-truyen-thong`), chỉ là điểm dễ nhầm lẫn về mặt đặt tên nếu đọc lướt — cần lưu ý khi giải thích cho người mới.
+
+---
+
 ## 14. Liên kết nhanh
 
 | Tên | URL |
