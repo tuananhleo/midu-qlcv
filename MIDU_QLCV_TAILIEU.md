@@ -1314,6 +1314,20 @@ Dùng đúng `--deploymentId` của deployment đang có (`AKfycbw5klIN8zAsl6cYS
 
 ---
 
+### Task #89 — Badge tiến độ dự án + màn tổng quan dự án (admin.html + tracker.html)
+
+**Câu hỏi gốc:** "Đã có 1 dự án tổng hợp, đang được tính là 1 đầu việc, nhưng trong đó là nhiều việc con thì nên xử lý thế nào" — sau khi tách việc bằng AI (Task #85), các việc con chỉ hiện như order bình thường, không có gì cho thấy chúng thuộc cùng 1 dự án lớn hơn, dễ gây hiểu lầm là các việc độc lập.
+
+**Thảo luận trước khi code (dùng skill `mockup` dựng bản xem trước cho người dùng duyệt trước khi implement thật):** thống nhất 2 phần — (1) mỗi card việc con có 1 badge riêng ghi rõ tên dự án + số việc đã xong/tổng + % kèm thanh tiến độ nhỏ; (2) bấm vào badge đó mở 1 màn tổng quan riêng cho cả dự án, liệt kê đầy đủ các việc con kèm trạng thái từng việc.
+
+**Fix (đồng bộ cả admin.html lẫn tracker.html, không cần sửa GAS):**
+- `_getProjectStats(projectCode)` — tính % hoàn thành + đếm việc đã xong/tổng bằng cách lọc `allOrders` theo cùng `projectCode`, tính "sống" mỗi lần hiển thị (không lưu sẵn cột nào), nên luôn đúng kể cả khi thêm/xoá việc con sau này.
+- `renderCard()`: nếu order có `projectCode` và có **từ 2 việc trở lên** cùng mã đó, thay badge "📁 mã dự án" trơn bằng khối màu vàng "📁 Dự án X · N/M việc · Z%" kèm thanh tiến độ, bấm vào gọi `openProjectOverview(projectCode)`.
+- `openProjectOverview()` — modal mới (`project-overview-modal`) hiện: tên dự án + người yêu cầu (lấy từ chính order "Dự án tổng hợp" gốc nếu còn), % + thanh tiến độ lớn, và danh sách đầy đủ việc con (✓ xanh = xong, ◐ xanh dương = đang làm, ○ xám = chưa làm), sắp xếp việc xong lên trước. Bấm vào 1 dòng sẽ đóng modal, lọc ô tìm kiếm (`f-kw`) về đúng ID đó để nhảy thẳng tới card cần sửa.
+- **Phát hiện phụ khi làm tracker.html:** class `.modal-box` được 2 modal cũ (`lco-detail-modal`, `ct-detail-modal`) dùng từ trước nhưng **chưa từng có CSS định nghĩa** — chỉ hiện đúng nhờ style `max-width` gắn kèm dòng, có thể trước giờ vẫn hiện không đúng thiết kế (thiếu nền/viền/bo góc) mà không ai để ý. Bổ sung rule `.modal-box` (khớp admin.html) để cả modal mới lẫn 2 modal cũ đều hiện đúng.
+
+---
+
 ## 14. Liên kết nhanh
 
 | Tên | URL |
