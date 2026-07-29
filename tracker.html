@@ -692,12 +692,29 @@ function dlPriority(o) {
   const diff=dlDiff(o); if(diff===null) return 2;
   return diff<0?0:diff<=3?1:2;
 }
+// "Dự án thật" = có ĐÚNG 1 order loại "Dự án tổng hợp" gốc mang cùng projectCode — bắt buộc
+// kiểm tra vì projectCode còn bị dùng lại để lưu NGÀY lịch content (VD "2026-07-09") cho các
+// bài Content Calendar mirror sang sheet, nếu không chặn sẽ nhóm nhầm các bài trùng ngày
+// thành "1 dự án giả" (đã xảy ra thật, phát hiện lúc review — xem Task #93).
+function _isRealProject(projectCode){
+  return !!projectCode && allOrders.some(o=>o.projectCode===projectCode && o.type==='du-an-tong-hop');
+}
 function sortedList(list) {
-  return [...list].sort((a,b)=>{
+  const base=[...list].sort((a,b)=>{
     const p=dlPriority(a)-dlPriority(b); if(p) return p;
     const da=parseDl(a)||new Date('2099-01-01'),db=parseDl(b)||new Date('2099-01-01');
     return da-db;
   });
+  // Gom các việc cùng 1 dự án THẬT (projectCode) đứng liền nhau trong CÙNG khu vực
+  // (urgent/doing/pending...) — xem giải thích ở admin.html sorted(), logic giống hệt.
+  const seen=new Set(), result=[];
+  for(const o of base){
+    if(!_isRealProject(o.projectCode)){ result.push(o); continue; }
+    if(seen.has(o.projectCode)) continue;
+    seen.add(o.projectCode);
+    result.push(...base.filter(x=>x.projectCode===o.projectCode));
+  }
+  return result;
 }
 
 
@@ -959,9 +976,14 @@ function toggleGroup(key,hdr) {
 // % hoàn thành của cả dự án (nhóm theo projectCode) — tính "sống" từ allOrders, xem
 // đồng bộ với admin.html (Task #89).
 function _getProjectStats(projectCode){
+  if(!_isRealProject(projectCode)) return {total:0, done:0, pct:0, items:[]};
   const items=allOrders.filter(o=>o.projectCode===projectCode && o.type!=='du-an-tong-hop');
   const done=items.filter(o=>o.status==='hoan-thanh').length;
   return {total:items.length, done, pct:items.length?Math.round(done/items.length*100):0, items};
+}
+function _getProjectDisplayName(projectCode){
+  const parent=allOrders.find(o=>o.projectCode===projectCode && o.type==='du-an-tong-hop');
+  return parent?.projectName || projectCode;
 }
 function openProjectOverview(projectCode){
   const {items,done,total,pct}=_getProjectStats(projectCode);
@@ -969,8 +991,8 @@ function openProjectOverview(projectCode){
   const rank=o=>o.status==='hoan-thanh'?0:(o.status==='dang-xu-ly'||o.status==='feedback')?1:2;
   const sorted=[...items].sort((a,b)=>rank(a)-rank(b));
   const first=allOrders.find(o=>o.projectCode===projectCode && o.type==='du-an-tong-hop')||items[0];
-  document.getElementById('pj-ov-title').textContent='📁 Dự án '+projectCode;
-  document.getElementById('pj-ov-sub').textContent=[first.projectName,first.requester].filter(Boolean).join(' · ');
+  document.getElementById('pj-ov-title').textContent='📁 '+_getProjectDisplayName(projectCode);
+  document.getElementById('pj-ov-sub').textContent=first.requester||'';
   document.getElementById('pj-ov-pct').textContent=pct+'%';
   document.getElementById('pj-ov-count').textContent=`${done}/${total} việc hoàn thành`;
   document.getElementById('pj-ov-bar').style.width=pct+'%';
@@ -1032,7 +1054,7 @@ function renderCard(o) {
       <div class="font-bold text-sm mb-3" style="color:var(--ttext)">${o.projectName||'Không tên'}</div>
       ${showPjBadge?`<div onclick="openProjectOverview('${o.projectCode}')" class="mb-3" style="cursor:pointer;background:rgba(234,179,8,.1);border:1px solid rgba(234,179,8,.35);border-radius:8px;padding:8px 10px">
         <div class="flex items-center justify-between gap-2">
-          <span style="color:#eab308;font-size:.75rem;font-weight:700">📁 Dự án ${o.projectCode} · ${pjStats.done}/${pjStats.total} việc</span>
+          <span style="color:#eab308;font-size:.75rem;font-weight:700">📁 ${_getProjectDisplayName(o.projectCode)} · ${pjStats.done}/${pjStats.total} việc</span>
           <span style="color:#eab308;font-size:.75rem;font-weight:700">${pjStats.pct}%</span>
         </div>
         <div style="background:rgba(255,255,255,.08);border-radius:4px;height:6px;overflow:hidden;margin-top:6px">
