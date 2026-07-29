@@ -1359,6 +1359,19 @@ Mỗi field id chỉ cần trùng với field id ĐÃ CÓ ở bất kỳ loại 
 
 ---
 
+### Task #92 — Fix việc con tách AI bị "tách rời" khỏi dự án gốc nếu chưa điền Mã dự án
+
+**Sự cố:** người dùng tạo 1 dự án tổng hợp thật (order.html) và tách AI ra 2 việc con — báo lại "vừa tạo 1 dự án và tách 2 việc con, nhưng không tìm thấy 2 việc con đâu". Kiểm tra sheet thấy 2 việc con **đã tạo thành công** (`KH-260729-141625` loại Khác, `OR-260729-141628` loại Chatbot), status "Chưa làm" nên không bị lọc theo kỳ. Sau khi người dùng chỉ ra thêm: "Những việc con này vẫn phải đi theo dự án chính chứ, không thể tách độc lập thế được, đã có màn hình gợi ý cách hiển thị rồi mà" — mới lộ ra nguyên nhân thật.
+
+**Nguyên nhân gốc:** order "Dự án tổng hợp" gốc không điền "Mã dự án" (field tự do, không bắt buộc ở order.html) → `openAiSplitFromOrder()` (Task #85) điền sẵn ô Mã dự án bằng `o.projectCode||''` — rỗng theo → các việc con tạo ra cũng mang `projectCode` rỗng, không có gì chung để nhóm lại với nhau lẫn với dự án gốc → mất hẳn liên kết, badge tiến độ dự án (Task #89) không hiện vì `_getProjectStats()` không tìm được nhóm nào có projectCode trùng nhau.
+
+**Fix:**
+- `openAiSplitFromOrder()`: nếu order gốc chưa có `projectCode`, tự sinh mã theo mẫu `PJ-<id order gốc>` — ghi lại NGAY vào order gốc (qua `updateOrder`) để mọi việc con tách ra sau đó đều dùng chung mã này.
+- `_getProjectStats()` (cả admin.html lẫn tracker.html): loại trừ chính order "Dự án tổng hợp" (loại `du-an-tong-hop`) khỏi tổng đếm việc con — nó là "vỏ chứa" (container), không phải 1 việc con thật, không nên tính vào N/M của thanh tiến độ. `openProjectOverview()` tìm order gốc riêng (không qua `items` đã lọc bỏ) để lấy tên dự án/người yêu cầu hiển thị ở đầu màn tổng quan.
+- Backfill dữ liệu đã lỡ tạo: gán chung mã `PJ-OR-260729-105612` cho cả dự án gốc và 2 việc con đã tạo trước đó.
+
+---
+
 ## 14. Liên kết nhanh
 
 | Tên | URL |
