@@ -1246,6 +1246,48 @@ Domain deploy thật của trang Content đổi từ `content-kim-oanh.pages.dev
 
 ---
 
+### Task #85 — Tính năng tách việc bằng AI (Gemini) cho brief dự án tổng hợp
+
+**Bối cảnh:** người dùng cho xem ảnh chụp 1 "công việc" bên phần mềm 1Office — thực chất là 1 brief dự án chung, chứa nhiều đầu việc khác loại gộp chung 1 đoạn mô tả (landing page, content, banner, setup thanh toán...), không khớp với mô hình "1 order = 1 loại việc cụ thể" hiện tại của order.html. Câu hỏi gốc: "làm thế nào tối ưu nhất khi đưa vào đây" → "làm thế nào để tối ưu nhất khi tách việc, không cần làm thủ công".
+
+**Quyết định kiến trúc (thảo luận trước khi code, theo đúng quy tắc câu hỏi mở):**
+- Chỉ làm trong admin.html (không đụng order.html) — admin/leader tự dán brief vào, không mở rộng ra cho phòng ban tự gửi.
+- Dùng **Google Gemini API** (có free tier, gọi thẳng từ GAS — cùng hệ sinh thái Google, không cần thêm dịch vụ ngoài) thay vì Claude/OpenAI (không free).
+- AI chỉ **gợi ý**, không bao giờ tự động tạo thẳng — luôn có bước xem lại/sửa trước khi tạo hàng loạt.
+
+**Fix:**
+- `MIDU_MKT_Script.gs`: action mới `splitProjectAI(description)` — đọc `GEMINI_API_KEY` từ **Script Properties** (không lưu trong code, tránh lộ khoá khi push lên GitHub công khai), gọi Gemini với `responseMimeType:'application/json'` để ép trả về đúng JSON có cấu trúc, không cần regex tách chuỗi.
+- `admin.html`: nút "🤖 Tách việc AI" (`data-admin-only`) → modal dán Mã dự án + Người yêu cầu + textarea brief → gọi AI → hiện danh sách việc gợi ý (loại/tên việc/deadline/ghi chú đều sửa được, có thể bỏ tick từng dòng hoặc thêm dòng tay) → "Tạo các việc đã chọn" ghi từng đơn qua action `addOrder` có sẵn, **tuần tự** (đúng bài học Task #77, không dùng `Promise.all`/`forEach` song song), gắn chung Mã dự án để xem tổng thể ở mục "Theo dự án".
+
+**Sự cố khi test — model Gemini đổi liên tục:** `gemini-2.0-flash` (chọn lúc viết code) báo lỗi quota free tier = 0; đổi sang `gemini-2.5-flash` thì báo **"no longer available to new users"**; đổi alias `gemini-flash-latest` vẫn trỏ về đúng model bị chặn đó. Thêm 1 action debug tạm gọi `models.list` của Gemini để lấy đúng danh sách model API key này thật sự dùng được → phát hiện model flash hiện hành là `gemini-3.6-flash` → đổi sang model này thì chạy đúng. Đã xoá action debug sau khi xác định xong, không để lại code thừa.
+
+**Bài học:** tên model AI (đặc biệt của Gemini) thay đổi/deprecate rất nhanh theo thời gian — nếu 1 model báo lỗi 404/quota=0, đừng đoán tên model tiếp theo, gọi thẳng endpoint `models.list` bằng chính API key đó để biết chắc model nào đang thực sự khả dụng.
+
+---
+
+### Task #86 — Thiết lập `clasp` để tự deploy GAS qua dòng lệnh, không cần thao tác tay trên trình duyệt
+
+**Bối cảnh:** sau 2 lần phải hướng dẫn người dùng tự copy/dán/bấm chuột deploy GAS qua ảnh chụp màn hình (Task #83, và lần đầu ở phần trước đó) — người dùng hỏi lại "Có cách nào để em tự làm việc này không". Do giới hạn của công cụ trình duyệt (đã xác nhận nhiều lần trong phiên: kết nối lỗi + chính sách chỉ cho xem, không cho bấm/gõ), tìm được hướng khác: **`clasp`** — công cụ dòng lệnh chính thức của Google cho Apps Script, chạy qua Bash trực tiếp trên máy người dùng (không qua trình duyệt mô phỏng).
+
+**Thiết lập (làm 1 lần):**
+1. Người dùng tự bật **"Google Apps Script API"** tại `script.google.com/home/usersettings` (bắt buộc phải người dùng làm, đây là cài đặt tài khoản Google).
+2. Chạy `npx @google/clasp login` — in ra link OAuth, người dùng tự mở link, chọn đúng tài khoản (`tuananhleo.me@gmail.com`), cho phép — token lưu cục bộ trên máy (không phải nhập mật khẩu hộ ai, chỉ là cấp quyền OAuth như đăng nhập ứng dụng thông thường).
+3. `clasp clone <scriptId>` để lấy đúng cấu trúc file project (`Mã.js` + `appsscript.json`) vào 1 thư mục làm việc riêng (không phải thư mục repo chính, tránh lẫn với các file khác).
+
+**Quy trình deploy từ giờ (hoàn toàn qua lệnh, không cần người dùng bấm gì):**
+```
+cp MIDU_MKT_Script.gs "Mã.js"
+npx @google/clasp push
+npx @google/clasp deploy --deploymentId <ID_deployment_cu> --description "..."
+```
+Dùng đúng `--deploymentId` của deployment đang có (`AKfycbw5klIN8zAsl6cYSfIYDu8GNol4tCR4KQt8-fvldq_SZC1DDgUeK6bk73jF-ZoMdCjF`) để **giữ nguyên URL cũ**, không tạo deployment mới.
+
+**Lưu ý quan trọng phát sinh khi dùng lần đầu:** thêm `UrlFetchApp.fetch()` (gọi Gemini) vào code là 1 NĂNG LỰC MỚI cần quyền OAuth mới (`script.external_request`) — deploy qua `clasp` không tự động xin quyền mới này (khác với deploy qua UI có màn hình xin quyền hiện ra). Phải thêm 1 hàm test nhỏ (`_testAuthExternalRequest`) và người dùng tự **chạy 1 lần** từ trình soạn thảo Apps Script (nút "Chạy") để đi qua đúng màn hình xin quyền — sau đó deploy lại qua `clasp` là dùng được bình thường. Đây là bước KHÔNG thể làm qua `clasp` (cần tương tác trình duyệt thật cho quyền mới), nhưng chỉ cần làm 1 lần cho mỗi loại quyền mới thêm vào code, không phải làm lại mỗi lần deploy thường.
+
+**Sau lần thiết lập này:** mọi lần sửa `MIDU_MKT_Script.gs` không thêm quyền OAuth mới (VD sửa logic, thêm cột, thêm action không cần API ngoài...) đều deploy được hoàn toàn tự động qua `clasp`, không cần người dùng thao tác gì trên trình duyệt nữa.
+
+---
+
 ## 14. Liên kết nhanh
 
 | Tên | URL |
