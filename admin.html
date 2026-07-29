@@ -1602,6 +1602,7 @@ async function confirmAiCreate(){
         type:t.type, requester, department:'Marketing – Truyền thông',
         projectName:t.title, projectCode, deadline:t.deadline||'',
         priority:'trung-binh', note:t.note||'', status:'chua-lam',
+        submittedAt:new Date().toLocaleString('vi-VN',{hour12:false}),
         adminNote:'Tạo từ AI tách việc · nguồn: '+requester,
       };
       const resp = await fetch(getGasUrl(), { method:'POST', body:JSON.stringify({ action:'addOrder', order }) }).then(r=>r.json());
