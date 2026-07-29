@@ -1372,6 +1372,22 @@ Mỗi field id chỉ cần trùng với field id ĐÃ CÓ ở bất kỳ loại 
 
 ---
 
+### Task #93 — Đổi quy trình làm việc: bắt buộc có Agent độc lập kiểm tra trước khi báo kết quả
+
+**Bối cảnh:** sau 2 lỗi liên tiếp bị người dùng phát hiện qua thực tế sử dụng (Task #92 và các lỗi trước đó), người dùng yêu cầu thẳng: "Không ổn rồi, anh cần cách làm việc của em khác đi... cần có 1 Giám đốc dự án check lại nhé" — và khi được đề xuất tự kiểm tra lại (self-review), người dùng khẳng định rõ: "Em không tự đóng vai Giám đốc dự án được, anh cần 1 Agent khác."
+
+**Quy trình mới (đã lưu vào bộ nhớ, áp dụng từ nay về sau cho project này):** sau khi code xong 1 thay đổi, PHẢI gọi 1 Agent riêng (Agent tool, context sạch, không thấy được quá trình implement) đóng vai "Giám đốc dự án" — giao đúng bối cảnh + yêu cầu kiểm tra kỹ (dò luồng dữ liệu, test trường hợp biên, gọi thử API thật nếu liên quan GAS/dữ liệu sống). Nếu Agent đó tìm ra lỗi → sửa → gọi lại Agent kiểm tra tiếp → lặp lại tới khi PASS. Chỉ báo "xong" cho người dùng sau khi có xác nhận PASS. Giới hạn còn lại: Agent (cũng như tôi) không tự xem được giao diện trên trình duyệt thật (công cụ trình duyệt lỗi cả phiên này) — luôn phải nói rõ phần đó chưa tự kiểm chứng được.
+
+**Áp dụng ngay cho yêu cầu tiếp theo (gom việc con cùng dự án + hiện tên dự án thật) và phát hiện được 1 lỗi thật đáng kể:**
+1. Yêu cầu gốc: "Về cách sắp xếp thì cứ sắp hết các đầu việc con trong 1 dự án liền nhau nhé, với tên dự án lấy tên bình thường chứ k hiển thị mã, khó để biết mã đó là dự án nào."
+2. Fix ban đầu: `sorted()`/`sortedList()` — sau khi sắp theo ưu tiên như cũ, gom các item cùng `projectCode` đứng liền nhau (giữ nguyên vị trí của thành viên ưu tiên cao nhất). Thêm `_getProjectDisplayName(projectCode)` — tra order "Dự án tổng hợp" gốc theo `projectCode` để lấy `projectName` thật, dùng thay cho mã ở badge tiến độ card và tiêu đề màn tổng quan dự án.
+3. **Vòng review Agent độc lập lần 1 phát hiện lỗi nghiêm trọng:** field `projectCode` bị dùng lại (từ trước, không liên quan gì tính năng dự án) để lưu **NGÀY lịch content** (VD `"2026-07-09"`) cho các mục Content Calendar mirror sang sheet Orders — kiểm tra dữ liệu thật cho thấy trong 17 nhóm `projectCode` trùng nhau (>1 order), chỉ **1 nhóm là dự án thật**, còn lại **16 nhóm là các bài đăng Content hoàn toàn không liên quan chỉ vì trùng ngày**, sẽ bị nhóm nhầm và hiện badge tiến độ giả nếu không chặn lại.
+4. **Fix:** thêm `_isRealProject(projectCode)` — chỉ coi là dự án thật khi có ĐÚNG 1 order loại `du-an-tong-hop` mang cùng mã. Áp dụng chặn ở `_getProjectStats()` (trả về rỗng nếu không phải dự án thật, khiến badge tự động không hiện), và ở vòng lặp gom nhóm trong `sorted()`/`sortedList()`.
+5. **Vòng review Agent độc lập lần 2** (kiểm tra lại đúng fix trên) phát hiện thêm 1 chỗ sót: hàm `buildProjectGroups()` (mục "Theo dự án" ở tab Báo cáo, chỉ admin.html có) vẫn đang nhóm theo `projectCode` thô, chưa qua `_isRealProject` — cùng lỗi y hệt, chỉ khác vị trí. Đã sửa nốt, dùng lại `_isRealProject()`+`_getProjectDisplayName()` cho đúng.
+6. **Xác nhận cuối bằng dữ liệu thật:** đúng 1/17 nhóm được coi là dự án thật (khớp `PJ-OR-260729-105612`, 2 việc con sau khi loại trừ container), 16 nhóm còn lại (ngày lịch content) không còn bị gom/hiện badge sai nữa.
+
+---
+
 ## 14. Liên kết nhanh
 
 | Tên | URL |
