@@ -559,6 +559,17 @@
   </div>
 </div>
 
+<!-- DANH SÁCH DỰ ÁN TỔNG HỢP CHƯA TÁCH VIỆC -->
+<div id="ai-pending-modal" class="modal-bg hidden">
+  <div class="modal-box fade-up" style="max-width:640px;max-height:80vh;overflow-y:auto">
+    <h2 class="font-black text-lg mb-4" style="color:var(--atext)">📁 Dự án tổng hợp chưa tách việc</h2>
+    <div id="ai-pending-list" class="space-y-2"></div>
+    <div class="flex justify-center mt-5">
+      <button type="button" onclick="closeAiPendingList()" class="btn btn-ghost px-6">Đóng</button>
+    </div>
+  </div>
+</div>
+
 <!-- FORM BUILDER MODAL -->
 <div id="form-builder-modal" class="modal-bg hidden">
   <div class="modal-box fade-up" style="max-width:680px">
@@ -723,6 +734,12 @@
 
     <!-- ══════════════ TAB: DANH SÁCH ══════════════ -->
     <div id="tab-orders">
+      <!-- Cảnh báo dự án tổng hợp chưa tách việc -->
+      <div id="ai-pending-banner" class="hidden mb-4 rounded-xl p-3 flex items-center gap-3 flex-wrap" style="background:rgba(234,179,8,.12);border:1.5px solid rgba(234,179,8,.4)">
+        <span style="font-size:1.3rem">📁</span>
+        <span class="text-sm font-bold" style="color:#eab308">Có <span id="ai-pending-count">0</span> dự án tổng hợp chưa tách việc</span>
+        <button type="button" onclick="openAiPendingList()" class="btn btn-ghost ml-auto" style="border-color:#eab308;color:#eab308">Xem danh sách →</button>
+      </div>
       <!-- Stats -->
       <div class="grid grid-cols-4 gap-3 mb-5">
         <div class="glass rounded-xl p-3 text-center cursor-pointer hover:ring-2 hover:ring-indigo-400 transition" onclick="filterByStat('total')"><div class="text-xl font-black" id="st-total" style="color:var(--atext)">–</div><div class="text-xs" style="color:var(--atext3)">Tổng</div></div>
@@ -1460,6 +1477,10 @@ async function submitChangePassword(){
 // Brief dự án tổng hợp (VD từ 1Office) → AI gợi ý tách thành các đầu việc riêng,
 // admin xem lại/sửa trước khi tạo hàng loạt — KHÔNG bao giờ tự động tạo thẳng.
 let _aiTasks = [];
+// ID của order "Dự án tổng hợp" gốc đang tách (null = mở tay, không gắn với order nào) —
+// dùng để tự đánh dấu "đã tách xong" (status hoàn thành) sau khi tạo việc con thành công,
+// để banner "chưa tách việc" không còn đếm nó nữa.
+let _aiSourceOrderId = null;
 function openAiSplit(){
   document.getElementById('ai-projectcode').value='';
   document.getElementById('ai-requester').value='';
@@ -1467,7 +1488,7 @@ function openAiSplit(){
   document.getElementById('ai-split-err').classList.add('hidden');
   document.getElementById('ai-split-input-step').classList.remove('hidden');
   document.getElementById('ai-split-review-step').classList.add('hidden');
-  _aiTasks=[];
+  _aiTasks=[]; _aiSourceOrderId=null;
   document.getElementById('ai-split-modal').classList.remove('hidden');
 }
 function closeAiSplit(){ document.getElementById('ai-split-modal').classList.add('hidden'); }
@@ -1476,10 +1497,26 @@ function closeAiSplit(){ document.getElementById('ai-split-modal').classList.add
 function openAiSplitFromOrder(orderId){
   const o=allOrders.find(x=>x.id===orderId); if(!o) return;
   openAiSplit();
+  _aiSourceOrderId=orderId;
   document.getElementById('ai-projectcode').value=o.projectCode||'';
   document.getElementById('ai-requester').value=o.requester||'';
   document.getElementById('ai-brief').value=o.d_desc||'';
+  closeAiPendingList();
 }
+// Danh sách dự án tổng hợp chưa tách việc — mở từ banner cảnh báo.
+function openAiPendingList(){
+  const pending=_getPendingProjectOrders();
+  document.getElementById('ai-pending-list').innerHTML = pending.length ? pending.map(o=>`
+    <div class="ocard p-3" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <div style="flex:1;min-width:180px">
+        <div class="font-bold text-sm" style="color:var(--atext)">${o.projectName||'Không tên'}</div>
+        <div class="text-xs mt-0.5" style="color:var(--atext3)">${o.requester||'–'} · ${fmt(o.submittedAt,false)}${o.projectCode?' · 📁 '+o.projectCode:''}</div>
+      </div>
+      <button type="button" onclick="openAiSplitFromOrder('${o.id}')" class="btn btn-primary flex-shrink-0">🤖 Tách việc</button>
+    </div>`).join('') : '<p class="text-sm text-center py-6" style="color:var(--atext3)">Không còn dự án nào chưa tách việc</p>';
+  document.getElementById('ai-pending-modal').classList.remove('hidden');
+}
+function closeAiPendingList(){ document.getElementById('ai-pending-modal').classList.add('hidden'); }
 function _aiBackToInput(){
   document.getElementById('ai-split-input-step').classList.remove('hidden');
   document.getElementById('ai-split-review-step').classList.add('hidden');
@@ -1548,6 +1585,14 @@ async function confirmAiCreate(){
       if(resp.error) fail++; else ok++;
     }catch(e){ fail++; }
     await new Promise(r=>setTimeout(r,250)); // tuần tự, tránh vượt gioi han thuc thi dong thoi cua GAS (bai hoc Task #77)
+  }
+  // Đánh dấu order "Dự án tổng hợp" gốc là đã tách xong (nếu tách từ 1 order cụ thể, không
+  // phải mở tay) — để banner "chưa tách việc" không đếm nó nữa.
+  if(_aiSourceOrderId && ok>0){
+    try{
+      await fetch(getGasUrl(), { method:'POST', body:JSON.stringify({ action:'updateOrder', id:_aiSourceOrderId,
+        updates:{ status:'hoan-thanh', adminNote:`Đã tách thành ${ok} việc con bằng AI` } }) });
+    }catch(e){}
   }
   btn.disabled=false; btn.textContent='💾 Tạo các việc đã chọn';
   closeAiSplit();
@@ -1746,6 +1791,18 @@ function updateStats() {
   document.getElementById('st-overdue').textContent  = overdue.length;
   document.getElementById('st-progress').textContent = all.filter(o=>o.status==='dang-xu-ly').length;
   document.getElementById('st-done').textContent     = all.filter(o=>o.status==='hoan-thanh').length;
+  _updateAiPendingBanner();
+}
+// Dự án tổng hợp (order.html) chưa được tách việc bằng AI — dùng LUÔN allOrders (không lọc
+// theo kỳ/phòng ban đang chọn), vì đây là việc cần chú ý ngay bất kể đang lọc gì.
+function _getPendingProjectOrders(){
+  return allOrders.filter(o=>o.type==='du-an-tong-hop' && o.status!=='hoan-thanh' && o.status!=='huy');
+}
+function _updateAiPendingBanner(){
+  const banner=document.getElementById('ai-pending-banner'); if(!banner) return;
+  const pending=_getPendingProjectOrders();
+  document.getElementById('ai-pending-count').textContent=pending.length;
+  banner.classList.toggle('hidden', pending.length===0);
 }
 function normDept(s){ return (s||'').trim().replace(/^Ph[oòó]ng\s+/i,''); }
 function buildDeptChips() {
