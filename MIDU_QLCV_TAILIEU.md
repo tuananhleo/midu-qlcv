@@ -1349,6 +1349,16 @@ Mỗi field id chỉ cần trùng với field id ĐÃ CÓ ở bất kỳ loại 
 
 ---
 
+### Task #91 — Dạy AI tách việc nhận diện loại "Chatbot"
+
+**Yêu cầu (nguyên văn):** "Mô tả sao cho AI nhận diện được việc này để tách việc nhé, anh cũng sẽ báo đội khác ghi rõ là chatbot nếu liên quan đến chatbot" — người dùng chủ động báo trước với các đội khác để brief nhắc rõ chữ "chatbot" khi liên quan, giúp AI phân loại chính xác hơn.
+
+**Fix:** cập nhật prompt của `splitProjectAI()` (GAS) — mô tả rõ ràng "chatbot" là setup LINK qua bot để thu thập thông tin (đăng ký/điểm danh/thi), phân biệt rõ với "lich-truyen-thong" (đặt LỊCH bắn tin nhắn hàng loạt theo thời gian), và chỉ dẫn AI: hễ văn bản có chữ "chatbot" hoặc mô tả việc tạo link đăng ký/điểm danh/thi qua bot thì luôn xếp vào loại này.
+
+**Đã test xác nhận đúng:** brief mẫu "Setup chatbot làm link đăng ký, link điểm danh, link thi cho học viên" → AI xếp đúng vào `type:"chatbot"` (trước đây sẽ rơi vào "khac"). Deploy qua `clasp` (Task #86), không cần thao tác tay.
+
+---
+
 ## 14. Liên kết nhanh
 
 | Tên | URL |
