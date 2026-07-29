@@ -1233,6 +1233,19 @@ Domain deploy thật của trang Content đổi từ `content-kim-oanh.pages.dev
 
 ---
 
+### Task #84 — Đồng bộ giao diện card đơn GAS ở admin.html khớp với tracker.html
+
+**Yêu cầu (nguyên văn):** "Này, phần giao diện hiển thị công việc ở admin cho giống tracker đi"
+
+**Đối chiếu 2 hàm `renderCard()` (admin.html vs tracker.html)** phát hiện 3 điểm admin.html thiếu so với tracker.html dù cùng hiển thị 1 loại dữ liệu (đơn gửi qua order.html):
+1. **Huy hiệu "⚠️ Trễ deadline" cho việc đã hoàn thành nhưng trễ hạn** (`isLateDone` — so sánh `completedAt` với `deadline`) — tracker.html đã có từ lâu, admin.html chưa từng có.
+2. **"Người cập nhật KQ" (resultBy)** — tracker.html hiện được kể cả khi order chưa có `linkResult`; admin.html trước đây chỉ hiện tên người cập nhật lồng bên trong khối "Kết quả", nên nếu chưa có link thì mất luôn thông tin ai đã cập nhật.
+3. **Khung "chi tiết" (detHTML)** — tracker.html có `skipFields` loại trừ các field đã hiển thị riêng (assignedTo, linkResult, adminNote...) tránh hiện trùng; admin.html chưa có bước lọc này (rủi ro tiềm ẩn nếu `dynamicSchema` từ GAS từng chứa trùng tên field).
+
+**Fix:** đồng bộ lại phần hiển thị (không đụng khung `admin-strip` sửa/lưu riêng của admin) — thêm `isLateDone`, `skipFields`, đổi khối "Hoàn thành" sang hiện kèm `completedBy` + huy hiệu trễ, thêm khối "Người cập nhật KQ" độc lập khi không có `linkResult`. Thêm hàm `parseCompleted()` (port nguyên từ tracker.html, admin.html trước đó chưa có) để tính đúng `isLateDone`.
+
+---
+
 ## 14. Liên kết nhanh
 
 | Tên | URL |
