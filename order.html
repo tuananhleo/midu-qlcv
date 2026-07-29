@@ -231,6 +231,7 @@ const TYPES = [
   { id:'chay-ads',        label:'Chạy Ads',        icon:'📢', sub:'Facebook, Google, TikTok Ads', color:'#fb923c', colorRGB:'251,146,60' },
   { id:'content',         label:'Content',         icon:'✍️', sub:'Bài viết, caption, script...', color:'#38bdf8', colorRGB:'56,189,248' },
   { id:'lich-truyen-thong', label:'Lịch T.Thông', icon:'📅', sub:'Đặt lịch bắn bot, tin nhắn bán hàng...', color:'#06b6d4', colorRGB:'6,182,212' },
+  { id:'chatbot',         label:'Chatbot',         icon:'🤖', sub:'Setup link đăng ký, điểm danh, thi...', color:'#22d3ee', colorRGB:'34,211,238' },
   { id:'khac',            label:'Khác',            icon:'📦', sub:'Yêu cầu khác...',            color:'#94a3b8', colorRGB:'148,163,184' },
   { id:'du-an-tong-hop',  label:'Dự án tổng hợp',  icon:'📁', sub:'Brief chung gồm nhiều đầu việc (landing page, content, banner...)', color:'#eab308', colorRGB:'234,179,8' },
 ];
@@ -300,6 +301,14 @@ const DEFAULT_FORM_SCHEMA = {
     { id:'d_cong_cu',      label:'Công cụ',               type:'text',     placeholder:'VD: Fchat, ManyChat, Zalo OA...', span:1 },
     { id:'d_noi_dung_bot', label:'Nội dung tin nhắn',     type:'textarea', placeholder:'Nội dung cần bắn bot...', span:2, rows:4 },
     { id:'d_hinh_anh',     label:'Link hình ảnh / media', type:'url',      placeholder:'https://...', span:2 },
+  ],
+  // Setup link chatbot (đăng ký/điểm danh/thi...) — Lê Thị Huyền, Khuất Thị Ngát phụ trách.
+  // Dùng lại field id có sẵn của loại "Lịch T.Thông"/"Chạy Ads", không cần thêm cột GAS.
+  'chatbot': [
+    { id:'d_chuong_trinh', label:'Tên chương trình',       type:'text',     placeholder:'VD: Chuyên viên phụ nữ viên mãn Khóa 3...', span:2 },
+    { id:'d_page',         label:'Fanpage',                 type:'text',     placeholder:'VD: MIDU Official, Học viện Midu...', span:2 },
+    { id:'d_noi_dung_bot', label:'Thông tin cần thu thập trong link', type:'textarea', placeholder:'VD: Họ tên, SĐT, Email, Địa chỉ (theo địa giới hành chính mới)...', span:2, rows:4 },
+    { id:'d_note_ads',     label:'Lưu ý',                   type:'text',     placeholder:'Ghi chú thêm nếu có...', span:2 },
   ],
 };
 

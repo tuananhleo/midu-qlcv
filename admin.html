@@ -1239,7 +1239,7 @@ function _statusOptions(sel='') {
 function _priorityOptions(sel='trung-binh') {
   return priorityConfig.map(p=>`<option value="${p.id}"${p.id===sel||(p.isDefault&&!sel)?' selected':''}>${p.icon||''} ${p.label}</option>`).join('');
 }
-const TYPE_MAP = {'thiet-ke':'🎨 Thiết kế','video-ai':'🎬 Video AI','media':'📸 Media','chay-ads':'📢 Chạy Ads','content':'✍️ Content','lich-truyen-thong':'📅 Lịch T.Thông','khac':'📦 Khác','du-an-tong-hop':'📁 Dự án tổng hợp'};
+const TYPE_MAP = {'thiet-ke':'🎨 Thiết kế','video-ai':'🎬 Video AI','media':'📸 Media','chay-ads':'📢 Chạy Ads','content':'✍️ Content','lich-truyen-thong':'📅 Lịch T.Thông','khac':'📦 Khác','du-an-tong-hop':'📁 Dự án tổng hợp','chatbot':'🤖 Chatbot'};
 const FIELD_LABELS = {
   d_size:'Kích thước',d_qty:'Số lượng',d_format:'Định dạng',d_desc:'Mô tả',d_ref:'Tham khảo',
   d_duration:'Độ dài',d_style:'Phong cách',d_content:'Nội dung',d_music:'Âm nhạc',d_ratio:'Tỷ lệ',
@@ -2878,6 +2878,7 @@ const DEFAULT_TYPES = [
   {id:'lich-truyen-thong',label:'Lịch T.Thông',  icon:'📅', sub:'Đặt lịch bắn bot, tin nhắn bán hàng...', color:'#06b6d4', colorRGB:'6,182,212'},
   {id:'khac',             label:'Khác',           icon:'📦', sub:'Yêu cầu khác...',                       color:'#94a3b8', colorRGB:'148,163,184'},
   {id:'du-an-tong-hop',   label:'Dự án tổng hợp', icon:'📁', sub:'Brief chung gồm nhiều đầu việc (landing page, content, banner...)', color:'#eab308', colorRGB:'234,179,8'},
+  {id:'chatbot',          label:'Chatbot',        icon:'🤖', sub:'Setup link đăng ký, điểm danh, thi...', color:'#22d3ee', colorRGB:'34,211,238'},
 ];
 
 let fbCurrentType='thiet-ke';
