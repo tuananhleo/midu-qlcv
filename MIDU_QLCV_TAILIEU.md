@@ -1288,6 +1288,17 @@ Dùng đúng `--deploymentId` của deployment đang có (`AKfycbw5klIN8zAsl6cYS
 
 ---
 
+### Task #87 — Thêm loại order "Dự án tổng hợp" ở order.html, nối với tính năng Tách việc AI
+
+**Câu hỏi gốc:** "Thấy rồi nhưng ở màn order thì cần có chỗ order cho dự án chứ nhỉ" — sau khi Task #85 chỉ làm phần tách việc AI trong admin.html, người dùng nhận ra vẫn cần 1 chỗ để phòng ban tự GỬI brief dự án tổng hợp qua order.html (không phải lúc nào admin cũng có sẵn brief dán tay).
+
+**Fix (không cần sửa GAS/deploy lại — tái dùng field có sẵn):**
+- `order.html`: thêm type mới `du-an-tong-hop` ("📁 Dự án tổng hợp") — dùng lại đúng 2 field đã có của loại "Khác" (`d_desc` cho brief, `d_ref_khac` cho link tài liệu), chỉ đổi label gợi ý dán nguyên brief. Nhờ tái dùng field có sẵn nên không cần thêm cột mới ở sheet Orders/GAS.
+- `admin.html` + `tracker.html`: thêm vào `TYPE_MAP` để hiện đúng icon/nhãn thay vì rơi về id thô.
+- `admin.html`: card của order loại này có thêm nút riêng **"🤖 Tách việc AI"** (`openAiSplitFromOrder(id)`) — mở sẵn modal AI split (Task #85), tự điền Mã dự án/Người yêu cầu/nội dung brief từ chính order đó, admin không cần copy/dán lại tay.
+
+---
+
 ## 14. Liên kết nhanh
 
 | Tên | URL |
