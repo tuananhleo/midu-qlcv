@@ -1205,6 +1205,34 @@ Domain deploy thật của trang Content đổi từ `content-kim-oanh.pages.dev
 
 ---
 
+### Task #82 — Tạo tài khoản nhân sự phòng MKT + mở rộng hệ thống vai trò (3 cấp × 6 vị trí)
+
+**Yêu cầu (nguyên văn):** "Check cho anh việc tạo tài khoản cho các nhân sự nhé, hỏi anh và tạo tài khoản tương ứng, sau đó nhắn lại anh tên đăng nhập và mật khẩu" — kèm link Google Sheet danh sách phòng thật (14 người) và "mật khẩu mặc định là Midu123!".
+
+**Quy trình:** tải CSV danh sách phòng qua link Google Sheet công khai (`export?format=csv`), đối chiếu với danh sách tài khoản hiện có (chỉ 3 tài khoản: `admin`, `huyle`, và 1 tài khoản "Nguyên" bị thiếu tên đầy đủ/sai vai trò — hoá ra là Phạm Trung Nguyên). Xác nhận với người dùng qua nhiều vòng hỏi đáp: bỏ qua 2 người bên Content (Kim Oanh, Khánh Huyền — dùng trang Content riêng), bỏ qua Đinh Gia Bảo (thực tập sinh mới, chưa rõ vị trí), và **mở rộng hệ thống vai trò từ 5 lên 18 vai trò** — 3 cấp (Thực tập sinh 🌱/Tập sự/Nhân viên) nhân với 6 vị trí (Thiết kế/Media/CSKH/AI/Phần mềm/Xây kênh), khớp đúng cách phòng MKT tổ chức nhân sự theo giai đoạn.
+
+**Kỹ thuật quan trọng:** vai trò mới được thêm thẳng vào `BUILTIN_ROLES` (admin.html, code dùng chung mọi trình duyệt) thay vì dùng "vai trò tuỳ chỉnh" (`KEY_ROLES`, chỉ lưu `localStorage` — máy khác sẽ không thấy tên/icon đẹp, chỉ thấy id thô). Tất cả 15 vai trò mới đều `permLevel:'employee'` (quyền giống nhau, chỉ khác nhãn hiển thị để phản ánh đúng giai đoạn nhân sự).
+
+**Tạo/sửa tài khoản** qua gọi trực tiếp GAS action `createUser`/`updateUser` (không qua UI vì không tự thao tác trình duyệt được) — 9 tài khoản mới + sửa lại 1 tài khoản cũ (Phạm Trung Nguyên: tên đầy đủ + đúng vai trò Trưởng nhóm Media), sau đó chỉnh tay 1 lần nữa theo yêu cầu riêng (Đặng Ngọc Huy: Tập sự AI → Nhân viên AI khi bạn đã chuyển giai đoạn).
+
+**Phát hiện phụ quan trọng trong lúc làm — GAS live bị lệch phiên bản:** khi tìm hiểu câu hỏi "tự đổi mật khẩu thì admin có xem được không", phát hiện `getUsers` sống trả về mật khẩu dạng **văn bản thường** và thiếu hẳn `dept`/`active`/`createdAt`/`permOverrides`/`allowedTypes` — tức **bản GAS đang chạy live cũ hơn nhiều so với file `.gs` hiện tại** (file local đã có sẵn hash SHA-256 cho mật khẩu và đủ cột Task #76, nhưng chưa từng được deploy). Nghĩa là tính năng phân quyền riêng từng người (Task #76) **có thể chưa từng hoạt động thật trên live** suốt từ lúc "hoàn thành" tới giờ.
+
+---
+
+### Task #83 — Deploy lại GAS: sự cố sập đăng nhập toàn hệ thống + cách khắc phục
+
+**Bối cảnh:** sau khi xác nhận GAS live bị lệch phiên bản (Task #82), người dùng đồng ý deploy lại. Do hạn chế đã biết (không tự thao tác trình duyệt được), hướng dẫn người dùng tự làm từng bước qua ảnh chụp màn hình: mở Apps Script gắn với Sheet "Orders" → dán đè bằng nội dung `MIDU_MKT_Script.gs` mới nhất → **"Triển khai" → biểu tượng ✏️ ở khung "Quản lý các tùy chọn triển khai" → chọn "Phiên bản mới" → Deploy** (giữ nguyên deployment cũ, không tạo deployment mới, để URL không đổi). Deploy thành công lên "Phiên bản 8" (từ "Phiên bản 7" cũ, đã chạy từ 3/7/2026).
+
+**Sự cố nghiêm trọng phát hiện ngay sau deploy:** gọi thử `loginUser` cho cả 3 tài khoản mẫu (admin/huyle/anhnguyen) → **TẤT CẢ đều báo "Sai tên đăng nhập hoặc mật khẩu"** — tức **sập đăng nhập toàn bộ hệ thống** ngay sau khi deploy.
+
+**Nguyên nhân gốc:** bản GAS mới thêm hash SHA-256 cho mật khẩu (`loginUserData` giờ so sánh `hashPw(password) === row[2]`), nhưng **toàn bộ 12 tài khoản hiện có** (kể cả `admin` gốc) đều đang lưu mật khẩu ở **cột C dạng văn bản thường** (từ bản code cũ, không hash) — không có bước migrate dữ liệu cũ sang hash mới trước khi deploy, nên mọi so sánh hash đều lệch, không ai đăng nhập được.
+
+**Fix (ngay lập tức, cùng phiên làm việc, không để downtime kéo dài):** gọi `updateUser` cho cả 12 tài khoản với `{password:'Midu123', active:true}` — action `updateUserData` mới sẽ tự hash lại đúng chuẩn khi ghi. Kèm luôn `active:true` vì phát hiện cột "active" (cột G) của các tài khoản tạo từ code cũ đang trống (code cũ không ghi cột này), trong khi `loginUserData` mới yêu cầu đúng `active==='true'` mới cho đăng nhập — nếu chỉ sửa mật khẩu mà bỏ qua `active` vẫn có nguy cơ đăng nhập thất bại. Xác nhận lại: gọi thử `loginUser` cho đủ 12/12 tài khoản → tất cả đăng nhập thành công.
+
+**⚠️ Bài học bắt buộc cho lần deploy GAS tiếp theo (nếu còn thay đổi liên quan đến bảo mật/schema Users):** bất kỳ thay đổi nào ảnh hưởng tới CÁCH DỮ LIỆU CŨ được đọc/so khớp (đổi từ plaintext sang hash, đổi tên cột, đổi kiểu dữ liệu...) đều PHẢI đi kèm bước migrate dữ liệu cũ ngay sau khi deploy — không thể giả định deploy xong là xong, phải test thử `loginUser` cho vài tài khoản NGAY sau khi deploy để phát hiện sớm, trước khi nhân viên thật gặp phải.
+
+---
+
 ## 14. Liên kết nhanh
 
 | Tên | URL |
