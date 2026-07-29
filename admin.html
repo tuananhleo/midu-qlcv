@@ -570,6 +570,29 @@
   </div>
 </div>
 
+<!-- TỔNG QUAN DỰ ÁN (bấm vào badge tiến độ trên card) -->
+<div id="project-overview-modal" class="modal-bg hidden">
+  <div class="modal-box fade-up" style="max-width:560px;max-height:82vh;overflow-y:auto">
+    <div class="flex items-start justify-between gap-3 flex-wrap mb-1">
+      <div>
+        <div id="pj-ov-title" class="font-black text-base" style="color:var(--atext)"></div>
+        <div id="pj-ov-sub" class="text-xs mt-0.5" style="color:var(--atext3)"></div>
+      </div>
+      <div class="text-right flex-shrink-0">
+        <div id="pj-ov-pct" class="font-black text-xl" style="color:#eab308;line-height:1"></div>
+        <div id="pj-ov-count" class="text-xs" style="color:var(--atext3)"></div>
+      </div>
+    </div>
+    <div style="background:rgba(255,255,255,.08);border-radius:6px;height:8px;overflow:hidden;margin:12px 0 16px">
+      <div id="pj-ov-bar" style="background:#eab308;height:100%;width:0%;border-radius:6px"></div>
+    </div>
+    <div id="pj-ov-list" class="space-y-1.5"></div>
+    <div class="flex justify-center mt-5">
+      <button type="button" onclick="closeProjectOverview()" class="btn btn-ghost px-6">Đóng</button>
+    </div>
+  </div>
+</div>
+
 <!-- FORM BUILDER MODAL -->
 <div id="form-builder-modal" class="modal-bg hidden">
   <div class="modal-box fade-up" style="max-width:680px">
@@ -1869,6 +1892,39 @@ function render() {
   }).join('');
 }
 
+// % hoàn thành của cả dự án (nhóm theo projectCode) — tính "sống" từ allOrders mỗi lần
+// hiển thị, không lưu sẵn, nên luôn đúng kể cả khi có việc con bị xoá/thêm sau.
+function _getProjectStats(projectCode){
+  const items=allOrders.filter(o=>o.projectCode===projectCode);
+  const done=items.filter(o=>o.status==='hoan-thanh').length;
+  return {total:items.length, done, pct:items.length?Math.round(done/items.length*100):0, items};
+}
+function openProjectOverview(projectCode){
+  const {items,done,total,pct}=_getProjectStats(projectCode);
+  if(!items.length) return;
+  const rank=o=>o.status==='hoan-thanh'?0:(o.status==='dang-xu-ly'||o.status==='feedback')?1:2;
+  const sorted=[...items].sort((a,b)=>rank(a)-rank(b));
+  const first=items.find(o=>o.type==='du-an-tong-hop')||items[0];
+  document.getElementById('pj-ov-title').textContent='📁 Dự án '+projectCode;
+  document.getElementById('pj-ov-sub').textContent=[first.projectName,first.requester].filter(Boolean).join(' · ');
+  document.getElementById('pj-ov-pct').textContent=pct+'%';
+  document.getElementById('pj-ov-count').textContent=`${done}/${total} việc hoàn thành`;
+  document.getElementById('pj-ov-bar').style.width=pct+'%';
+  document.getElementById('pj-ov-list').innerHTML=sorted.map(o=>{
+    const s=STATUS_MAP[o.status]||STATUS_MAP['chua-lam'];
+    const icon=o.status==='hoan-thanh'?'✓':(o.status==='dang-xu-ly'||o.status==='feedback')?'◐':'○';
+    const iconColor=o.status==='hoan-thanh'?'#4ade80':(o.status==='dang-xu-ly'||o.status==='feedback')?'#60a5fa':'#64748b';
+    return `<div onclick="closeProjectOverview();switchTab('orders');filters={dept:'',type:'',status:''};document.getElementById('f-kw').value='${o.id}';updateStats();render();" style="cursor:pointer;display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;background:var(--abg3);border:1px solid var(--aborder)">
+      <span style="color:${iconColor};font-size:16px;flex-shrink:0">${icon}</span>
+      <span style="flex:1;min-width:0;font-size:.8rem;color:var(--atext)" class="truncate">${o.projectName||o.id}</span>
+      <span class="meta-tag flex-shrink-0" style="font-size:.68rem">${TYPE_MAP[o.type]||o.type}</span>
+      <span style="font-size:.72rem;font-weight:700;flex-shrink:0;color:${s.color}">${s.label}</span>
+    </div>`;
+  }).join('');
+  document.getElementById('project-overview-modal').classList.remove('hidden');
+}
+function closeProjectOverview(){ document.getElementById('project-overview-modal').classList.add('hidden'); }
+
 function renderCard(o) {
   const s=STATUS_MAP[o.status]||STATUS_MAP['chua-lam'];
   const dl=parseDl(o);
@@ -1897,16 +1953,29 @@ function renderCard(o) {
   const assignableList = getAssignableUsers();
   const msItems=assignableList.map(a=>`<div class="ms-item${curAssigned.includes(a)?' sel':''}" data-msid="${msId}" data-val="${a.replace(/"/g,'&quot;')}" onclick="msToggleItem(this,event)"><div class="ms-ck">${curAssigned.includes(a)?'✓':''}</div>${a}</div>`).join('');
   const msLabel=curAssigned.length?curAssigned.join(', '):'-- Chọn --';
+  // Nếu order thuộc 1 dự án có từ 2 việc trở lên (VD tách ra từ AI, hoặc tự gán chung mã
+  // dự án) — hiện badge tiến độ tổng dự án thay cho mã dự án trơn, bấm vào xem toàn bộ.
+  const pjStats = o.projectCode ? _getProjectStats(o.projectCode) : null;
+  const showPjBadge = pjStats && pjStats.total>1;
   return `<div class="${cardCls}">
     <div class="p-4">
       <div class="flex flex-wrap items-center gap-2 mb-1">
         <span class="meta-tag">${TYPE_MAP[o.type]||o.type}</span>
         <span class="meta-tag">🏢 ${o.department||'–'}</span>
-        ${o.projectCode?`<span class="meta-tag" style="background:rgba(99,102,241,.15);color:#a5b4fc">📁 ${o.projectCode}</span>`:''}
+        ${o.projectCode&&!showPjBadge?`<span class="meta-tag" style="background:rgba(99,102,241,.15);color:#a5b4fc">📁 ${o.projectCode}</span>`:''}
         <span class="px-2 py-0.5 rounded-full text-xs font-bold" style="background:${s.bg};color:${s.color}">${s.label}</span>
         <span class="ml-auto text-xs font-mono" style="color:var(--atext3)">${o.id||''}</span>
       </div>
       <div class="font-bold text-sm mb-3" style="color:var(--atext)">${o.projectName||'Không tên'}</div>
+      ${showPjBadge?`<div onclick="openProjectOverview('${o.projectCode}')" class="mb-3" style="cursor:pointer;background:rgba(234,179,8,.1);border:1px solid rgba(234,179,8,.35);border-radius:8px;padding:8px 10px">
+        <div class="flex items-center justify-between gap-2">
+          <span style="color:#eab308;font-size:.75rem;font-weight:700">📁 Dự án ${o.projectCode} · ${pjStats.done}/${pjStats.total} việc</span>
+          <span style="color:#eab308;font-size:.75rem;font-weight:700">${pjStats.pct}%</span>
+        </div>
+        <div style="background:rgba(255,255,255,.08);border-radius:4px;height:6px;overflow:hidden;margin-top:6px">
+          <div style="background:#eab308;height:100%;width:${pjStats.pct}%;border-radius:4px"></div>
+        </div>
+      </div>`:''}
       <div class="flex flex-wrap gap-x-6 gap-y-1 text-xs mb-2">
         <div><span style="color:var(--atext3)">Người gửi: </span><span class="font-medium" style="color:var(--atext2)">${o.requester||'–'}</span></div>
         <div><span style="color:var(--atext3)">Ngày gửi: </span><span style="color:var(--atext2)">${submitted}</span></div>
