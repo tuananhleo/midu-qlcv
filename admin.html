@@ -1521,7 +1521,15 @@ function openAiSplitFromOrder(orderId){
   const o=allOrders.find(x=>x.id===orderId); if(!o) return;
   openAiSplit();
   _aiSourceOrderId=orderId;
-  document.getElementById('ai-projectcode').value=o.projectCode||'';
+  // Nếu order gốc chưa có Mã dự án (người gửi bỏ trống lúc order.html) — tự sinh 1 mã từ
+  // chính ID order đó, và ghi lại luôn vào order gốc. Không làm vậy thì các việc con tách
+  // ra sẽ không có gì chung để nhóm lại, "tách rời" khỏi dự án gốc (đã xảy ra thật).
+  const pc = o.projectCode || ('PJ-'+o.id);
+  if(!o.projectCode){
+    o.projectCode = pc;
+    fetch(getGasUrl(), { method:'POST', body:JSON.stringify({ action:'updateOrder', id:o.id, updates:{ projectCode:pc } }) }).catch(()=>{});
+  }
+  document.getElementById('ai-projectcode').value=pc;
   document.getElementById('ai-requester').value=o.requester||'';
   document.getElementById('ai-brief').value=o.d_desc||'';
   closeAiPendingList();
@@ -1894,9 +1902,10 @@ function render() {
 }
 
 // % hoàn thành của cả dự án (nhóm theo projectCode) — tính "sống" từ allOrders mỗi lần
-// hiển thị, không lưu sẵn, nên luôn đúng kể cả khi có việc con bị xoá/thêm sau.
+// hiển thị, không lưu sẵn, nên luôn đúng kể cả khi có việc con bị xoá/thêm sau. Loại trừ
+// chính order "Dự án tổng hợp" gốc (container, không phải 1 việc con thật) khỏi tổng đếm.
 function _getProjectStats(projectCode){
-  const items=allOrders.filter(o=>o.projectCode===projectCode);
+  const items=allOrders.filter(o=>o.projectCode===projectCode && o.type!=='du-an-tong-hop');
   const done=items.filter(o=>o.status==='hoan-thanh').length;
   return {total:items.length, done, pct:items.length?Math.round(done/items.length*100):0, items};
 }
@@ -1905,7 +1914,7 @@ function openProjectOverview(projectCode){
   if(!items.length) return;
   const rank=o=>o.status==='hoan-thanh'?0:(o.status==='dang-xu-ly'||o.status==='feedback')?1:2;
   const sorted=[...items].sort((a,b)=>rank(a)-rank(b));
-  const first=items.find(o=>o.type==='du-an-tong-hop')||items[0];
+  const first=allOrders.find(o=>o.projectCode===projectCode && o.type==='du-an-tong-hop')||items[0];
   document.getElementById('pj-ov-title').textContent='📁 Dự án '+projectCode;
   document.getElementById('pj-ov-sub').textContent=[first.projectName,first.requester].filter(Boolean).join(' · ');
   document.getElementById('pj-ov-pct').textContent=pct+'%';

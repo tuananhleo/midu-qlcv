@@ -959,7 +959,7 @@ function toggleGroup(key,hdr) {
 // % hoàn thành của cả dự án (nhóm theo projectCode) — tính "sống" từ allOrders, xem
 // đồng bộ với admin.html (Task #89).
 function _getProjectStats(projectCode){
-  const items=allOrders.filter(o=>o.projectCode===projectCode);
+  const items=allOrders.filter(o=>o.projectCode===projectCode && o.type!=='du-an-tong-hop');
   const done=items.filter(o=>o.status==='hoan-thanh').length;
   return {total:items.length, done, pct:items.length?Math.round(done/items.length*100):0, items};
 }
@@ -968,7 +968,7 @@ function openProjectOverview(projectCode){
   if(!items.length) return;
   const rank=o=>o.status==='hoan-thanh'?0:(o.status==='dang-xu-ly'||o.status==='feedback')?1:2;
   const sorted=[...items].sort((a,b)=>rank(a)-rank(b));
-  const first=items.find(o=>o.type==='du-an-tong-hop')||items[0];
+  const first=allOrders.find(o=>o.projectCode===projectCode && o.type==='du-an-tong-hop')||items[0];
   document.getElementById('pj-ov-title').textContent='📁 Dự án '+projectCode;
   document.getElementById('pj-ov-sub').textContent=[first.projectName,first.requester].filter(Boolean).join(' · ');
   document.getElementById('pj-ov-pct').textContent=pct+'%';
