@@ -1292,6 +1292,14 @@ function parseDl(o) {
   // Fallback: để trình duyệt parse (xử lý "Thu Jun 26 2026..." từ GAS cũ)
   const d = new Date(raw); return isNaN(d) ? null : d;
 }
+// Dùng để so sánh "hoàn thành nhưng trễ" (completedAt so với deadline) — port từ tracker.html.
+function parseCompleted(val) {
+  if (!val) return null;
+  const s = String(val).trim();
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (m) return new Date(+m[3], +m[2]-1, +m[1]);
+  const d = new Date(s); return isNaN(d) ? null : d;
+}
 
 // ── Auth ───────────────────────────────────────────────────────
 async function doLogin() {
@@ -1678,11 +1686,18 @@ function renderCard(o) {
   const isSoon=diff!==null&&diff>=0&&diff<=3&&o.status!=='hoan-thanh';
   const submitted=fmt(o.submittedAt);
   const completed=fmt(o.completedAt);
+  // "Hoàn thành nhưng trễ" — có ở tracker.html, đồng bộ lại cho admin (Task #84).
+  const isLateDone = o.status==='hoan-thanh' && !!o.completedAt && !!o.deadline && (()=>{
+    const cd=parseCompleted(o.completedAt); return cd&&dl&&cd>dl;
+  })();
   const cardCls=isOv?'ocard ov':isSoon?'ocard soon':'ocard';
   const dlCls=isOv?'dl-ov':isSoon?'dl-soon':'text-white/75';
   const dlBadge=isOv?' 🔴 TRỄ':isSoon?` ⚠️ Còn ${Math.ceil(diff)}n`:'';
   const allFieldKeys=new Set([...Object.keys(FIELD_LABELS),...Object.keys(dynamicSchema)]);
-  const detEntries=[...allFieldKeys].filter(k=>o[k]).map(k=>[k,o[k]]);
+  // Loại các field đã hiển thị riêng (khớp skipFields của tracker.html) để không hiện trùng
+  // trong khung "chi tiết" bên dưới.
+  const skipFields=new Set(['clientNote','adminNote','assignedTo','linkResult','completedAt','status','id','type','submittedAt','requester','department','projectName','projectCode','deadline','priority','note']);
+  const detEntries=[...allFieldKeys].filter(k=>o[k]&&!skipFields.has(k)).map(k=>[k,o[k]]);
   const isUrl=v=>/^https?:\/\//i.test(String(v));
   const detHTML=detEntries.map(([k,v])=>`<div><span style="color:var(--atext3)">${dynamicSchema[k]||FIELD_LABELS[k]||k}:</span> <span class="break-words" style="color:var(--atext2)">${isUrl(v)?`<a href="${v}" target="_blank" rel="noopener" class="text-indigo-400 underline">${v}</a>`:v}</span></div>`).join('');
   const curAssigned=(o.assignedTo||'').split(',').map(s=>s.trim()).filter(Boolean);
@@ -1704,8 +1719,8 @@ function renderCard(o) {
         <div><span style="color:var(--atext3)">Người gửi: </span><span class="font-medium" style="color:var(--atext2)">${o.requester||'–'}</span></div>
         <div><span style="color:var(--atext3)">Ngày gửi: </span><span style="color:var(--atext2)">${submitted}</span></div>
         <div><span style="color:var(--atext3)">Deadline: </span><span class="${dlCls}" ${!dlCls?`style="color:var(--atext2)"`:''}>${dlStr}${dlBadge}</span></div>
-        ${o.assignedTo?`<div><span style="color:var(--atext3)">Phân công: </span><span class="font-medium" style="color:var(--atext2)">👤 ${o.assignedTo}</span></div>`:''}
-        ${o.completedAt?`<div><span style="color:var(--atext3)">Hoàn thành: </span><span class="text-green-500 font-medium">${completed}</span></div>`:''}
+        ${curAssigned.length?`<div><span style="color:var(--atext3)">Phân công: </span><span class="font-medium" style="color:var(--atext2)">👤 ${curAssigned.join(', ')}</span></div>`:''}
+        ${o.completedAt?`<div class="flex items-center gap-2 flex-wrap"><span style="color:var(--atext3)">Hoàn thành: </span><span class="text-green-500 font-medium">${completed}${o.completedBy?' · 👤 '+o.completedBy:''}</span>${isLateDone?`<span style="background:rgba(239,68,68,.15);color:#f87171;padding:1px 6px;border-radius:5px;font-size:.7rem;font-weight:600">⚠️ Trễ deadline</span>`:''}</div>`:''}
       </div>
       ${o.note?`<div class="text-xs italic mb-2" style="color:var(--atext3)">📋 ${o.note}</div>`:''}
       ${detHTML?`<div class="mt-2 pt-2 border-t grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-1 text-xs" style="border-color:var(--acborder)">${detHTML}</div>`:''}
@@ -1718,6 +1733,7 @@ function renderCard(o) {
         </div>
         ${o.resultBy?`<div class="text-xs mt-1" style="color:var(--atext3)">👤 ${o.resultBy}${o.resultAt?' · '+o.resultAt:''}</div>`:''}
       </div>`:''}
+      ${!o.linkResult&&o.resultBy?`<div class="mt-2 pt-2 border-t text-xs" style="border-color:var(--acborder);color:var(--atext2)">👤 Người cập nhật KQ: <span style="color:var(--atext3)">${o.resultBy}${o.resultAt?' · '+o.resultAt:''}</span></div>`:''}
       ${o.adminNote?`<div class="mt-2 text-xs px-3 py-1.5 rounded-lg" style="color:var(--atext3);background:var(--abg3);border:1px solid var(--aborder)">📝 ${o.adminNote}</div>`:''}
     </div>
     <div class="admin-strip">
