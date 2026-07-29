@@ -295,8 +295,58 @@ function doPost(e) {
     if (action === 'createUser')    return respond(createUserData(data.user));
     if (action === 'updateUser')    return respond(updateUserData(data.id, data.updates));
     if (action === 'deleteUser')    return respond(deleteUserData(data.id));
+    if (action === 'splitProjectAI') return respond(splitProjectAI(data.description));
     return respond({ error: 'Unknown action: ' + action });
   } catch (ex) { return respond({ error: ex.toString() }); }
+}
+
+// ── Tách brief dự án tổng hợp thành các đầu việc cụ thể bằng AI (Gemini) ──────
+// Dùng cho các đơn kiểu "1 dự án gồm nhiều đầu việc khác loại" (VD brief từ
+// 1Office) — admin dán nguyên văn bản, AI trả về danh sách việc con đã gợi ý
+// đúng loại (type) để admin xem lại/sửa rồi mới tạo hàng loạt, không tự động
+// tạo thẳng (luôn cần người duyệt qua).
+function splitProjectAI(description) {
+  if (!description || !description.trim()) return { error: 'Chưa có nội dung mô tả' };
+  const apiKey = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
+  if (!apiKey) return { error: 'Chưa cấu hình GEMINI_API_KEY trong Script Properties' };
+
+  const prompt = 'Bạn là trợ lý tách công việc cho phòng Marketing - Truyền thông của 1 công ty. '
+    + 'Dưới đây là bản mô tả 1 dự án chung, gồm nhiều đầu việc khác loại cần làm. '
+    + 'Hãy đọc kỹ và tách thành danh sách các đầu việc CỤ THỂ, RIÊNG BIỆT (mỗi việc 1 mục), '
+    + 'mỗi việc gồm đúng 4 trường:\n'
+    + '- type: chọn ĐÚNG 1 trong các mã sau (không tự bịa mã khác): '
+    + '"thiet-ke" (thiết kế hình ảnh/banner/ấn phẩm), "video-ai" (video/video AI), '
+    + '"media" (quay/chụp), "chay-ads" (chạy quảng cáo), "content" (viết nội dung/bài đăng), '
+    + '"lich-truyen-thong" (đặt lịch bắn tin nhắn/bot), "khac" (việc không thuộc các loại trên, '
+    + 'VD: setup hệ thống thanh toán, làm landing page, chuẩn bị link).\n'
+    + '- title: tên việc ngắn gọn, rõ ràng.\n'
+    + '- deadline: nếu tìm thấy ngày cụ thể liên quan tới việc đó trong văn bản thì ghi theo định '
+    + 'dạng YYYY-MM-DD, không tìm thấy thì để chuỗi rỗng "".\n'
+    + '- note: mô tả chi tiết việc đó, copy/diễn giải lại đúng phần liên quan trong văn bản gốc.\n'
+    + 'Chỉ trả về JSON, không giải thích gì thêm, đúng định dạng: {"tasks":[{"type":"...","title":"...","deadline":"...","note":"..."}]}\n\n'
+    + 'Văn bản mô tả dự án:\n' + description;
+
+  const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + apiKey;
+  const payload = {
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: { responseMimeType: 'application/json' }
+  };
+  try {
+    const resp = UrlFetchApp.fetch(url, {
+      method: 'post', contentType: 'application/json',
+      payload: JSON.stringify(payload), muteHttpExceptions: true
+    });
+    const code = resp.getResponseCode();
+    const body = JSON.parse(resp.getContentText());
+    if (code !== 200) return { error: 'Gemini API lỗi (' + code + '): ' + (body.error && body.error.message ? body.error.message : resp.getContentText()) };
+    const text = body.candidates && body.candidates[0] && body.candidates[0].content
+      && body.candidates[0].content.parts && body.candidates[0].content.parts[0]
+      && body.candidates[0].content.parts[0].text;
+    if (!text) return { error: 'Gemini không trả về nội dung' };
+    const parsed = JSON.parse(text);
+    if (!Array.isArray(parsed.tasks)) return { error: 'Định dạng phản hồi AI không đúng' };
+    return { tasks: parsed.tasks };
+  } catch (e) { return { error: 'Lỗi gọi Gemini: ' + e.toString() }; }
 }
 
 // ── Submit nhiều orders cùng lúc ─────────────────────────────
