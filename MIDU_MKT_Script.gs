@@ -326,7 +326,7 @@ function splitProjectAI(description) {
     + 'Chỉ trả về JSON, không giải thích gì thêm, đúng định dạng: {"tasks":[{"type":"...","title":"...","deadline":"...","note":"..."}]}\n\n'
     + 'Văn bản mô tả dự án:\n' + description;
 
-  const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + apiKey;
+  const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=' + apiKey;
   const payload = {
     contents: [{ parts: [{ text: prompt }] }],
     generationConfig: { responseMimeType: 'application/json' }
@@ -902,4 +902,11 @@ function updateLichTTEntryData(id, updates) {
   } catch(ex) {
     return { error: ex.toString() };
   }
+}
+
+// Chạy hàm này 1 lần từ trình soạn thảo Apps Script (nút "Chạy") để xin quyền
+// UrlFetchApp (gọi Gemini API cho tính năng tách việc AI) — chỉ cần làm 1 lần duy nhất.
+function _testAuthExternalRequest() {
+  UrlFetchApp.fetch('https://www.google.com');
+  Logger.log('OK - da co quyen goi ra ngoai');
 }
