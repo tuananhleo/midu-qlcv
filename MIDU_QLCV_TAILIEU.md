@@ -1299,6 +1299,21 @@ Dùng đúng `--deploymentId` của deployment đang có (`AKfycbw5klIN8zAsl6cYS
 
 ---
 
+### Task #88 — Fix giao diện lịch flatpickr + cảnh báo dự án tổng hợp chưa tách việc
+
+**Sự cố giao diện lịch chọn ngày (order.html):** người dùng gửi ảnh chụp lịch flatpickr có 1 vệt cong màu đỏ đè lên góc lịch. Nguyên nhân: ô deadline bị bôi viền đỏ báo lỗi khi gửi form thiếu deadline, nhưng viền đỏ đó **không tự biến mất** khi chọn lại ngày (chỉ mất ở lần bấm Gửi tiếp theo) — viền đỏ còn sót lại lộ ra đè lên góc lịch khi mở lại ô đó. Fix: thêm `onChange`+`focus` listener xoá viền đỏ ngay khi chọn ngày mới.
+
+**Sự cố tiếp theo — không hiện năm:** sau fix trên, phát hiện thêm: Tailwind CDN reset input/select quá mạnh làm ô năm gốc (`numInput`) của flatpickr gần như biến mất khỏi giao diện. Thử ép hiện lại bằng CSS `!important` (width/display/visibility) — nhưng khi ẩn kèm 2 nút mũi tên tăng/giảm năm (để gọn hơn), năm nhìn như chữ tĩnh, không rõ là bấm chọn được ("Ơ thế năm không chọn được à, chỉ là text cho đẹp thôi à"). **Fix triệt để:** bỏ hẳn ô năm gốc của flatpickr, tự dựng 1 dropdown `<select>` năm (`_fpBuildYearSelect`/`_fpSyncYearSelect`) cùng kiểu dáng với dropdown chọn tháng có sẵn — đảm bảo rõ ràng là chọn được, tránh mọi xung đột cascade với Tailwind vì dùng lại đúng CSS rule của dropdown tháng (đã hoạt động ổn định).
+
+**Yêu cầu mới — cảnh báo dự án tổng hợp chưa tách việc:** sau khi order.html có loại "Dự án tổng hợp" (Task #87), người dùng nhận ra: 1 dự án tổng hợp vẫn chỉ được TÍNH là 1 đầu việc trong thống kê dù bên trong chứa nhiều việc con, và không có gì nhắc admin phải vào tách việc — dễ bị bỏ sót. Yêu cầu (nguyên văn): "cần có thông báo là có dự án tổng hợp mới chưa tách việc. vào đó thì hiển thị danh sách để admin lựa chọn tách việc."
+
+**Fix:**
+- Banner cảnh báo màu vàng ở đầu tab "Danh sách" — đếm số order loại `du-an-tong-hop` có `status !== 'hoan-thanh'` (dùng `allOrders` chưa lọc theo kỳ/phòng ban, vì đây là việc cần chú ý ngay bất kể đang lọc gì), tự cập nhật mỗi lần `updateStats()` chạy.
+- Bấm "Xem danh sách" mở modal liệt kê từng dự án chưa tách, mỗi dòng có nút "🤖 Tách việc" ngay tại chỗ (gọi `openAiSplitFromOrder`).
+- **Tự đóng vòng lặp:** sau khi `confirmAiCreate()` tạo việc con thành công, tự động cập nhật order "Dự án tổng hợp" gốc sang `status:'hoan-thanh'` + `adminNote` ghi rõ đã tách thành bao nhiêu việc con — nhờ vậy banner không đếm lại nó nữa, không cần thêm cột/trạng thái mới nào ở GAS.
+
+---
+
 ## 14. Liên kết nhanh
 
 | Tên | URL |
