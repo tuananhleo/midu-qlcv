@@ -937,9 +937,16 @@ function _renderGrouped(list){
   return html;
 }
 function _renderProjectGroup(projectCode, groupItems){
-  const stats=_getProjectStats(projectCode);
   const parent=groupItems.find(o=>o.type==='du-an-tong-hop');
   const subItems=groupItems.filter(o=>o.type!=='du-an-tong-hop');
+  // tracker.html chia danh sách theo trạng thái (Cần xử lý/Đang làm/Chưa làm/Hoàn thành)
+  // thành các khu RIÊNG BIỆT trước khi gọi hàm này — nếu order gốc "Dự án tổng hợp" (đã
+  // Hoàn thành) rơi vào khu khác với các việc con (còn Chưa làm/Đang làm), nó sẽ đứng MỘT
+  // MÌNH trong lượt gọi này (0 việc con thật trong CHÍNH khu vực đang vẽ) — vẽ khối rỗng sẽ
+  // mất card của chính order đó, nên rơi về vẽ như card bình thường (vẫn có badge tiến độ
+  // đầy đủ vì renderCard() tự tính lại từ TOÀN BỘ allOrders, không phụ thuộc khu vực).
+  if(!subItems.length) return groupItems.map(o=>o._isInt?renderIntCard(o):renderCard(o)).join('');
+  const stats=_getProjectStats(projectCode);
   const name=_getProjectDisplayName(projectCode);
   const subLine=[parent?.department, parent?.requester].filter(Boolean).join(' · ');
   const rowsHtml=subItems.map(o=>o._isInt?renderIntCard(o):renderCard(o,true)).join('');

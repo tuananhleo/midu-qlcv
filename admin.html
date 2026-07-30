@@ -1986,9 +1986,16 @@ function _renderGrouped(list){
   return html;
 }
 function _renderProjectGroup(projectCode, groupItems){
-  const stats=_getProjectStats(projectCode);
   const parent=groupItems.find(o=>o.type==='du-an-tong-hop');
   const subItems=groupItems.filter(o=>o.type!=='du-an-tong-hop');
+  // Phòng trường hợp run liên tiếp truyền vào chỉ có mỗi order gốc, chưa có việc con nào đi
+  // kèm trong lượt này (khớp cách xử lý ở tracker.html) — rơi về vẽ như card bình thường
+  // thay vì khối rỗng "0/N việc".
+  if(!subItems.length) return groupItems.map(o=>{
+    try { return o._isInt ? renderIntCard(o) : renderCard(o); }
+    catch(e) { console.error('[render] lỗi card', o?.id, e); return ''; }
+  }).join('');
+  const stats=_getProjectStats(projectCode);
   const name=_getProjectDisplayName(projectCode);
   const subLine=[parent?.department, parent?.requester].filter(Boolean).join(' · ');
   const rowsHtml=subItems.map(o=>{
