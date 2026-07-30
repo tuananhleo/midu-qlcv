@@ -1552,6 +1552,32 @@ function _aiBackToInput(){
   document.getElementById('ai-split-input-step').classList.remove('hidden');
   document.getElementById('ai-split-review-step').classList.add('hidden');
 }
+// Gợi ý người phụ trách theo loại việc — dựa vào vai trò (đúng vị trí, bất kỳ cấp nào:
+// Thực tập sinh/Tập sự/Nhân viên) + loại trừ người đã nghỉ việc (active:false) + ưu tiên
+// người đang có ÍT việc chưa xong nhất (đỡ bận nhất). Chỉ là GỢI Ý — vẫn sửa được ở bước
+// xem lại trước khi tạo, không tự động gán cứng.
+const _TYPE_TO_POSITIONS = {
+  'thiet-ke': ['thiet_ke'],
+  'video-ai': ['ai'],
+  'media': ['media'],
+  'chatbot': ['cskh','phanmem'],
+};
+function _suggestAssignee(type){
+  const positions = _TYPE_TO_POSITIONS[type];
+  if(!positions || !positions.length || !allUsers.length) return '';
+  const candidates = allUsers.filter(u=>{
+    if(u.active===false) return false; // đã nghỉ việc — loại luôn
+    const pos = (u.role||'').replace(/^(ts_|tapsu_|nv_)/,'');
+    return positions.includes(pos);
+  });
+  if(!candidates.length) return '';
+  const workload = name => allOrders.filter(o=>
+    o.status!=='hoan-thanh' && o.status!=='huy' &&
+    (o.assignedTo||'').split(',').map(s=>s.trim()).includes(name)
+  ).length;
+  candidates.sort((a,b)=>workload(a.displayName)-workload(b.displayName));
+  return candidates[0].displayName; // người đang bận ít nhất trong số còn làm việc
+}
 async function runAiSplit(){
   const brief = document.getElementById('ai-brief').value.trim();
   const errEl = document.getElementById('ai-split-err');
@@ -1559,10 +1585,11 @@ async function runAiSplit(){
   if(!brief){ errEl.textContent='Vui lòng dán nội dung mô tả dự án'; errEl.classList.remove('hidden'); return; }
   errEl.classList.add('hidden'); btn.disabled=true; btn.textContent='⏳ AI đang tách việc...';
   try{
+    if(!allUsers.length) await loadAllUsers(); // cần danh sách nhân sự để gợi ý người phụ trách
     const resp = await fetch(getGasUrl(), { method:'POST', body:JSON.stringify({ action:'splitProjectAI', description: brief }) }).then(r=>r.json());
     if(resp.error) throw new Error(resp.error);
     if(!Array.isArray(resp.tasks) || !resp.tasks.length) throw new Error('AI không tách được việc nào từ nội dung này');
-    _aiTasks = resp.tasks.map(t=>({ type:t.type||'khac', title:t.title||'', deadline:t.deadline||'', note:t.note||'', _include:true }));
+    _aiTasks = resp.tasks.map(t=>({ type:t.type||'khac', title:t.title||'', deadline:t.deadline||'', note:t.note||'', assignedTo:_suggestAssignee(t.type||'khac'), _include:true }));
     document.getElementById('ai-split-input-step').classList.add('hidden');
     document.getElementById('ai-split-review-step').classList.remove('hidden');
     _aiRenderReviewList();
@@ -1572,7 +1599,10 @@ async function runAiSplit(){
 function _aiRenderReviewList(){
   document.getElementById('ai-review-count').textContent = _aiTasks.filter(t=>t._include).length;
   const typeOpts = Object.keys(TYPE_MAP).map(k=>`<option value="${k}">${TYPE_MAP[k]}</option>`).join('');
-  document.getElementById('ai-review-list').innerHTML = _aiTasks.map((t,i)=>`
+  const assignableList = getAssignableUsers();
+  document.getElementById('ai-review-list').innerHTML = _aiTasks.map((t,i)=>{
+    const asgnOpts = ['<option value="">-- Chưa gán --</option>', ...assignableList.map(a=>`<option value="${a}">${a}</option>`)].join('');
+    return `
     <div class="ocard p-3" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start">
       <input type="checkbox" ${t._include?'checked':''} onchange="_aiTasks[${i}]._include=this.checked;_aiRenderReviewList()" style="margin-top:10px;flex-shrink:0">
       <div style="min-width:130px"><label class="text-xs" style="color:var(--atext3)">Loại</label>
@@ -1581,21 +1611,30 @@ function _aiRenderReviewList(){
       <div style="min-width:160px;flex:1"><label class="text-xs" style="color:var(--atext3)">Tên việc</label>
         <input type="text" class="cinp" style="width:100%" value="${(t.title||'').replace(/"/g,'&quot;')}" oninput="_aiTasks[${i}].title=this.value">
       </div>
+      <div style="min-width:150px"><label class="text-xs" style="color:var(--atext3)">Người phụ trách</label>
+        <select class="cinp" onchange="_aiTasks[${i}].assignedTo=this.value" style="width:100%">${asgnOpts.replace(`value="${t.assignedTo||''}"`,`value="${t.assignedTo||''}" selected`)}</select>
+      </div>
       <div style="min-width:130px"><label class="text-xs" style="color:var(--atext3)">Deadline</label>
         <input type="date" class="cinp" style="width:100%" value="${t.deadline||''}" onchange="_aiTasks[${i}].deadline=this.value">
       </div>
       <div style="min-width:200px;flex:2"><label class="text-xs" style="color:var(--atext3)">Ghi chú</label>
         <input type="text" class="cinp" style="width:100%" value="${(t.note||'').replace(/"/g,'&quot;')}" oninput="_aiTasks[${i}].note=this.value">
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 function _aiAddManualRow(){
-  _aiTasks.push({ type:'khac', title:'', deadline:'', note:'', _include:true });
+  _aiTasks.push({ type:'khac', title:'', deadline:'', note:'', assignedTo:'', _include:true });
   _aiRenderReviewList();
 }
 async function confirmAiCreate(){
   const projectCode = document.getElementById('ai-projectcode').value.trim();
   const requester = document.getElementById('ai-requester').value.trim() || currentUser?.displayName || 'Admin';
+  // Kế thừa đúng phòng ban thật của order "Dự án tổng hợp" gốc (nếu tách từ 1 order cụ thể)
+  // — trước đây gán cứng "Marketing – Truyền thông" cho MỌI việc con, sai với thực tế nếu
+  // dự án đến từ phòng ban khác (VD "Ban Đào tạo").
+  const sourceOrder = _aiSourceOrderId ? allOrders.find(x=>x.id===_aiSourceOrderId) : null;
+  const department = sourceOrder?.department || 'Marketing – Truyền thông';
   const toCreate = _aiTasks.filter(t=>t._include && t.title.trim());
   const errEl = document.getElementById('ai-create-err');
   const btn = document.getElementById('ai-create-btn');
@@ -1607,9 +1646,11 @@ async function confirmAiCreate(){
     btn.textContent=`⏳ Đang tạo ${i+1}/${toCreate.length}...`;
     try{
       const order = {
-        type:t.type, requester, department:'Marketing – Truyền thông',
+        type:t.type, requester, department,
         projectName:t.title, projectCode, deadline:t.deadline||'',
-        priority:'trung-binh', note:t.note||'', status:'chua-lam',
+        priority:'trung-binh', note:t.note||'',
+        assignedTo:t.assignedTo||'',
+        status:t.assignedTo?'dang-xu-ly':'chua-lam', // đã gán người thì tự chuyển "Đang xử lý" (khớp quy ước _newInternal())
         submittedAt:new Date().toLocaleString('vi-VN',{hour12:false}),
         adminNote:'Tạo từ AI tách việc · nguồn: '+requester,
       };
@@ -1749,7 +1790,14 @@ function dlPriority(o) {
 // (VD "2026-07-09") cho các bài Content Calendar mirror sang sheet, khiến nhiều bài đăng
 // không liên quan chỉ vì trùng ngày sẽ bị nhóm nhầm thành "1 dự án giả" nếu không chặn lại.
 function _isRealProject(projectCode){
-  return !!projectCode && allOrders.some(o=>o.projectCode===projectCode && o.type==='du-an-tong-hop');
+  if(!projectCode) return false;
+  // BẮT BUỘC phải có cả order gốc (du-an-tong-hop) LẪN ít nhất 1 việc con — nếu chỉ có
+  // order gốc (VD mới mở modal Tách việc AI rồi đóng lại giữa chừng, chưa tạo việc con
+  // nào — openAiSplitFromOrder() đã ghi projectCode vào order gốc ngay lúc mở modal) thì
+  // không được coi là "dự án thật", nếu không khối nhóm sẽ hiện rỗng "0/0 việc" và order
+  // gốc mất hẳn card/nút Sửa-Xoá bình thường của nó (đã xảy ra thật, phát hiện lúc review).
+  const matching=allOrders.filter(o=>o.projectCode===projectCode);
+  return matching.some(o=>o.type==='du-an-tong-hop') && matching.some(o=>o.type!=='du-an-tong-hop');
 }
 function sorted(list) {
   const base=[...list].sort((a,b)=>{
@@ -1914,10 +1962,53 @@ function render() {
     ...rows.map(r=>({...r,_isInt:false})),
     ...intRows.map(t=>({...t,_isInt:true,deadline:t.deadline||t.plannedDate||''}))
   ]);
-  list.innerHTML = allMixed.map(o=>{
-    try { return o._isInt ? renderIntCard(o) : renderCard(o); }
-    catch(e) { console.error('[render] lỗi card', o?.id, e); return ''; }
+  list.innerHTML = _renderGrouped(allMixed);
+}
+// Vẽ danh sách đã sort — item nào thuộc 1 dự án THẬT sẽ được gom lại thành 1 khối chung
+// (viền vàng, 1 header tiến độ dùng chung) thay vì mỗi card hiện badge riêng lẻ. Vì
+// sorted() đã đảm bảo các thành viên cùng projectCode đứng LIỀN NHAU, chỉ cần quét tuần
+// tự và "vơ" hết 1 lượt các item liên tiếp cùng mã là đủ, không cần gom theo mã trên toàn
+// mảng (tránh gộp nhầm nếu 2 dự án khác nhau vô tình xen kẽ vị trí ở đâu đó).
+function _renderGrouped(list){
+  let html=''; let i=0;
+  while(i<list.length){
+    const o=list[i];
+    if(_isRealProject(o.projectCode)){
+      const code=o.projectCode, group=[];
+      while(i<list.length && list[i].projectCode===code){ group.push(list[i]); i++; }
+      html+=_renderProjectGroup(code, group);
+    } else {
+      try { html += (o._isInt ? renderIntCard(o) : renderCard(o)); }
+      catch(e) { console.error('[render] lỗi card', o?.id, e); }
+      i++;
+    }
+  }
+  return html;
+}
+function _renderProjectGroup(projectCode, groupItems){
+  const stats=_getProjectStats(projectCode);
+  const parent=groupItems.find(o=>o.type==='du-an-tong-hop');
+  const subItems=groupItems.filter(o=>o.type!=='du-an-tong-hop');
+  const name=_getProjectDisplayName(projectCode);
+  const subLine=[parent?.department, parent?.requester].filter(Boolean).join(' · ');
+  const rowsHtml=subItems.map(o=>{
+    try { return o._isInt ? renderIntCard(o) : renderCard(o,true); }
+    catch(e) { console.error('[render] lỗi card trong nhóm dự án', o?.id, e); return ''; }
   }).join('');
+  return `<div style="border:2px solid rgba(234,179,8,.4);border-radius:14px;overflow:hidden;margin-bottom:16px">
+    <div onclick="openProjectOverview('${projectCode}')" style="cursor:pointer;background:rgba(234,179,8,.12);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+      <div>
+        <div style="color:#facc15;font-weight:700;font-size:.9rem">📁 ${name}</div>
+        ${subLine?`<div style="color:var(--atext3);font-size:.7rem;margin-top:2px">${subLine}</div>`:''}
+      </div>
+      <div style="text-align:right;flex-shrink:0">
+        <div style="color:#facc15;font-weight:700;font-size:1.15rem;line-height:1">${stats.pct}%</div>
+        <div style="color:var(--atext3);font-size:.7rem">${stats.done}/${stats.total} việc hoàn thành</div>
+      </div>
+    </div>
+    <div style="background:rgba(255,255,255,.06);height:4px"><div style="background:#eab308;height:100%;width:${stats.pct}%"></div></div>
+    ${rowsHtml}
+  </div>`;
 }
 
 // % hoàn thành của cả dự án (nhóm theo projectCode) — tính "sống" từ allOrders mỗi lần
@@ -1961,7 +2052,7 @@ function openProjectOverview(projectCode){
 }
 function closeProjectOverview(){ document.getElementById('project-overview-modal').classList.add('hidden'); }
 
-function renderCard(o) {
+function renderCard(o, inGroup=false) {
   const s=STATUS_MAP[o.status]||STATUS_MAP['chua-lam'];
   const dl=parseDl(o);
   const dlStr=dl?dl.toLocaleDateString('vi-VN',{day:'2-digit',month:'2-digit',year:'numeric'}):'–';
@@ -1983,7 +2074,9 @@ function renderCard(o) {
   const skipFields=new Set(['clientNote','adminNote','assignedTo','linkResult','completedAt','status','id','type','submittedAt','requester','department','projectName','projectCode','deadline','priority','note']);
   const detEntries=[...allFieldKeys].filter(k=>o[k]&&!skipFields.has(k)).map(k=>[k,o[k]]);
   const isUrl=v=>/^https?:\/\//i.test(String(v));
-  const detHTML=detEntries.map(([k,v])=>`<div><span style="color:var(--atext3)">${dynamicSchema[k]||FIELD_LABELS[k]||k}:</span> <span class="break-words" style="color:var(--atext2)">${isUrl(v)?`<a href="${v}" target="_blank" rel="noopener" class="text-indigo-400 underline">${v}</a>`:v}</span></div>`).join('');
+  // white-space:pre-line — giữ nguyên xuống dòng trong dữ liệu gốc (VD mô tả dự án dán từ
+  // brief nhiều dòng), mặc định trình duyệt gộp hết newline thành 1 dòng dài khó đọc.
+  const detHTML=detEntries.map(([k,v])=>`<div><span style="color:var(--atext3)">${dynamicSchema[k]||FIELD_LABELS[k]||k}:</span> <span class="break-words" style="color:var(--atext2);white-space:pre-line">${isUrl(v)?`<a href="${v}" target="_blank" rel="noopener" class="text-indigo-400 underline">${escapeHtml(v)}</a>`:escapeHtml(v)}</span></div>`).join('');
   const curAssigned=(o.assignedTo||'').split(',').map(s=>s.trim()).filter(Boolean);
   const msId='asgn_'+o.id;
   const assignableList = getAssignableUsers();
@@ -1991,14 +2084,16 @@ function renderCard(o) {
   const msLabel=curAssigned.length?curAssigned.join(', '):'-- Chọn --';
   // Nếu order thuộc 1 dự án có từ 2 việc trở lên (VD tách ra từ AI, hoặc tự gán chung mã
   // dự án) — hiện badge tiến độ tổng dự án thay cho mã dự án trơn, bấm vào xem toàn bộ.
-  const pjStats = o.projectCode ? _getProjectStats(o.projectCode) : null;
+  // KHÔNG hiện khi card này đang được vẽ BÊN TRONG khối nhóm dự án (inGroup) — khối đó đã
+  // có 1 header tiến độ dùng chung ở trên, hiện thêm nữa sẽ trùng lặp.
+  const pjStats = (!inGroup && o.projectCode) ? _getProjectStats(o.projectCode) : null;
   const showPjBadge = pjStats && pjStats.total>1;
   return `<div class="${cardCls}">
     <div class="p-4">
       <div class="flex flex-wrap items-center gap-2 mb-1">
         <span class="meta-tag">${TYPE_MAP[o.type]||o.type}</span>
         <span class="meta-tag">🏢 ${o.department||'–'}</span>
-        ${o.projectCode&&!showPjBadge?`<span class="meta-tag" style="background:rgba(99,102,241,.15);color:#a5b4fc">📁 ${o.projectCode}</span>`:''}
+        ${o.projectCode&&!showPjBadge&&!inGroup?`<span class="meta-tag" style="background:rgba(99,102,241,.15);color:#a5b4fc">📁 ${o.projectCode}</span>`:''}
         <span class="px-2 py-0.5 rounded-full text-xs font-bold" style="background:${s.bg};color:${s.color}">${s.label}</span>
         <span class="ml-auto text-xs font-mono" style="color:var(--atext3)">${o.id||''}</span>
       </div>

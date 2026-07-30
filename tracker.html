@@ -697,7 +697,12 @@ function dlPriority(o) {
 // bài Content Calendar mirror sang sheet, nếu không chặn sẽ nhóm nhầm các bài trùng ngày
 // thành "1 dự án giả" (đã xảy ra thật, phát hiện lúc review — xem Task #93).
 function _isRealProject(projectCode){
-  return !!projectCode && allOrders.some(o=>o.projectCode===projectCode && o.type==='du-an-tong-hop');
+  if(!projectCode) return false;
+  // BẮT BUỘC phải có cả order gốc (du-an-tong-hop) LẪN ít nhất 1 việc con — xem giải thích
+  // đầy đủ ở admin.html (tránh khối nhóm hiện rỗng "0/0 việc" nếu order gốc có projectCode
+  // nhưng chưa từng có việc con nào, VD mở modal Tách việc AI rồi đóng lại giữa chừng).
+  const matching=allOrders.filter(o=>o.projectCode===projectCode);
+  return matching.some(o=>o.type==='du-an-tong-hop') && matching.some(o=>o.type!=='du-an-tong-hop');
 }
 function sortedList(list) {
   const base=[...list].sort((a,b)=>{
@@ -912,6 +917,47 @@ function setStatusFilter(val){
   statusFilter=val; buildStatusChips(); updateStats(); render();
 }
 
+// Item nào thuộc 1 dự án THẬT sẽ được gom thành 1 khối chung (viền vàng, 1 header tiến độ
+// dùng chung) thay vì mỗi card hiện badge riêng — xem giải thích đầy đủ ở admin.html.
+// sortedList() đã đảm bảo các thành viên cùng projectCode đứng liền nhau trong CÙNG khu vực
+// (urgent/doing/pending...) nên chỉ cần quét tuần tự trong từng khu vực là đủ.
+function _renderGrouped(list){
+  let html=''; let i=0;
+  while(i<list.length){
+    const o=list[i];
+    if(_isRealProject(o.projectCode)){
+      const code=o.projectCode, group=[];
+      while(i<list.length && list[i].projectCode===code){ group.push(list[i]); i++; }
+      html+=_renderProjectGroup(code, group);
+    } else {
+      html += (o._isInt ? renderIntCard(o) : renderCard(o));
+      i++;
+    }
+  }
+  return html;
+}
+function _renderProjectGroup(projectCode, groupItems){
+  const stats=_getProjectStats(projectCode);
+  const parent=groupItems.find(o=>o.type==='du-an-tong-hop');
+  const subItems=groupItems.filter(o=>o.type!=='du-an-tong-hop');
+  const name=_getProjectDisplayName(projectCode);
+  const subLine=[parent?.department, parent?.requester].filter(Boolean).join(' · ');
+  const rowsHtml=subItems.map(o=>o._isInt?renderIntCard(o):renderCard(o,true)).join('');
+  return `<div style="border:2px solid rgba(234,179,8,.4);border-radius:14px;overflow:hidden;margin-bottom:12px">
+    <div onclick="openProjectOverview('${projectCode}')" style="cursor:pointer;background:rgba(234,179,8,.12);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+      <div>
+        <div style="color:#facc15;font-weight:700;font-size:.9rem">📁 ${name}</div>
+        ${subLine?`<div style="color:var(--ttext3);font-size:.7rem;margin-top:2px">${subLine}</div>`:''}
+      </div>
+      <div style="text-align:right;flex-shrink:0">
+        <div style="color:#facc15;font-weight:700;font-size:1.15rem;line-height:1">${stats.pct}%</div>
+        <div style="color:var(--ttext3);font-size:.7rem">${stats.done}/${stats.total} việc hoàn thành</div>
+      </div>
+    </div>
+    <div style="background:rgba(255,255,255,.06);height:4px"><div style="background:#eab308;height:100%;width:${stats.pct}%"></div></div>
+    ${rowsHtml}
+  </div>`;
+}
 function render() {
   const {rows: filteredRows, intRows: allIntRows} = getFilteredRows();
   const rows=sortedList(filteredRows);
@@ -937,7 +983,7 @@ function render() {
   const pending  = sortedList(allRows.filter(o=>o.status==='chua-lam'&&dlPriority(o)>1));
   const done     = sortedList(allRows.filter(o=>o.status==='hoan-thanh'||o.status==='huy'));
 
-  const renderMixed=(items)=>items.map(o=>o._isInt?renderIntCard(o):renderCard(o)).join('');
+  const renderMixed=(items)=>_renderGrouped(items);
   list.innerHTML=[
     renderGroup('🔴 Cần xử lý', urgent,   'urgent',   true,  '#f87171','rgba(239,68,68,.12)', renderMixed),
     renderGroup('🔄 Đang làm',  doing,    'doing',    true,  '#60a5fa','rgba(96,165,250,.12)', renderMixed),
@@ -1011,7 +1057,7 @@ function openProjectOverview(projectCode){
 }
 function closeProjectOverview(){ document.getElementById('project-overview-modal').classList.add('hidden'); }
 
-function renderCard(o) {
+function renderCard(o, inGroup=false) {
   const s=STATUS_MAP[o.status]||STATUS_MAP['chua-lam'];
   const dl=parseDl(o);
   const dlStr=dl?dl.toLocaleDateString('vi-VN',{day:'2-digit',month:'2-digit',year:'numeric'}):'–';
@@ -1031,7 +1077,7 @@ function renderCard(o) {
   const detEntries=[...allFieldKeys].filter(k=>o[k]&&!skipFields.has(k)).map(k=>[k,o[k]]);
   const isUrl=v=>/^https?:\/\//i.test(String(v));
   const detHTML=detEntries.map(([k,v])=>`
-    <div><span style="color:var(--ttext3)">${dynamicSchema[k]||FIELD_LABELS[k]||k}:</span> <span class="break-words" style="color:var(--ttext2)">${isUrl(v)?`<a href="${v}" target="_blank" rel="noopener" class="text-indigo-400 underline">${v}</a>`:v}</span></div>
+    <div><span style="color:var(--ttext3)">${dynamicSchema[k]||FIELD_LABELS[k]||k}:</span> <span class="break-words" style="color:var(--ttext2);white-space:pre-line">${isUrl(v)?`<a href="${v}" target="_blank" rel="noopener" class="text-indigo-400 underline">${escapeHtml(v)}</a>`:escapeHtml(v)}</span></div>
   `).join('');
 
   const hasBottom=o.linkResult||o.resultBy;
@@ -1039,7 +1085,7 @@ function renderCard(o) {
 
   // Multi-assignee
   const assignees=(o.assignedTo||'').split(',').map(s=>s.trim()).filter(Boolean);
-  const pjStats = o.projectCode ? _getProjectStats(o.projectCode) : null;
+  const pjStats = (!inGroup && o.projectCode) ? _getProjectStats(o.projectCode) : null;
   const showPjBadge = pjStats && pjStats.total>1;
 
   return `<div class="${cardCls}">
@@ -1047,7 +1093,7 @@ function renderCard(o) {
       <div class="flex flex-wrap items-center gap-2 mb-1">
         <span class="meta-tag">${TYPE_MAP[o.type]||o.type}</span>
         <span class="meta-tag">🏢 ${o.department||'–'}</span>
-        ${o.projectCode&&!showPjBadge?`<span class="meta-tag" style="background:rgba(99,102,241,.12);color:#a5b4fc">📁 ${o.projectCode}</span>`:''}
+        ${o.projectCode&&!showPjBadge&&!inGroup?`<span class="meta-tag" style="background:rgba(99,102,241,.12);color:#a5b4fc">📁 ${o.projectCode}</span>`:''}
         <span class="px-2 py-0.5 rounded-full text-xs font-bold" style="background:${s.bg};color:${s.color}">${s.label}</span>
         <span class="ml-auto font-mono text-xs" style="color:var(--ttext3)">${o.id||''}</span>
       </div>
