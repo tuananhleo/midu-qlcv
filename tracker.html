@@ -982,16 +982,28 @@ function render() {
   }
   empty.classList.add('hidden');
 
+  // Tách hẳn các item thuộc 1 dự án THẬT ra khỏi luồng phân loại theo trạng thái — gom
+  // nguyên 1 dự án thành 1 khối duy nhất (xuyên trạng thái/deadline khác nhau giữa các việc
+  // con), hiện ở khu riêng "📁 Dự án" phía trên, KHÔNG để bị xé lẻ theo từng khu Cần xử
+  // lý/Đang làm/Chưa làm/Hoàn thành như cách cũ (mỗi khu chỉ thấy đúng phần việc con rơi
+  // vào khu đó, mất tính liền mạch của cả dự án).
+  const projectCodes=new Set();
+  allRows.forEach(o=>{ if(_isRealProject(o.projectCode)) projectCodes.add(o.projectCode); });
+  const projectItems=allRows.filter(o=>projectCodes.has(o.projectCode));
+  const restItems=allRows.filter(o=>!projectCodes.has(o.projectCode));
+
   // "huy" gộp chung nhóm Hoàn thành (đã đóng, không còn là việc cần làm) — tránh rơi khỏi
   // mọi nhóm nếu chỉ loại trừ ở urgent mà không xếp nó vào đâu cả.
-  const urgent   = sortedList(allRows.filter(o=>o.status!=='hoan-thanh'&&o.status!=='feedback'&&o.status!=='huy'&&dlPriority(o)<=1));
-  const doing    = sortedList(allRows.filter(o=>o.status==='dang-xu-ly'&&dlPriority(o)>1));
-  const feedback = sortedList(allRows.filter(o=>o.status==='feedback'));
-  const pending  = sortedList(allRows.filter(o=>o.status==='chua-lam'&&dlPriority(o)>1));
-  const done     = sortedList(allRows.filter(o=>o.status==='hoan-thanh'||o.status==='huy'));
+  const urgent   = sortedList(restItems.filter(o=>o.status!=='hoan-thanh'&&o.status!=='feedback'&&o.status!=='huy'&&dlPriority(o)<=1));
+  const doing    = sortedList(restItems.filter(o=>o.status==='dang-xu-ly'&&dlPriority(o)>1));
+  const feedback = sortedList(restItems.filter(o=>o.status==='feedback'));
+  const pending  = sortedList(restItems.filter(o=>o.status==='chua-lam'&&dlPriority(o)>1));
+  const done     = sortedList(restItems.filter(o=>o.status==='hoan-thanh'||o.status==='huy'));
 
   const renderMixed=(items)=>_renderGrouped(items);
+  const renderProjects=()=>[...projectCodes].map(code=>_renderProjectGroup(code, sortedList(projectItems.filter(o=>o.projectCode===code)))).join('');
   list.innerHTML=[
+    renderGroup('📁 Dự án',     [...projectCodes], 'projects', true, '#eab308','rgba(234,179,8,.15)', renderProjects),
     renderGroup('🔴 Cần xử lý', urgent,   'urgent',   true,  '#f87171','rgba(239,68,68,.12)', renderMixed),
     renderGroup('🔄 Đang làm',  doing,    'doing',    true,  '#60a5fa','rgba(96,165,250,.12)', renderMixed),
     renderGroup('💬 Feedback',  feedback, 'feedback', true,  '#a78bfa','rgba(167,139,250,.12)', renderMixed),
