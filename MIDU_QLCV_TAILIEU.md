@@ -1388,6 +1388,26 @@ Mỗi field id chỉ cần trùng với field id ĐÃ CÓ ở bất kỳ loại 
 
 ---
 
+### Task #94 — Khối nhóm dự án liền mạch + AI gợi ý người phụ trách + fix lỗi regression phát hiện qua review
+
+**Yêu cầu (nguyên văn, nhiều phần):**
+- "Chưa sắp xếp các việc trong 1 dự án sẽ nằm cạnh nhau à" → xác nhận vẫn đúng nhưng do cache trình duyệt/GitHub Pages cũ, đã tự hết sau khi tải lại.
+- "Chỗ này phải hiển thị là dự án tổng hợp và Ban đào tạo chứ, à mô tả dự án cần viết xuống dòng cho dễ đọc" — kèm ảnh chụp cho thấy card việc con ghi sai phòng ban "Marketing – Truyền thông" thay vì "Ban Đào tạo" (phòng ban thật của người gửi dự án), và mô tả dự án hiện dồn thành 1 dòng dài mất hết xuống dòng gốc.
+- "Ngoài tracker cũng cần sắp xếp đầu việc trong dự án gần nhau, nhưng có cách nào thể hiện là các đầu việc kia là nằm trong dự án này chứ k tách riêng biệt ra không" → dùng skill `mockup` dựng bản xem trước khối nhóm viền vàng dùng chung 1 header, người dùng duyệt: "Ok rồi nhé".
+- "với trong lúc AI phân việc có nên phân luôn người phụ trách không" (câu hỏi mở) → tư vấn nên làm, tận dụng vai trò đã có (Task #82); "Có nhé, nhưng làm luôn logic khi bận hoặc nghỉ việc nhé".
+
+**Fix:**
+1. **Phòng ban đúng thật:** `confirmAiCreate()` giờ kế thừa `department` từ order "Dự án tổng hợp" gốc (`sourceOrder.department`) thay vì gán cứng "Marketing – Truyền thông" cho mọi việc con. Đã backfill 2 việc con đã tạo trước đó về đúng "Ban Đào tạo".
+2. **Giữ xuống dòng khi hiển thị:** khung "chi tiết" (`detHTML` trong `renderCard()`, cả 2 file) thêm `white-space:pre-line`, đồng thời bọc `escapeHtml()` cho giá trị hiển thị (tiện thể vá luôn 1 lỗ hổng XSS tiềm ẩn — dữ liệu trước đó chèn thẳng không thoát ký tự).
+3. **Khối nhóm dự án liền mạch:** `_renderGrouped()`/`_renderProjectGroup()` (cả 2 file) — thay vì mỗi card việc con tự hiện badge tiến độ riêng, các việc cùng dự án được vẽ chung trong 1 khối viền vàng có 1 header dùng chung (tên dự án, %, thanh tiến độ), bấm header mở màn tổng quan như cũ. `renderCard(o, inGroup)` thêm tham số để ẩn hẳn badge riêng khi card đang được vẽ bên trong khối nhóm (tránh lặp lại thông tin).
+4. **AI gợi ý người phụ trách:** `_TYPE_TO_POSITIONS` (map loại việc → vị trí vai trò, VD `chatbot`→`['cskh','phanmem']`) + `_suggestAssignee(type)` — lọc nhân sự đúng vị trí, **loại người đã nghỉ việc** (`active:false`), trong số còn lại **ưu tiên người đang có ít việc chưa xong nhất** (đỡ bận nhất). Chỉ là gợi ý — thêm cột "Người phụ trách" (dropdown) vào bảng xem lại trước khi tạo, vẫn sửa được tự do như mọi field khác.
+
+**Sự cố tìm ra qua Agent review độc lập (đứt phiên giữa chừng do giới hạn API, resume lại bằng `SendMessage` tới đúng agent cũ để tiếp tục thay vì tạo agent mới mất ngữ cảnh) — phát hiện 1 lỗi regression thật:** `openAiSplitFromOrder()` ghi `projectCode` vào order gốc **NGAY LÚC MỞ MODAL** (để chuẩn bị sẵn cho lúc tạo việc con), nhưng nếu admin đóng/huỷ modal giữa chừng mà **chưa tạo việc con nào**, order gốc đã lỡ mang 1 `projectCode` thật nhưng KHÔNG có việc con nào đi kèm. `_isRealProject()` khi đó (chỉ cần có order gốc `du-an-tong-hop` là đủ, không đòi hỏi phải có việc con) coi đây là "dự án thật", khiến order đó bị vẽ thành 1 khối nhóm **rỗng "0/0 việc"**, mất hẳn card/nút Sửa-Xoá-Trạng thái bình thường của chính nó.
+
+**Fix:** `_isRealProject(projectCode)` giờ đòi hỏi **CẢ 2 điều kiện**: có order gốc loại `du-an-tong-hop` **VÀ** có ít nhất 1 order khác (việc con) cùng mã — chỉ 1 trong 2 thì không được coi là dự án thật. Xác nhận lại bằng dữ liệu thật + mô phỏng: dự án thật (2 việc con) vẫn `true`; trường hợp giả lập chỉ có order gốc, chưa có việc con → `false` (đúng như kỳ vọng); 16 nhóm ngày lịch content (Task #93) vẫn `false` như cũ, không hồi quy.
+
+---
+
 ## 14. Liên kết nhanh
 
 | Tên | URL |
