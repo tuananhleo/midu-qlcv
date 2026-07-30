@@ -1408,6 +1408,20 @@ Mỗi field id chỉ cần trùng với field id ĐÃ CÓ ở bất kỳ loại 
 
 ---
 
+### Task #95 — tracker.html: gộp trọn 1 dự án thành 1 khối duy nhất, xuyên trạng thái
+
+**Câu hỏi/yêu cầu:** "Trong admin thì ok rồi, hiển thị ở tracker về dự án cũng như admin nhé."
+
+**Phát hiện qua tự kiểm tra bằng dữ liệu thật (theo đúng quy trình mới):** admin.html dùng danh sách phẳng (không chia khu) nên `sorted()` luôn gom được trọn dự án dù các việc con khác trạng thái. Nhưng **tracker.html chia sẵn thành các khu riêng theo trạng thái** (🔴 Cần xử lý / 🔄 Đang làm / 💬 Feedback / ⏳ Chưa làm / ✅ Hoàn thành) **TRƯỚC KHI** gọi hàm gom nhóm — nếu 1 dự án có việc con rơi vào các khu khác nhau (VD: order gốc đã "Hoàn thành", 1 việc con trễ hạn nằm ở "Cần xử lý", 1 việc con chưa có deadline nằm ở "Chưa làm"), dữ liệu thật cho thấy đúng 3 khu khác nhau — mỗi khu chỉ tự vẽ phần việc rơi vào khu đó, xé lẻ mất tính liền mạch của cả dự án như admin.html.
+
+**Xác nhận phạm vi với người dùng:** giữ nguyên cách chia khu như cũ, chỉ gộp riêng phần dự án (Recommended, thay đổi nhỏ) — hay gộp hẳn toàn bộ việc con về 1 khối bất kể trạng thái (giống hệt admin, cần đổi kiến trúc lớn hơn)? → chọn phương án 2: gộp hẳn.
+
+**Fix:** trong `render()` — TRƯỚC KHI chia `allRows` vào các khu theo trạng thái, tách hẳn mọi item thuộc 1 `projectCode` "thật" (`_isRealProject`) ra thành `projectItems` riêng, chỉ còn lại `restItems` mới đem chia vào urgent/doing/feedback/pending/done như cũ. Thêm 1 khu mới **"📁 Dự án"** (dùng lại đúng `renderGroup()` có sẵn, luôn hiện đầu danh sách, mặc định mở) — vẽ từng dự án bằng `_renderProjectGroup()` với TOÀN BỘ việc con của nó (không phụ thuộc trạng thái/khu vực nào), sắp xếp theo đúng ưu tiên deadline như bình thường.
+
+**Xác nhận bằng dữ liệu thật:** dự án thật (order gốc "Hoàn thành" + 2 việc con "Chưa làm" khác deadline, đáng lẽ rơi vào 3 khu khác nhau) — sau fix cả 3 đều được gom về đúng 1 khu "📁 Dự án", xác nhận không còn sót lại phần tử nào của dự án này trong urgent/pending/done nữa (đếm = 0 cho cả 3 khu), tổng số item vẫn khớp nguyên vẹn (114 = 3 + 111).
+
+---
+
 ## 14. Liên kết nhanh
 
 | Tên | URL |
