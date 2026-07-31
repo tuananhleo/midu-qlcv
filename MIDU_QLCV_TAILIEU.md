@@ -1422,6 +1422,18 @@ Mỗi field id chỉ cần trùng với field id ĐÃ CÓ ở bất kỳ loại 
 
 ---
 
+### Task #96 — Đưa vị trí dự án ở tracker.html theo đúng độ ưu tiên thật, bỏ khu cố định đầu danh sách
+
+**Câu hỏi/phản hồi:** "Nhưng lúc nào dự án cũng ở trên đầu tiên trong admin và tracker à" → xác nhận đúng: admin.html đặt khối dự án theo độ ưu tiên (vị trí của thành viên khẩn cấp nhất, không phải luôn ở đầu), còn Task #95 vừa làm ở tracker.html lại CỐ ĐỊNH khu "📁 Dự án" luôn ở đầu, không nhất quán. Hỏi lại người dùng muốn thống nhất theo cách nào → "theo đúng độ ưu tiên như admin nhé".
+
+**Vấn đề kỹ thuật:** admin.html dùng danh sách phẳng nên `sorted()` tự nhiên đặt khối vào đúng vị trí ưu tiên. Nhưng tracker.html chia sẵn thành khu theo TRẠNG THÁI (không phải theo độ ưu tiên thuần) — 1 dự án có nhiều việc con thì "độ ưu tiên" của cả khối là khái niệm mơ hồ: nên đặt dự án vào khu trạng thái nào khi các việc con có trạng thái khác nhau?
+
+**Fix:** thay khu "📁 Dự án" cố định (Task #95) bằng cơ chế "đại diện" — với mỗi dự án, chọn ra **việc con khẩn cấp nhất** (dlPriority thấp nhất, deadline sớm nhất, không tính order gốc) làm đại diện (`projectMarkers`), mang đúng `status`/`deadline` của đại diện đó. Đại diện này được đưa vào cùng luồng phân loại theo trạng thái (`classifyPool`) như 1 item bình thường — tự nhiên rơi vào ĐÚNG khu trạng thái + đúng vị trí ưu tiên mà việc con khẩn cấp nhất đó đáng lẽ thuộc về, mô phỏng chính xác cách admin.html đặt cả khối vào vị trí của thành viên ưu tiên cao nhất. Lúc vẽ (`renderMixed`), gặp item được đánh dấu `_isProjectMarker` thì thay bằng `_renderProjectGroup()` với TOÀN BỘ việc con thật (không chỉ đại diện).
+
+**Xác nhận bằng dữ liệu thật:** dự án có việc con trễ hạn từ 30/6 (dlPriority=0, khẩn cấp nhất) được chọn làm đại diện → dự án rơi đúng vào khu "🔴 Cần xử lý", đứng ở vị trí đầu tiên trong khu đó (index 0/27) đúng theo độ ưu tiên thật của deadline, không còn nằm ở 1 khu riêng cố định đầu toàn bộ danh sách nữa.
+
+---
+
 ## 14. Liên kết nhanh
 
 | Tên | URL |
