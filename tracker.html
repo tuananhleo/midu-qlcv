@@ -982,28 +982,43 @@ function render() {
   }
   empty.classList.add('hidden');
 
-  // Tách hẳn các item thuộc 1 dự án THẬT ra khỏi luồng phân loại theo trạng thái — gom
-  // nguyên 1 dự án thành 1 khối duy nhất (xuyên trạng thái/deadline khác nhau giữa các việc
-  // con), hiện ở khu riêng "📁 Dự án" phía trên, KHÔNG để bị xé lẻ theo từng khu Cần xử
-  // lý/Đang làm/Chưa làm/Hoàn thành như cách cũ (mỗi khu chỉ thấy đúng phần việc con rơi
-  // vào khu đó, mất tính liền mạch của cả dự án).
+  // Tách hẳn các item thuộc 1 dự án THẬT ra khỏi luồng phân loại theo trạng thái từng cái
+  // riêng lẻ — nhưng KHÔNG dồn cứng vào 1 khu cố định ở đầu (đã làm ở Task #95, người dùng
+  // phản hồi muốn đúng theo độ ưu tiên thật như admin.html thay vì luôn ở trên đầu). Thay
+  // vào đó: chọn ra việc con "khẩn cấp nhất" trong dự án (dlPriority thấp nhất, deadline sớm
+  // nhất) làm "đại diện" — dùng đúng status/deadline của đại diện đó để quyết định dự án rơi
+  // vào ĐÚNG khu trạng thái nào + đúng vị trí ưu tiên trong khu đó, mô phỏng cách admin.html
+  // đặt cả khối vào vị trí của thành viên ưu tiên cao nhất. Khi vẽ, "đại diện" này được thay
+  // bằng cả khối dự án đầy đủ (mọi việc con, không chỉ đại diện).
   const projectCodes=new Set();
   allRows.forEach(o=>{ if(_isRealProject(o.projectCode)) projectCodes.add(o.projectCode); });
-  const projectItems=allRows.filter(o=>projectCodes.has(o.projectCode));
+  const projectItemsByCode={};
+  projectCodes.forEach(code=>{ projectItemsByCode[code]=allRows.filter(o=>o.projectCode===code); });
   const restItems=allRows.filter(o=>!projectCodes.has(o.projectCode));
+  const projectMarkers=[...projectCodes].map(code=>{
+    const children=projectItemsByCode[code].filter(o=>o.type!=='du-an-tong-hop');
+    const rep=[...children].sort((a,b)=>{
+      const p=dlPriority(a)-dlPriority(b); if(p) return p;
+      const da=parseDl(a)||new Date('2099-01-01'), db=parseDl(b)||new Date('2099-01-01');
+      return da-db;
+    })[0] || projectItemsByCode[code][0];
+    return { ...rep, _isProjectMarker:true, _projectCode:code };
+  });
+  const classifyPool=[...restItems, ...projectMarkers];
 
   // "huy" gộp chung nhóm Hoàn thành (đã đóng, không còn là việc cần làm) — tránh rơi khỏi
   // mọi nhóm nếu chỉ loại trừ ở urgent mà không xếp nó vào đâu cả.
-  const urgent   = sortedList(restItems.filter(o=>o.status!=='hoan-thanh'&&o.status!=='feedback'&&o.status!=='huy'&&dlPriority(o)<=1));
-  const doing    = sortedList(restItems.filter(o=>o.status==='dang-xu-ly'&&dlPriority(o)>1));
-  const feedback = sortedList(restItems.filter(o=>o.status==='feedback'));
-  const pending  = sortedList(restItems.filter(o=>o.status==='chua-lam'&&dlPriority(o)>1));
-  const done     = sortedList(restItems.filter(o=>o.status==='hoan-thanh'||o.status==='huy'));
+  const urgent   = sortedList(classifyPool.filter(o=>o.status!=='hoan-thanh'&&o.status!=='feedback'&&o.status!=='huy'&&dlPriority(o)<=1));
+  const doing    = sortedList(classifyPool.filter(o=>o.status==='dang-xu-ly'&&dlPriority(o)>1));
+  const feedback = sortedList(classifyPool.filter(o=>o.status==='feedback'));
+  const pending  = sortedList(classifyPool.filter(o=>o.status==='chua-lam'&&dlPriority(o)>1));
+  const done     = sortedList(classifyPool.filter(o=>o.status==='hoan-thanh'||o.status==='huy'));
 
-  const renderMixed=(items)=>_renderGrouped(items);
-  const renderProjects=()=>[...projectCodes].map(code=>_renderProjectGroup(code, sortedList(projectItems.filter(o=>o.projectCode===code)))).join('');
+  const renderMixed=(items)=>items.map(o=>{
+    if(o._isProjectMarker) return _renderProjectGroup(o._projectCode, sortedList(projectItemsByCode[o._projectCode]));
+    return o._isInt?renderIntCard(o):renderCard(o);
+  }).join('');
   list.innerHTML=[
-    renderGroup('📁 Dự án',     [...projectCodes], 'projects', true, '#eab308','rgba(234,179,8,.15)', renderProjects),
     renderGroup('🔴 Cần xử lý', urgent,   'urgent',   true,  '#f87171','rgba(239,68,68,.12)', renderMixed),
     renderGroup('🔄 Đang làm',  doing,    'doing',    true,  '#60a5fa','rgba(96,165,250,.12)', renderMixed),
     renderGroup('💬 Feedback',  feedback, 'feedback', true,  '#a78bfa','rgba(167,139,250,.12)', renderMixed),
