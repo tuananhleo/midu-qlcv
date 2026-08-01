@@ -1434,6 +1434,31 @@ Mỗi field id chỉ cần trùng với field id ĐÃ CÓ ở bất kỳ loại 
 
 ---
 
+### Task #97 — Fix lệch trạng thái Content Order (LC) so với trang Content + mở rộng auto-complete Feedback 24h sang LC Order/việc nội bộ
+
+**Câu hỏi/phản hồi:** người dùng gửi ảnh chụp 3 card LC Order (VA-260713-013, TK-260721-018, VA-260722-019) và hỏi "Kiểm tra những việc này nhé, xem có khớp trạng thái của trang content không, rồi logic feedback sau 24h tự động cập nhật hoàn thành đã áp dụng chưa".
+
+**Kiểm tra bằng dữ liệu thật (Supabase, board Kim Oanh):**
+| Mã | Trang Content (nguồn) | Admin/Tracker hiển thị | Khớp? |
+|---|---|---|---|
+| VA-260713-013 | Hoàn thành | Đang xử lý | ❌ Lệch |
+| TK-260721-018 | Chờ feedback | Feedback | ✅ |
+| VA-260722-019 | Chờ feedback | Feedback | ✅ |
+
+**Nguyên nhân lệch:** `admin.html`/`tracker.html` build LC Order card bằng `status:saved?.status||autoStatus` — override cục bộ (`internalTasks`, lưu localStorage, tạo ra khi admin phân công/sửa trạng thái tay) luôn thắng trạng thái gốc từ Content, và KHÔNG BAO GIỜ tự đồng bộ lại. Case thật: từng gán "Đặng Ngọc Huy" cho VA-260713-013 (tự chuyển override → dang-xu-ly), sau đó bên Content tự đánh dấu "Hoàn thành" trực tiếp trên trang Content — override cũ vẫn ghi đè vĩnh viễn trên admin/tracker.
+
+**Fix 1 (lệch trạng thái):** thêm bước `resolvedStatus` trong `_loadContentOrders()`/tương đương ở cả `admin.html` và `tracker.html` — nếu trạng thái gốc từ Content đã là "Hoàn thành" (trạng thái cuối) mà override cục bộ CHƯA phải "Hoàn thành", cho trạng thái từ Content thắng. Override do chính admin đặt "Hoàn thành" thì vẫn giữ nguyên (không bị trạng thái gốc cũ hơn ghi đè ngược). Vì dropdown "Trạng thái" trên card LC Order (`admin.html`) luôn hiển thị đúng `t.status` đã resolve, lần "Lưu" tiếp theo của admin sẽ tự ghi đúng giá trị này vào override — tự chữa lành, không cần migrate dữ liệu cũ.
+
+**Kiểm tra bằng dữ liệu thật + mô phỏng 4 tình huống (Node):** case lệch thật (VA-260713-013) → resolve đúng "hoan-thanh"; 2 case khớp sẵn → không đổi; case chưa từng có override → không đổi; case admin tự đặt "hoan-thanh" trong khi trạng thái gốc chưa kịp ghi ngược → vẫn giữ "hoan-thanh" (không bị đè ngược).
+
+**Fix 2 (auto-complete Feedback 24h):** phát hiện hàm `_autoCompleteFeedback24h()` đã tồn tại sẵn trong `admin.html` (dùng `resultAt` của `allOrders` — order thường trong sheet Orders) nhưng CHỈ áp dụng cho order thường, bỏ sót hoàn toàn LC Order (Content Order) và việc nội bộ MKT — đúng loại xuất hiện trong ảnh chụp màn hình. Mở rộng hàm để quét thêm `contentOrders` + `internalTasks` (loại không phải LC), dùng field `_feedbackAt` sẵn có (set tự động khi status chuyển sang "feedback", xem `_updateInternal()`), quá 24h thì gọi lại `_updateInternal(id,{status:'hoan-thanh',completedBy:'Hệ thống (24h)'})` — tái dùng đúng luồng ghi ngược Supabase (LC Order) + mirror sheet (việc nội bộ) có sẵn thay vì viết logic riêng. Sửa thêm 2 chỗ trong `_updateInternal()` (thêm điều kiện `&&!fields.completedBy`) để lời gọi auto-complete có thể tự ghi "Hệ thống (24h)" thay vì bị quy tắc mặc định ghi đè thành tên admin đang mở trình duyệt.
+
+**Kiểm tra bằng mô phỏng (Node):** dựng 3 content order + 2 việc nội bộ giả lập đúng field thật (`_feedbackAt` 25h/2h/48h trước, trạng thái khác nhau) — đúng 2 item quá 24h ở trạng thái feedback được phát hiện, các item còn lại (chưa đủ 24h, không ở feedback, đã hoàn thành) không bị đụng tới.
+
+**Giới hạn còn lại:** `internalTasks`/override chỉ lưu trong localStorage của từng trình duyệt — cơ chế auto-complete này chỉ chạy khi ai đó mở `admin.html` (nơi duy nhất có quyền sửa/ghi); nếu không có ai từng mở `admin.html` trên máy đó, override cũ sẽ không tự dọn. `tracker.html` chỉ hiển thị (đọc cùng localStorage nếu cùng trình duyệt/origin với admin.html), không tự chạy auto-complete.
+
+---
+
 ## 14. Liên kết nhanh
 
 | Tên | URL |

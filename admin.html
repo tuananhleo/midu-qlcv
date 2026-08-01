@@ -1198,7 +1198,9 @@ function _updateInternal(id,fields){
     if('linkResult' in fields && !fields.linkResult && _st==='feedback') fields.status='dang-xu-ly';
     if((fields.status||ov.status)==='feedback'&&!ov._feedbackAt) fields._feedbackAt=new Date().toISOString();
     if(fields.status&&fields.status!=='feedback') fields._feedbackAt='';
-    if((fields.status||ov.status)==='hoan-thanh'&&!ov.completedBy) fields.completedBy=currentUser?.displayName||'Admin';
+    // !fields.completedBy: cho phép người gọi (VD auto-complete 24h) tự đặt tên người/hệ thống
+    // hoàn thành, không bị quy tắc mặc định ghi đè thành tên admin đang mở trình duyệt.
+    if((fields.status||ov.status)==='hoan-thanh'&&!ov.completedBy&&!fields.completedBy) fields.completedBy=currentUser?.displayName||'Admin';
     if(fields.status&&fields.status!=='hoan-thanh') fields.completedBy='';
     Object.assign(ov,fields); Object.assign(co,fields); _saveInternal();
     // Ghi ngược trạng thái + kết quả về Lịch Content (Supabase)
@@ -1219,7 +1221,7 @@ function _updateInternal(id,fields){
   }
   if(fields.status==='feedback'&&!t._feedbackAt) fields._feedbackAt=new Date().toISOString();
   if(fields.status&&fields.status!=='feedback') fields._feedbackAt='';
-  if(fields.status==='hoan-thanh'&&!t.completedBy) fields.completedBy=currentUser?.displayName||'Admin';
+  if(fields.status==='hoan-thanh'&&!t.completedBy&&!fields.completedBy) fields.completedBy=currentUser?.displayName||'Admin';
   if(fields.status&&fields.status!=='hoan-thanh') fields.completedBy='';
   Object.assign(t,fields); _saveInternal();
   _mirrorUpdateSheet(t.id, fields);
@@ -4127,6 +4129,12 @@ async function _loadContentOrders(){
       // Nếu đã lưu trong internalTasks thì lấy trạng thái & linkResult từ đó
       const saved=internalTasks.find(t=>t._contentOrderId===o.id);
       const autoStatus=(!saved && intStatus==='chua-lam' && o.person)?'dang-xu-ly':intStatus;
+      // Task #97: override cục bộ (internalTasks, chỉ lưu localStorage) không bao giờ tự đồng bộ
+      // lại — nếu bên Content tự đánh dấu Hoàn thành trực tiếp trên trang Content sau khi override
+      // đã tồn tại, admin/tracker sẽ kẹt hiển thị trạng thái cũ vĩnh viễn (phát hiện qua case
+      // VA-260713-013: Content ghi "Hoàn thành" nhưng admin vẫn hiện "Đang xử lý"). Cho trạng thái
+      // cuối (Hoàn thành) từ Content luôn thắng override chưa hoàn thành.
+      const resolvedStatus=(intStatus==='hoan-thanh' && saved && saved.status!=='hoan-thanh')?intStatus:(saved?.status||autoStatus);
       // Build brief từ o.details
       const det=o.details||{};
       const DETAIL_LABELS={format:'Định dạng',quantity:'Số lượng',textContent:'Chữ cần có',idea:'Ý tưởng',
@@ -4156,7 +4164,7 @@ async function _loadContentOrders(){
         assignedTo:saved?.assignedTo||o.person||'',
         deadline:o.deadline||'', deadlineTime:o.deadlineTime||'',
         plannedDate:o.deadline||'',
-        status:saved?.status||autoStatus,
+        status:resolvedStatus,
         linkResult:saved?.linkResult||o.deliverableLink||'',
         refLink, // link tham khảo / brief
         adminNote:briefLines.join('\n'),
@@ -4328,7 +4336,6 @@ async function _autoCompleteFeedback24h() {
       return (now - t) >= 24*60*60*1000;
     } catch(e) { return false; }
   });
-  if(!toComplete.length) return;
   for(const o of toComplete) {
     try {
       await fetch(getGasUrl(),{method:'POST',body:JSON.stringify({
@@ -4339,7 +4346,20 @@ async function _autoCompleteFeedback24h() {
       o.status = 'hoan-thanh';
     } catch(e) { console.warn('[auto24h]', e); }
   }
-  if(toComplete.length) { updateStats(); render(); showToast(`Tự động hoàn thành ${toComplete.length} đơn feedback quá 24h`); }
+  // Task #97: mở rộng sang Content Order (LC, override lưu trong internalTasks) + việc nội bộ
+  // MKT — 2 loại này không nằm trong allOrders/sheet Orders nên trước đây bị bỏ sót hoàn toàn
+  // (phát hiện qua case VA-260713-013: Content đã đánh dấu Hoàn thành nhưng admin/tracker kẹt ở
+  // "Đang xử lý"/"Feedback" mãi vì không có cơ chế nào tự dọn). Dùng _feedbackAt (thời điểm
+  // chuyển sang Feedback, set sẵn trong _updateInternal) thay vì resultAt vì linkResult của LC
+  // Order/việc nội bộ có thể để trống. Gọi lại _updateInternal() để tái dùng đúng luồng ghi ngược
+  // Supabase (LC Order) + mirror sheet (việc nội bộ) đã có sẵn, tránh trùng lặp logic.
+  const staleFeedback = [...contentOrders, ...internalTasks.filter(t=>!t._fromContentOrder)]
+    .filter(t => t.status==='feedback' && t._feedbackAt && (now - new Date(t._feedbackAt).getTime()) >= 24*60*60*1000);
+  staleFeedback.forEach(t => _updateInternal(t.id, {status:'hoan-thanh', completedBy:'Hệ thống (24h)'}));
+  if(toComplete.length || staleFeedback.length) {
+    updateStats(); render();
+    showToast(`Tự động hoàn thành ${toComplete.length+staleFeedback.length} đơn feedback quá 24h`);
+  }
 }
 
 function syncFromContent(){ _autoSyncContent(); }

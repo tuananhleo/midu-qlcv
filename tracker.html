@@ -1444,6 +1444,9 @@ async function loadContentOrders(){
         const saved=internalTasks.find(t=>t._contentOrderId===o.id);
         const intStatus=({'Chưa làm':'chua-lam','Đang làm':'dang-xu-ly','Chờ feedback':'feedback','Hoàn thành':'hoan-thanh'})[o.status]||'chua-lam';
         const autoStatus=(!saved && intStatus==='chua-lam' && o.person)?'dang-xu-ly':intStatus;
+        // Task #97: xem giải thích đầy đủ ở admin.html — override cục bộ không tự đồng bộ lại,
+        // nên cho trạng thái Hoàn thành từ Content luôn thắng override chưa hoàn thành.
+        const resolvedStatus=(intStatus==='hoan-thanh' && saved && saved.status!=='hoan-thanh')?intStatus:(saved?.status||autoStatus);
         const det=o.details||{};
         const refLink=o.refLink||det.refLink||det.creativeLink||det.mediaLink||'';
         return {
@@ -1460,7 +1463,7 @@ async function loadContentOrders(){
           assignedTo:saved?.assignedTo||o.person||'',
           deadline:o.deadline||'', deadlineTime:o.deadlineTime||'',
           plannedDate:o.deadline||'',
-          status:saved?.status||autoStatus,
+          status:resolvedStatus,
           linkResult:saved?.linkResult||o.deliverableLink||'',
           refLink, adminNote:'',
           priority:o.priority==='Cao'?'cao':o.priority==='Thấp'?'thap':'trung-binh',
