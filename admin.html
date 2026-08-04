@@ -10,6 +10,7 @@
 <!-- Firebase SDK (compat) — loaded lazily when config is saved -->
 <script id="fb-app-sdk"     src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"     defer></script>
 <script id="fb-store-sdk"   src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js" defer></script>
+<script id="fb-auth-sdk"    src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"      defer></script>
 <style>
   :root {
     --abg:#0f172a; --abg2:#1a2540; --abg3:#1e2d45;
@@ -971,7 +972,6 @@ const KEY_DEPTS     = 'midu_mkt_departments';
 const KEY_CACHE     = 'midu_mkt_orders_cache';
 const KEY_CT_CACHE  = 'midu_ct_cache'; // cache contentTasks — thiếu cái này khiến reload tạm mất card "Lịch Content" vài giây
 const KEY_FB        = 'midu_mkt_fb_config';
-const KEY_ROLES     = 'midu_mkt_custom_roles';
 const DEFAULT_GAS  = 'https://script.google.com/macros/s/AKfycbw5klIN8zAsl6cYSfIYDu8GNol4tCR4KQt8-fvldq_SZC1DDgUeK6bk73jF-ZoMdCjF/exec';
 const DEFAULT_ASGN = ['Lê Ngọc Huy','Trọng Trung','Trung Kiên','Nguyên'];
 const DEFAULT_DEPTS = ['Kinh doanh','Kế toán – Tài chính','Nhân sự','Vận hành','Ban Giám đốc','Marketing – Truyền thông','Kho – Logistics','Khác'];
@@ -985,8 +985,8 @@ const getDepts     = () => { try { return JSON.parse(localStorage.getItem(KEY_DE
 // Vai trò gốc (không xóa được) — 2 quản lý/trưởng nhóm + 3 cấp (Thực tập sinh/Tập sự/Nhân
 // viên) cho từng vị trí (Thiết kế/Media/CSKH/AI/Phần mềm/Xây kênh), khớp đúng cách phòng
 // Marketing – Truyền thông tổ chức nhân sự theo giai đoạn (xem sheet danh sách phòng).
-// Đặt trong BUILTIN_ROLES (code, dùng chung mọi trình duyệt) thay vì "vai trò tuỳ chỉnh"
-// (KEY_ROLES, chỉ lưu localStorage — máy khác sẽ không thấy tên/icon đẹp).
+// Đây chỉ là giá trị mặc định để seed sheet Roles lần đầu + fallback khi chưa fetch
+// xong — nguồn thật (kể cả vai trò tuỳ chỉnh) nằm ở server, xem getAllRoles()/loadRoles().
 const BUILTIN_ROLES = [
   { id:'admin',           label:'Quản trị viên',        icon:'🔑', permLevel:'admin'    },
   { id:'leader_thiet_ke', label:'Trưởng nhóm Thiết Kế', icon:'👑', permLevel:'leader'   },
@@ -1025,20 +1025,12 @@ const PERM_LEVELS = {
 };
 
 // Lấy danh sách tất cả vai trò (gốc đã chỉnh + custom)
-function getCustomRoles() {
-  try { return JSON.parse(localStorage.getItem(KEY_ROLES)||'[]'); } catch(e) { return []; }
-}
+// Nguồn dữ liệu vai trò giờ là sheet Roles phía server (load qua loadRoles() khi
+// đăng nhập) — đồng bộ mọi máy, không còn lệch giữa các trình duyệt như trước.
+// BUILTIN_ROLES chỉ còn dùng làm fallback khi chưa fetch xong / GAS lỗi, và làm
+// giá trị mặc định cho tính năng "hoàn tác về mặc định" (resetRole).
 function getAllRoles() {
-  const custom = getCustomRoles();
-  const customMap = Object.fromEntries(custom.map(r => [r.id, r]));
-  // Built-in có thể bị override label/icon
-  const builtinResolved = BUILTIN_ROLES.map(r => customMap[r.id]
-    ? { ...r, label: customMap[r.id].label, icon: customMap[r.id].icon }
-    : r);
-  // Custom thuần (không phải built-in)
-  const builtinIds = new Set(BUILTIN_ROLES.map(r => r.id));
-  const pureCustom = custom.filter(r => !builtinIds.has(r.id));
-  return [...builtinResolved, ...pureCustom];
+  return _serverRoles || BUILTIN_ROLES.map(r => ({ ...r, builtin: true }));
 }
 function getRoleLabel(id) {
   const r = getAllRoles().find(r => r.id === id);
@@ -1077,6 +1069,38 @@ function getAllowedTypes(){
 
 let currentUser = null; // { id, username, displayName, role, dept }
 let allUsers    = [];   // cache từ GAS
+let authToken   = null; // session token trả về khi loginUser — GAS bắt buộc kèm token này
+                         // cho mọi action ghi/xoá (trước đây API mở, ai biết URL cũng gọi
+                         // thẳng được không cần đăng nhập).
+
+// Tự động gắn token vào mọi request POST tới GAS (trừ loginUser) ở tầng fetch,
+// thay vì sửa từng lời gọi rải rác trong file — tránh bỏ sót. Nếu GAS báo phiên
+// hết hạn/tài khoản bị khoá thì tự đăng xuất và báo cho người dùng biết.
+(function _installAuthFetchWrapper(){
+  const _nativeFetch = window.fetch.bind(window);
+  window.fetch = function(url, opts) {
+    const isGasUrl = typeof url === 'string' && url.indexOf(getGasUrl()) === 0;
+    if (isGasUrl && opts && opts.method === 'POST' && typeof opts.body === 'string') {
+      try {
+        const b = JSON.parse(opts.body);
+        if (b.action && b.action !== 'loginUser' && !b.token) {
+          b.token = authToken;
+          opts = Object.assign({}, opts, { body: JSON.stringify(b) });
+        }
+      } catch(e) {}
+    }
+    const p = _nativeFetch(url, opts);
+    if (isGasUrl) {
+      p.then(r => r.clone().json()).then(d => {
+        if (d && d.error && /phiên đăng nhập|đã bị khoá/i.test(d.error) && currentUser) {
+          doLogout();
+          showToast('⚠️ ' + d.error, 'error');
+        }
+      }).catch(()=>{});
+    }
+    return p;
+  };
+})();
 
 // Trả về danh sách tên người có thể phân công (dùng cho dropdown)
 function getAssignableUsers() {
@@ -1380,6 +1404,10 @@ function parseCompleted(val) {
 }
 
 // ── Auth ───────────────────────────────────────────────────────
+function _saveSession() {
+  sessionStorage.setItem('midu_mkt_session', JSON.stringify({ user: currentUser, token: authToken }));
+}
+
 async function doLogin() {
   const username = (document.getElementById('l-username').value || '').trim();
   const password = document.getElementById('l-password').value || '';
@@ -1396,7 +1424,8 @@ async function doLogin() {
       const oldPw = localStorage.getItem('midu_mkt_admin_pw') || 'midu2024';
       if (password === oldPw) {
         currentUser = { id:'u_admin', username:'admin', displayName:'Admin', role:'admin', dept:'' };
-        sessionStorage.setItem('midu_mkt_session', JSON.stringify(currentUser));
+        authToken = null;
+        _saveSession();
         afterLogin();
         return;
       }
@@ -1405,7 +1434,8 @@ async function doLogin() {
     }
     if (d.error) { errEl.textContent = '❌ ' + d.error; errEl.classList.remove('hidden'); return; }
     currentUser = d.user;
-    sessionStorage.setItem('midu_mkt_session', JSON.stringify(currentUser));
+    authToken = d.token || null;
+    _saveSession();
     afterLogin();
   } catch(e) {
     errEl.textContent = '❌ Lỗi kết nối: ' + e.message;
@@ -1413,7 +1443,7 @@ async function doLogin() {
   } finally { btn.disabled = false; btn.textContent = 'Đăng nhập →'; }
 }
 
-function afterLogin() {
+async function afterLogin() {
   document.getElementById('login-screen').classList.remove('show');
   window.scrollTo({top:0,behavior:'instant'});
   // Cập nhật settings fields
@@ -1421,6 +1451,7 @@ function afterLogin() {
   if (sg) { sg.value = getGasUrl(); }
   const sd = document.getElementById('s-depts');
   if (sd) { sd.value = getDepts().join('\n'); }
+  await loadRoles(); // vai trò/quyền giờ lấy từ server (sheet Roles), không còn hard-code
   applyRoleUI();
   showCached();
   // Safety net: ẩn spinner dù cache có hay không
@@ -1454,7 +1485,10 @@ function applyRoleUI() {
 
 function doLogout() {
   closeSettings();
-  currentUser = null; allUsers = [];
+  if (authToken) {
+    fetch(getGasUrl(), { method:'POST', body:JSON.stringify({ action:'logout', token:authToken }) }).catch(()=>{});
+  }
+  currentUser = null; allUsers = []; authToken = null;
   sessionStorage.removeItem('midu_mkt_session');
   document.getElementById('login-screen').classList.add('show');
   document.getElementById('l-username').value = '';
@@ -1462,9 +1496,8 @@ function doLogout() {
 }
 
 // ── Tự đổi mật khẩu (ai đăng nhập cũng dùng được, không cần quyền admin) ──────
-// Lưu ý: mật khẩu vẫn lưu dạng văn bản thường trên sheet Users (chưa mã hoá) — admin
-// (hoặc bất kỳ ai gọi thẳng action getUsers) vẫn xem được mật khẩu mới, đã trao đổi
-// và xác nhận với người dùng trước khi làm tính năng này.
+// Mật khẩu được GAS hash (SHA-256) trước khi lưu vào sheet Users, action getUsers
+// không trả về hash — xem hashPw()/getUsersData() trong MIDU_MKT_Script.gs.
 function openChangePassword(){
   document.getElementById('cp-old').value='';
   document.getElementById('cp-new').value='';
@@ -1491,7 +1524,7 @@ async function submitChangePassword(){
     const resp = await fetch(getGasUrl(), { method:'POST', body:JSON.stringify({ action:'updateUser', id: currentUser.id, updates:{ password:newPw } }) }).then(r=>r.json());
     if(resp.error) throw new Error(resp.error);
     currentUser = { ...currentUser, password:newPw };
-    sessionStorage.setItem('midu_mkt_session', JSON.stringify(currentUser));
+    _saveSession();
     closeChangePassword();
     showToast('✓ Đã đổi mật khẩu');
   }catch(e){ errEl.textContent='❌ '+e.message; errEl.classList.remove('hidden'); }
@@ -3333,6 +3366,10 @@ async function _ensureFirebase() {
   if (typeof firebase === 'undefined') { fbSetStatus('⚠ Firebase SDK chưa load',false); return null; }
   try {
     if (!firebase.apps.length) firebase.initializeApp(cfg);
+    // Đăng nhập ẩn danh — Firestore rule giờ yêu cầu request.auth != null (trước đây
+    // mở hoàn toàn, ai biết projectId cũng đọc/ghi được). Không cần người dùng thao
+    // tác gì, chỉ để chặn script/bot quét ngẫu nhiên.
+    if (!firebase.auth().currentUser) await firebase.auth().signInAnonymously();
     _fbDb = firebase.firestore();
     return _fbDb;
   } catch(e) { fbSetStatus('⚠ '+e.message,false); return null; }
@@ -3436,19 +3473,31 @@ document.addEventListener('keydown',e=>{
 (function restoreSession() {
   try {
     const saved = JSON.parse(sessionStorage.getItem('midu_mkt_session') || 'null');
-    if (saved && saved.role) {
-      currentUser = saved;
+    if (saved && saved.user && saved.user.role) {
+      currentUser = saved.user;
+      authToken = saved.token || null;
       afterLogin();
     }
   } catch(e) {}
 })();
+
+// ── VAI TRÒ (server) ────────────────────────────────────────────
+let _serverRoles = null; // null = chưa fetch xong, dùng tạm BUILTIN_ROLES
+
+async function loadRoles() {
+  try {
+    const r = await fetch(`${getGasUrl()}?action=getRoles&token=${encodeURIComponent(authToken||'')}`);
+    const d = await r.json();
+    if (Array.isArray(d.roles) && d.roles.length) _serverRoles = d.roles;
+  } catch(e) { console.warn('[loadRoles]', e.message); }
+}
 
 // ── USER MANAGEMENT ────────────────────────────────────────────
 let _editingUserId = null;
 
 async function loadAllUsers() {
   try {
-    const r = await fetch(getGasUrl() + '?action=getUsers');
+    const r = await fetch(`${getGasUrl()}?action=getUsers&token=${encodeURIComponent(authToken||'')}`);
     const d = await r.json();
     if (d.error) throw new Error(d.error);
     allUsers = d.users || [];
@@ -3541,25 +3590,20 @@ function closeRoleMgmt() { document.getElementById('role-mgmt-modal').classList.
 
 function renderRoleList() {
   const el = document.getElementById('rm-list');
-  const custom = getCustomRoles();
-  const customMap = Object.fromEntries(custom.map(r=>[r.id,r]));
   const all = getAllRoles();
-  const builtinIds = new Set(BUILTIN_ROLES.map(r=>r.id));
 
   el.innerHTML = all.map(r => {
-    const isBuiltin = builtinIds.has(r.id) && !customMap[r.id];
-    const isEdited  = builtinIds.has(r.id) && !!customMap[r.id];
-    const isCustom  = !builtinIds.has(r.id);
+    const isCustom = !r.builtin;
     const levelLabel = { admin:'🔑 Admin', leader:'👑 Leader', employee:'👤 Nhân viên' }[r.permLevel] || r.permLevel;
     return `<div class="um-row">
       <div class="flex-1 min-w-0">
         <div class="font-bold text-sm">${r.icon} ${r.label}</div>
-        <div class="text-xs mt-0.5" style="color:var(--atext3)">${levelLabel}${isBuiltin?' · Mặc định':''}${isEdited?' · Đã chỉnh':''}</div>
+        <div class="text-xs mt-0.5" style="color:var(--atext3)">${levelLabel}${r.builtin?' · Mặc định':''}</div>
       </div>
       <div class="flex gap-1 flex-shrink-0">
         <button onclick="openRoleForm('${r.id}')" class="btn btn-ghost text-xs py-0.5 px-2">✏️</button>
-        ${(isCustom)?`<button onclick="deleteRole('${r.id}')" class="btn btn-danger text-xs py-0.5 px-2">🗑</button>`:''}
-        ${isEdited?`<button onclick="resetRole('${r.id}')" class="btn btn-ghost text-xs py-0.5 px-2" title="Hoàn tác">↩</button>`:''}
+        ${isCustom?`<button onclick="deleteRole('${r.id}')" class="btn btn-danger text-xs py-0.5 px-2">🗑</button>`:''}
+        ${r.builtin?`<button onclick="resetRole('${r.id}')" class="btn btn-ghost text-xs py-0.5 px-2" title="Hoàn tác về mặc định">↩</button>`:''}
       </div>
     </div>`;
   }).join('');
@@ -3569,63 +3613,57 @@ function openRoleForm(roleId) {
   _editingRoleId = roleId || null;
   const all = getAllRoles();
   const r = roleId ? all.find(x=>x.id===roleId) : null;
-  const builtinIds = new Set(BUILTIN_ROLES.map(x=>x.id));
   document.getElementById('rf-title').textContent = r ? '✏️ Chỉnh sửa vai trò' : '+ Thêm vai trò mới';
   document.getElementById('rf-icon').value  = r?.icon || '🏷';
   document.getElementById('rf-label').value = r?.label || '';
   document.getElementById('rf-level').value = r?.permLevel || 'employee';
-  // Không cho đổi permLevel của built-in roles để giữ backward compat
-  document.getElementById('rf-level').disabled = roleId && builtinIds.has(roleId);
   document.getElementById('rf-err').classList.add('hidden');
   document.getElementById('role-form-modal').classList.remove('hidden');
 }
 function closeRoleForm() { document.getElementById('role-form-modal').classList.add('hidden'); _editingRoleId=null; }
 
-function saveRoleForm() {
+async function saveRoleForm() {
   const icon  = document.getElementById('rf-icon').value.trim() || '🏷';
   const label = document.getElementById('rf-label').value.trim();
   const level = document.getElementById('rf-level').value;
   const errEl = document.getElementById('rf-err');
   if (!label) { errEl.textContent='Vui lòng nhập tên vai trò'; errEl.classList.remove('hidden'); return; }
 
-  const custom = getCustomRoles();
-  const builtinIds = new Set(BUILTIN_ROLES.map(r=>r.id));
-
-  if (_editingRoleId) {
-    const existing = custom.findIndex(r=>r.id===_editingRoleId);
-    const entry = { id:_editingRoleId, label, icon,
-      permLevel: builtinIds.has(_editingRoleId)
-        ? (BUILTIN_ROLES.find(r=>r.id===_editingRoleId)?.permLevel || level)
-        : level };
-    if (existing>=0) custom[existing]=entry; else custom.push(entry);
-  } else {
-    // Tạo ID từ label
-    const id = 'role_' + label.normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[đĐ]/g,'d')
-      .toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,'');
-    if (custom.find(r=>r.id===id)||builtinIds.has(id)) {
-      errEl.textContent='Tên vai trò này đã tồn tại'; errEl.classList.remove('hidden'); return;
+  try {
+    let d;
+    if (_editingRoleId) {
+      d = await fetch(getGasUrl(), { method:'POST', body:JSON.stringify({
+        action:'updateRole', id:_editingRoleId, updates:{ label, icon, permLevel:level } }) }).then(r=>r.json());
+    } else {
+      d = await fetch(getGasUrl(), { method:'POST', body:JSON.stringify({
+        action:'createRole', role:{ label, icon, permLevel:level } }) }).then(r=>r.json());
     }
-    custom.push({ id, label, icon, permLevel:level });
-  }
+    if (d.error) { errEl.textContent = d.error; errEl.classList.remove('hidden'); return; }
+  } catch(e) { errEl.textContent = 'Lỗi kết nối: ' + e.message; errEl.classList.remove('hidden'); return; }
 
-  localStorage.setItem(KEY_ROLES, JSON.stringify(custom));
+  await loadRoles();
   closeRoleForm();
   renderRoleList();
   showToast('✓ Đã lưu vai trò');
 }
 
-function deleteRole(id) {
+async function deleteRole(id) {
   if (!confirm('Xóa vai trò này?')) return;
-  const custom = getCustomRoles().filter(r=>r.id!==id);
-  localStorage.setItem(KEY_ROLES, JSON.stringify(custom));
+  const d = await fetch(getGasUrl(), { method:'POST', body:JSON.stringify({ action:'deleteRole', id }) }).then(r=>r.json());
+  if (d.error) { showToast('❌ ' + d.error, 'error'); return; }
+  await loadRoles();
   renderRoleList();
   showToast('Đã xóa vai trò');
 }
 
-function resetRole(id) {
-  // Xóa override của built-in role để khôi phục về mặc định
-  const custom = getCustomRoles().filter(r=>r.id!==id);
-  localStorage.setItem(KEY_ROLES, JSON.stringify(custom));
+async function resetRole(id) {
+  // Khôi phục label/icon/permLevel built-in role về giá trị gốc trong code
+  const def = BUILTIN_ROLES.find(r=>r.id===id);
+  if (!def) return;
+  const d = await fetch(getGasUrl(), { method:'POST', body:JSON.stringify({
+    action:'updateRole', id, updates:{ label:def.label, icon:def.icon, permLevel:def.permLevel } }) }).then(r=>r.json());
+  if (d.error) { showToast('❌ ' + d.error, 'error'); return; }
+  await loadRoles();
   renderRoleList();
   showToast('Đã hoàn tác về mặc định');
 }
