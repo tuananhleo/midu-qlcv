@@ -1167,6 +1167,27 @@ function renderCard(o, inGroup=false) {
 }
 
 
+// Nội dung Lịch Content/task nội bộ đôi khi là cả bài viết dài (brief, nội dung khoá học...)
+// nhét thẳng vào field title — nếu hiện nguyên văn trong dòng tiêu đề in đậm sẽ thành 1 khối
+// chữ dày đặc rất khó nhìn. Tách ra: dòng đầu/đoạn ngắn làm tiêu đề, phần còn lại thu gọn
+// trong <details>, bấm mới bung ra đọc đầy đủ.
+function _splitLongTitle(text, cap=90){
+  const t=(text||'').trim();
+  if(!t) return {short:'', rest:''};
+  const nl=t.indexOf('\n');
+  if(nl>0 && nl<=cap) return {short:t.slice(0,nl).trim(), rest:t.slice(nl+1).trim()};
+  if(t.length<=cap) return {short:t, rest:''};
+  let cut=t.lastIndexOf(' ', cap);
+  if(cut<40) cut=cap;
+  return {short:t.slice(0,cut).trim()+'…', rest:t.slice(cut).trim()};
+}
+function _titleBlockHTML(text, titleColorVar){
+  const {short, rest}=_splitLongTitle(text);
+  const titleHTML=`<div class="font-bold text-sm ${rest?'mb-1':'mb-3'}" style="color:var(${titleColorVar})">${escapeHtml(short)||'Không tên'}</div>`;
+  if(!rest) return titleHTML;
+  return titleHTML+`<details class="mb-3"><summary style="cursor:pointer;font-size:.72rem;color:var(--ttext3);user-select:none">Xem đầy đủ nội dung ▾</summary><div class="mt-1 text-xs" style="color:var(--ttext2);white-space:pre-line;line-height:1.5">${escapeHtml(rest)}</div></details>`;
+}
+
 function renderIntCard(t) {
   const s=STATUS_MAP[t.status]||STATUS_MAP['chua-lam'];
   const dl=t.deadline||t.plannedDate||'';

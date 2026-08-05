@@ -780,6 +780,7 @@
           <button type="button" class="period-btn" onclick="setPeriod(this,'year')">Năm</button>
           <button type="button" class="period-btn" onclick="setPeriod(this,'quarter')">Quý</button>
           <button type="button" class="period-btn active" onclick="setPeriod(this,'month')">Tháng này</button>
+          <button type="button" class="period-btn" onclick="setPeriod(this,'last-month')">Tháng trước</button>
           <button type="button" class="period-btn" onclick="setPeriod(this,'week')">Tuần này</button>
           <button type="button" class="period-btn" onclick="setPeriod(this,'last-week')">Tuần trước</button>
           <button type="button" class="period-btn" onclick="setPeriod(this,'today')">Ngày</button>
@@ -851,6 +852,7 @@
         <button type="button" class="period-btn" onclick="setPeriod(this,'year')">Năm</button>
         <button type="button" class="period-btn" onclick="setPeriod(this,'quarter')">Quý</button>
         <button type="button" class="period-btn active" onclick="setPeriod(this,'month')">Tháng này</button>
+        <button type="button" class="period-btn" onclick="setPeriod(this,'last-month')">Tháng trước</button>
         <button type="button" class="period-btn" onclick="setPeriod(this,'week')">Tuần này</button>
         <button type="button" class="period-btn" onclick="setPeriod(this,'last-week')">Tuần trước</button>
         <button type="button" class="period-btn" onclick="setPeriod(this,'today')">Ngày</button>
@@ -2201,6 +2203,27 @@ function intUpdateStatus(id, val){
   updateStats(); render();
 }
 
+// Nội dung Lịch Content/task nội bộ đôi khi là cả bài viết dài (brief, nội dung khoá học...)
+// nhét thẳng vào field title — nếu hiện nguyên văn trong dòng tiêu đề in đậm sẽ thành 1 khối
+// chữ dày đặc rất khó nhìn. Tách ra: dòng đầu/đoạn ngắn làm tiêu đề, phần còn lại thu gọn
+// trong <details>, bấm mới bung ra đọc đầy đủ.
+function _splitLongTitle(text, cap=90){
+  const t=(text||'').trim();
+  if(!t) return {short:'', rest:''};
+  const nl=t.indexOf('\n');
+  if(nl>0 && nl<=cap) return {short:t.slice(0,nl).trim(), rest:t.slice(nl+1).trim()};
+  if(t.length<=cap) return {short:t, rest:''};
+  let cut=t.lastIndexOf(' ', cap);
+  if(cut<40) cut=cap;
+  return {short:t.slice(0,cut).trim()+'…', rest:t.slice(cut).trim()};
+}
+function _titleBlockHTML(text, titleColorVar){
+  const {short, rest}=_splitLongTitle(text);
+  const titleHTML=`<div class="font-bold text-sm ${rest?'mb-1':'mb-3'}" style="color:var(${titleColorVar})">${escapeHtml(short)||'Không tên'}</div>`;
+  if(!rest) return titleHTML;
+  return titleHTML+`<details class="mb-3"><summary style="cursor:pointer;font-size:.72rem;color:var(--atext3);user-select:none">Xem đầy đủ nội dung ▾</summary><div class="mt-1 text-xs" style="color:var(--atext2);white-space:pre-line;line-height:1.5">${escapeHtml(rest)}</div></details>`;
+}
+
 function renderIntCard(t){
   const s=STATUS_MAP[t.status]||STATUS_MAP['chua-lam'];
   const dl=t.deadline||t.plannedDate||'';
@@ -2330,7 +2353,7 @@ function renderIntCard(t){
         <span class="px-2 py-0.5 rounded-full text-xs font-bold" style="background:${s.bg};color:${s.color}">${s.label}</span>
         <span class="ml-auto text-xs font-mono" style="color:var(--atext3)">${t.id||''}</span>
       </div>
-      <div class="font-bold text-sm mb-3" style="color:var(--atext)">${t.title||t.projectName||'Không tên'}</div>
+      ${_titleBlockHTML(t.title||t.projectName, '--atext')}
       <div class="flex flex-wrap gap-x-6 gap-y-1 text-xs mb-2">
         <div><span style="color:var(--atext3)">Deadline: </span><span class="${dlCls}">${dlStr}${dlTimeStr}${dlBadge}</span></div>
         ${t.assignedTo?`<div><span style="color:var(--atext3)">Phân công: </span><span class="font-medium" style="color:var(--atext2)">👤 ${t.assignedTo}</span></div>`:''}
@@ -2364,7 +2387,7 @@ function renderIntCard(t){
         <span class="px-2 py-0.5 rounded-full text-xs font-bold" style="background:${s.bg};color:${s.color}">${s.label}</span>
         <span class="ml-auto text-xs font-mono" style="color:var(--atext3)">${t.id||''}</span>
       </div>
-      <div class="font-bold text-sm mb-3" style="color:var(--atext)">${t.title||t.projectName||'Không tên'}</div>
+      ${_titleBlockHTML(t.title||t.projectName, '--atext')}
       <div class="flex flex-wrap gap-x-6 gap-y-1 text-xs mb-2">
         <div><span style="color:var(--atext3)">Deadline: </span><span class="${dlCls}">${dlStr}${dlTimeStr}${dlBadge}</span></div>
         ${t.assignedTo?`<div><span style="color:var(--atext3)">Phân công: </span><span class="font-medium" style="color:var(--atext2)">👤 ${t.assignedTo}</span></div>`:''}
@@ -2675,6 +2698,7 @@ function getDateRange(period) {
     return {from:lastMon,to:new Date(thisMon.getTime()-86400000)};
   }
   if(period==='month') return {from:new Date(now.getFullYear(),now.getMonth(),1),to:new Date(now.getFullYear(),now.getMonth()+1,1)};
+  if(period==='last-month') return {from:new Date(now.getFullYear(),now.getMonth()-1,1),to:new Date(now.getFullYear(),now.getMonth(),1)};
   if(period==='quarter'){
     const q=Math.floor(now.getMonth()/3);
     return {from:new Date(now.getFullYear(),q*3,1),to:new Date(now.getFullYear(),q*3+3,1)};
@@ -2687,7 +2711,7 @@ function getDateRange(period) {
 function _periodLabels(){
   const now=new Date();
   const q=Math.floor(now.getMonth()/3)+1;
-  return {'today':'Ngày','week':'Tuần này','month':'Tháng này','quarter':`Quý ${q}/${now.getFullYear()}`,'year':'Năm','last-week':'Tuần trước','all':'Tất cả thời gian'};
+  return {'today':'Ngày','week':'Tuần này','month':'Tháng này','last-month':'Tháng trước','quarter':`Quý ${q}/${now.getFullYear()}`,'year':'Năm','last-week':'Tuần trước','all':'Tất cả thời gian'};
 }
 function filterByPeriod(orders,period){
   if(!period||period==='all') return orders;
