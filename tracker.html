@@ -1182,9 +1182,16 @@ function _splitLongTitle(text, cap=90){
   return {short:t.slice(0,cut).trim()+'…', rest:t.slice(cut).trim()};
 }
 function _titleBlockHTML(text, titleColorVar){
-  // Dữ liệu dán từ nơi khác (Lịch Content...) đôi khi lẫn thẻ HTML thừa (VD "<div>") —
-  // bỏ hết thẻ trước khi tách/hiện, tránh hiện chữ thẻ thừa trên card.
-  const clean=(text||'').replace(/<\/?[a-z][^>]*>/gi,'').trim();
+  // Dữ liệu dán từ nơi khác (Lịch Content...) đôi khi lẫn thẻ HTML thừa (VD "<div>") dùng để
+  // ngắt dòng thay vì ký tự xuống dòng thật — chuyển các thẻ khối/br thành "\n" TRƯỚC khi bỏ
+  // hết thẻ còn lại, để white-space:pre-line vẫn giữ đúng chỗ xuống dòng như bản gốc thay vì
+  // dồn hết thành 1 khối chữ liền.
+  const clean=(text||'')
+    .replace(/<\/(div|p|li|tr|h[1-6])>/gi,'\n')
+    .replace(/<br\s*\/?>/gi,'\n')
+    .replace(/<\/?[a-z][^>]*>/gi,'')
+    .replace(/\n{3,}/g,'\n\n')
+    .trim();
   const {short, rest}=_splitLongTitle(clean);
   const titleHTML=`<div class="font-bold text-sm ${rest?'mb-1':'mb-3'}" style="color:var(${titleColorVar})">${escapeHtml(short)||'Không tên'}</div>`;
   if(!rest) return titleHTML;
