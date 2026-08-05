@@ -837,9 +837,12 @@ function getFilteredRows(){
   // Internal tasks: lọc kỳ theo deadline + loại (map LC rawType→GAS type)
   const _iPR = (currentPeriod && currentPeriod!=='all') ? (currentPeriod==='custom'?customRange:getDateRange(currentPeriod)) : null;
   const intRows = [...contentOrders,...contentTasks,...lichTTOrders,...internalTasks.filter(t=>!t._fromContentOrder)].filter(t=>{
-    if(_iPR) {
-      const _dl=parseDl({deadline:t.deadline||t.plannedDate||''});
-      if(_dl) { const _to=new Date(_iPR.to.getTime()+86400000); if(!(_dl>=_iPR.from&&_dl<_to)) return false; }
+    // Luôn hiện việc chưa làm/đang làm/trễ hạn dù ngoài kỳ đang chọn — khớp đúng quy tắc
+    // filterByPeriod() đang áp cho đơn GAS thường (xem hàm đó), tránh lệch tổng với admin.html.
+    const _tDl=parseDl({deadline:t.deadline||t.plannedDate||''});
+    const _alwaysShow = t.status==='chua-lam'||t.status==='dang-xu-ly'||(t.status!=='hoan-thanh'&&_tDl&&_tDl<today);
+    if(_iPR && !_alwaysShow) {
+      if(_tDl) { const _to=new Date(_iPR.to.getTime()+86400000); if(!(_tDl>=_iPR.from&&_tDl<_to)) return false; }
     }
     if(filters.type) {
       const gasType = (t._fromContent||t._fromLichTT) ? t.type : (_LC_TO_GAS[t._rawType||'']||t._rawType||'');
