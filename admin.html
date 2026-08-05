@@ -1691,7 +1691,11 @@ async function confirmAiCreate(){
         submittedAt:new Date().toLocaleString('vi-VN',{hour12:false}),
         adminNote:'Tạo từ AI tách việc · nguồn: '+requester,
       };
-      const resp = await fetch(getGasUrl(), { method:'POST', body:JSON.stringify({ action:'addOrder', order }) }).then(r=>r.json());
+      // Dùng submitOrders (không phải addOrder) — GAS tự định tuyến đúng sheet theo loại:
+      // "lich-truyen-thong" ghi vào sheet Lịch T.Thông riêng, còn lại ghi vào sheet Orders.
+      // addOrder luôn ghi thẳng vào Orders bất kể loại, nên trước đây nếu AI gợi ý việc con
+      // là "lich-truyen-thong" sẽ bị ghi nhầm sheet.
+      const resp = await fetch(getGasUrl(), { method:'POST', body:JSON.stringify({ action:'submitOrders', orders:[order] }) }).then(r=>r.json());
       if(resp.error) fail++; else ok++;
     }catch(e){ fail++; }
     await new Promise(r=>setTimeout(r,250)); // tuần tự, tránh vượt gioi han thuc thi dong thoi cua GAS (bai hoc Task #77)
