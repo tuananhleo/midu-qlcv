@@ -1459,6 +1459,50 @@ Mỗi field id chỉ cần trùng với field id ĐÃ CÓ ở bất kỳ loại 
 
 ---
 
+### Task #98 — Vá lỗ hổng bảo mật: API GAS mở hoàn toàn, không cần đăng nhập
+
+**Phát hiện qua review chủ động (không phải người dùng báo):** `doPost()` trong `MIDU_MKT_Script.gs` chỉ `loginUser` có kiểm tra mật khẩu — mọi action còn lại (`updateOrder`, `deleteOrder`, `createUser`, `updateUser`, `deleteUser`, `saveFormSchema`...) chạy thẳng không hỏi ai đang gọi. URL GAS lại nằm sẵn trong source public của `admin.html`/`order.html` — ai xem source cũng gọi thẳng được bằng Postman/curl, không cần tài khoản, có thể xoá/sửa toàn bộ dữ liệu hoặc tạo tài khoản admin mới. Ngoài ra: mật khẩu admin mặc định `Midu123` đoán được; Firestore rule đang ở chế độ test-mode mặc định (`allow read, write` mở toàn bộ database, **hết hạn 2026-08-05**) chứ không phải rule đã ghi trong `HUONG_DAN_DEPLOY.md`.
+
+**Quyết định thiết kế (thống nhất với người dùng qua nhiều câu hỏi):** session token lưu sheet "Sessions" riêng (không dùng CacheService vì giới hạn cứng 6 tiếng của Google), hạn 7 ngày; hệ thống vai trò (trước đây `BUILTIN_ROLES`/`PERM_LEVELS` hard-code + vai trò tuỳ chỉnh chỉ lưu `localStorage` từng máy) chuyển hẳn sang sheet "Roles" dùng chung server-side; `submitOrders` (order.html, không có đăng nhập) giữ nguyên công khai — chỉ khoá các action quản trị.
+
+**Fix (`MIDU_MKT_Script.gs`):** thêm sheet Sessions (`createSession`/`validateToken`/`deleteSession`, tự dọn token hết hạn) + sheet Roles (seed từ `BUILTIN_ROLES_GAS`, action `getRoles`/`createRole`/`updateRole`/`deleteRole`) + hàm `hasPerm(user,key)` tính quyền hiệu lực (permLevel theo role + permOverrides riêng từng người). `doPost()`: mọi action trừ `loginUser`/`submitOrders` bắt buộc `token` hợp lệ; `deleteOrder`/`createUser`/`deleteUser`/`saveFormSchema`/quản lý vai trò chỉ admin (`canDelete`/`canUserMgmt`/`canFormBuilder`) mới gọi được; `updateUser` cho phép tự đổi mật khẩu của chính mình dù không có `canUserMgmt`.
+
+**Fix (`admin.html`):** wrapper tự gắn `token` vào mọi POST tới GAS (viết 1 lần ở tầng `fetch`, tránh sửa rải rác 20+ chỗ gọi); tự đăng xuất khi GAS báo phiên hết hạn/tài khoản bị khoá; `loadRoles()` fetch vai trò từ server khi đăng nhập, `getAllRoles()` đổi nguồn từ `BUILTIN_ROLES` hard-code sang dữ liệu server (giữ `BUILTIN_ROLES` làm fallback + giá trị mặc định cho "Hoàn tác về mặc định"); quản lý vai trò (thêm/sửa/xoá) đổi từ ghi `localStorage` sang gọi action `createRole`/`updateRole`/`deleteRole`.
+
+**Fix (Firebase, làm trực tiếp qua Chrome đã đăng nhập sẵn của người dùng — không tự nhập mật khẩu):** bật **Authentication → Anonymous** (trước đó dự án chưa từng khởi tạo Authentication); `admin.html` gọi `signInAnonymously()` khi khởi tạo Firebase; publish lại Firestore Rules từ rule test-mode sắp hết hạn sang `allow read, write: if request.auth != null` giới hạn đúng collection `midu_orders`.
+
+**Đã làm nhưng chưa xác nhận xong:** đổi mật khẩu admin mặc định — **người dùng xác nhận đã đổi xong (2026-08-04)**.
+
+**Vận hành:** thêm bước chạy `verify.py` trước khi `git push` trong `watch_and_push.ps1` (FAIL thì huỷ push, ghi log); archive `MIDU_MKT_Order.html` (bản trùng không dùng, `order.html` mới là bản chính thức); xoá `admin.html.bak`.
+
+---
+
+### Task #99 — Gọn card "Lịch Content", bộ lọc/báo cáo "Tháng trước", thống nhất số đếm List/Report
+
+**Câu hỏi/phản hồi 1:** người dùng gửi ảnh card "Lịch Content" hiện cả bài viết dài (VD nội dung khoá học nhiều gạch đầu dòng) tràn thành 1 khối chữ đậm dày đặc — "Chỗ này hiển thị trông hơi ghê, cho gọn gàng lại em, cả admin và tracker". Nguyên nhân: field `title`/`projectName` của card Lịch Content lấy nguyên văn `ct.idea||ct.content` (có thể dài cả bài) rồi hiện thẳng trong dòng tiêu đề in đậm.
+
+**Fix:** thêm `_splitLongTitle()`/`_titleBlockHTML()` dùng chung (cả `admin.html`, `tracker.html`) — tách dòng/đoạn đầu làm tiêu đề ngắn, phần còn lại thu trong `<details>` "Xem đầy đủ nội dung ▾". Lần sửa đầu chỉ nối hàm vào `admin.html`, **quên nối vào `tracker.html`** — người dùng gửi ảnh so sánh phát hiện tracker chưa đổi, sửa bổ sung ngay sau. Cùng lúc phát hiện dữ liệu dán từ nơi khác lẫn thẻ HTML thừa (VD `<div>` hiện ra thành chữ do giờ đã `escapeHtml()` đúng cách, trước đây trình duyệt tự nuốt mất nên không ai thấy) — thêm bước lọc `replace(/<\/?[a-z][^>]*>/gi,'')` trước khi tách/hiện. Đổi luôn nút "Mở bài này trên Lịch Content" ở `admin.html` từ nút trơn sang dạng thanh info giống `tracker.html` cho dễ nhìn.
+
+**Câu hỏi/phản hồi 2:** "Thêm bộ lọc của tháng trước và báo cáo tháng trước nhé" — `tracker.html` vốn đã có sẵn nút lọc + preset "Tháng trước". `admin.html` thiếu ở cả 2 nơi dùng chung `setPeriod()`/`getDateRange()` (tab Đơn hàng và tab Báo cáo) — thêm case `last-month` vào `getDateRange()`, nhãn vào `_periodLabels()`, nút vào cả 2 hàng bộ lọc kỳ.
+
+**Câu hỏi/phản hồi 3:** "Ủa con số ở danh sách và màn báo cáo khác nhau à" (trong `admin.html`). Rà code thấy 3 nguyên nhân: (1) tab Báo cáo trước đây tự gộp nguồn riêng (`allForReport`), bỏ qua hoàn toàn bộ lọc phòng ban/loại/trạng thái/tìm kiếm đang chọn ở tab Đơn hàng; (2) Báo cáo không áp giới hạn quyền xem theo người dùng (`viewAll`/`_isAssignedToMe`) như tab Đơn hàng — nhân viên thường chỉ thấy việc của mình ở Đơn hàng nhưng Báo cáo lại tính cả team; (3) quy tắc "luôn hiện việc chưa xong/trễ hạn dù ngoài kỳ" chỉ áp cho đơn GAS thường ở tab Đơn hàng, không áp cho việc Lịch Content/Nội bộ MKT (trong khi Báo cáo áp đều cho mọi loại qua `filterByPeriod`).
+
+**Fix:** thống nhất về đúng 1 nguồn — `renderReport()` giờ gọi `getFilteredRows()` (hàm tab Đơn hàng đang dùng) thay vì tự gộp mảng riêng; thêm carve-out "luôn hiện việc chưa xong/trễ hạn" vào phần lọc kỳ của `intRows` trong `getFilteredRows()` để khớp `filterByPeriod()`; `updateListPeriodLabel()` (dòng chữ nhỏ cạnh nút chọn kỳ) cũng đổi sang đếm bằng `getFilteredRows()` thay vì chỉ đếm riêng `allOrders`. Lưu ý đã báo người dùng: từ nay Báo cáo sẽ phản ánh đúng bộ lọc đang chọn ở tab Đơn hàng (không còn mặc định là tổng toàn bộ không lọc gì).
+
+---
+
+### Task #100 — Lịch truyền thông: bỏ field thừa, fix AI tách việc ghi nhầm sheet
+
+**Câu hỏi 1:** người dùng hỏi rõ cơ chế Lịch truyền thông — sheet riêng (`LICH_TT_SHEET_ID`, tách khỏi sheet Orders để tránh phình sheet theo tần suất bắn bot) hay đồng bộ chung Orders? Trả lời qua review code: Content Order/Content Task/Việc nội bộ **có** mirror 1 bản vào sheet Orders làm bản ghi tổng hợp (`_mirrorOrderToSheet()`), nhưng Lịch truyền thông thì **không** — loại trừ tường minh (`if(order._fromLichTT) return`) đúng theo thiết kế tách riêng. order.html: loại "Lịch truyền thông" → sheet riêng, mọi loại khác → sheet Orders.
+
+**Câu hỏi 2 (yêu cầu sửa):** "Bỏ phần Giờ deadline trong lịch truyền thông nhé, giờ deadline chính là giờ bắn bot rồi" — `order.html` có 2 field giờ trùng nhau cho loại Lịch truyền thông: field chung "Giờ deadline" (mọi loại đều có) và field riêng "Giờ bắn bot" (`d_gio_ban_bot`, chỉ loại này có). Fix: ẩn hẳn field "Giờ deadline" khi đang điền loại Lịch truyền thông (đổi grid 3 cột → 2 cột), giữ nguyên cho các loại khác. Code gửi đơn vốn đã ưu tiên đọc `d_gio_ban_bot` trước `deadlineTime` nên không mất dữ liệu.
+
+**Phát hiện thêm khi trả lời câu hỏi 1 (không phải người dùng báo):** tính năng "Tách việc bằng AI" (`confirmAiCreate()` trong `admin.html`) tạo từng việc con bằng action `addOrder` — action này LUÔN ghi thẳng vào sheet Orders bất kể `type`, không có logic định tuyến như `submitOrders`. Nếu AI gợi ý 1 việc con thuộc loại "lich-truyen-thong" (có trong danh sách loại AI được phép gợi ý), việc đó sẽ bị ghi nhầm vào sheet Orders thay vì sheet Lịch T.Thông riêng. Người dùng xác nhận cần sửa.
+
+**Fix:** đổi lời gọi trong vòng lặp tạo việc con từ `action:'addOrder'` sang `action:'submitOrders'` (mảng 1 phần tử) — `submitOrdersData()` phía GAS đã có sẵn logic định tuyến đúng theo `type`, không cần sửa gì thêm ở backend.
+
+---
+
 ## 14. Liên kết nhanh
 
 | Tên | URL |
