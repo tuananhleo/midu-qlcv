@@ -510,11 +510,12 @@ function renderTypeSections() {
         </div>
         <div class="type-section-body">
           ${isSchedule ? renderScheduleChecker() : ''}
-          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:${defs.length?'16px':'0'}${isSchedule?';margin-top:16px':''}">
+          <div style="display:grid;grid-template-columns:repeat(${isSchedule?2:3},1fr);gap:12px;margin-bottom:${defs.length?'16px':'0'}${isSchedule?';margin-top:16px':''}">
             <div>
               <label>${deadlineLabel} <span class="required">*</span></label>
               <input id="dl-${t.id}" type="text" class="inp fp-date" readonly required placeholder="dd/mm/yyyy" ${deadlineOnChange}>
             </div>
+            ${isSchedule ? '' : `
             <div>
               <label>Giờ deadline</label>
               <div style="position:relative">
@@ -524,7 +525,7 @@ function renderTypeSections() {
                   autocomplete="off" maxlength="5"
                   oninput="var v=this.value.replace(/[^0-9:]/g,'');this.value=v;">
               </div>
-            </div>
+            </div>`}
             <div>
               <label>Độ ưu tiên</label>
               <select id="pri-${t.id}" class="inp">
