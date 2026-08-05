@@ -1897,11 +1897,15 @@ function getFilteredRows(){
   const baseInternal = internalTasks.filter(t=>!t._fromContentOrder && (perm().viewAll || _isAssignedToMe(t.assignedTo)));
   const _intPeriodRange = (currentPeriod && currentPeriod!=='all') ? (currentPeriod==='custom'?customRange:getDateRange(currentPeriod)) : null;
   const intRows = [...contentOrders,...contentTasks,...lichTTOrders,...baseInternal].filter(t=>{
-    if(_intPeriodRange) {
-      const _dl=parseDl({deadline:t.deadline||t.plannedDate||''});
-      if(_dl) {
+    // Luôn hiện việc chưa làm/đang làm/trễ hạn dù ngoài kỳ đang chọn — khớp đúng quy tắc
+    // filterByPeriod() đang áp cho đơn GAS thường (xem hàm đó), để tab Đơn hàng và tab
+    // Báo cáo không bị lệch số khi có việc Lịch Content/Nội bộ trễ hạn từ kỳ trước.
+    const _tDl=parseDl({deadline:t.deadline||t.plannedDate||''});
+    const _alwaysShow = t.status==='chua-lam'||t.status==='dang-xu-ly'||(t.status!=='hoan-thanh'&&_tDl&&_tDl<today);
+    if(_intPeriodRange && !_alwaysShow) {
+      if(_tDl) {
         const _to=new Date(_intPeriodRange.to.getTime()+86400000);
-        if(!(_dl>=_intPeriodRange.from && _dl<_to)) return false;
+        if(!(_tDl>=_intPeriodRange.from && _tDl<_to)) return false;
       }
     }
     // Internal task thường (không phải content order/task) không có _rawType — trước đây
@@ -1978,8 +1982,11 @@ function updateListPeriodLabel() {
     const fmt = d => `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
     lbl = `${fmt(customRange.from)} – ${fmt(customRange.to)}`;
   }
-  const cnt = filterByPeriod(allOrders, currentPeriod).length;
-  el.textContent = `${cnt} order — ${lbl}`;
+  // Đếm giống hệt st-total (getFilteredRows: cùng bộ lọc + quyền xem) thay vì chỉ đếm
+  // riêng allOrders theo kỳ — tránh lệch với số tổng hiển thị ở KPI ngay bên dưới.
+  const {rows, intRows} = getFilteredRows();
+  const cnt = rows.length + intRows.length;
+  el.textContent = `${cnt} việc — ${lbl}`;
 }
 function setChip(el,key,val) {
   const grp=el.classList.contains('type-chip')?'.type-chip':'.status-chip';
@@ -2745,15 +2752,15 @@ function setPeriod(el,period){
   updateListPeriodLabel(); // cập nhật nhãn kỳ trên danh sách
 }
 function renderReport(){
-  // Gộp tất cả nguồn: GAS orders + content orders + internal tasks
-  const allForReport=[
-    ...allOrders,
-    ...contentOrders.map(t=>({...t,department:t.department||'Marketing – Truyền thông',type:t.type||'internal'})),
-    ...contentTasks.map(t=>({...t,department:t.department||'Marketing – Truyền thông',type:t.type||'internal'})),
-    ...lichTTOrders,
-    ...internalTasks.filter(t=>!contentOrders.find(co=>co._contentOrderId===t._contentOrderId)) // tránh duplicate
+  // Dùng ĐÚNG 1 nguồn với tab Đơn hàng (getFilteredRows: cùng kỳ, cùng bộ lọc phòng
+  // ban/loại/trạng thái/tìm kiếm đang chọn, cùng giới hạn quyền xem theo người dùng)
+  // để số ở 2 tab luôn khớp nhau — trước đây Báo cáo tự gộp nguồn riêng, bỏ qua các
+  // bộ lọc và giới hạn quyền xem, nên hay lệch số với tab Đơn hàng.
+  const {rows, intRows} = getFilteredRows();
+  reportOrders=[
+    ...rows,
+    ...intRows.map(t=>({...t,department:t.department||'Marketing – Truyền thông',type:t.type||'internal'})),
   ];
-  reportOrders=filterByPeriod(allForReport,currentPeriod);
   const n=reportOrders.length;
   const done=reportOrders.filter(o=>o.status==='hoan-thanh').length;
   const inprog=reportOrders.filter(o=>o.status==='dang-xu-ly').length;
