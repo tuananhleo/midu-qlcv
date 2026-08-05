@@ -3517,6 +3517,18 @@ document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){closeSettings();closeEdit();closeDel();closeFormBuilder();closeDrill();closeRangePicker();closeUserMgmt();closeUserForm();}
 });
 
+// ── DEEP LINK (?id=<mã đơn> từ thông báo Zalo) ──────────────────
+// Chỉ điền sẵn ô tìm kiếm — không tự render/lọc ở đây vì dữ liệu (allOrders) có thể
+// chưa tải xong lúc script này chạy; loadAll() ở afterLogin() sẽ tự render với đúng
+// giá trị đã điền sẵn trong ô này khi tải xong.
+(function _applyDeepLink(){
+  try {
+    const id = new URLSearchParams(location.search).get('id');
+    const kw = document.getElementById('f-kw');
+    if (id && kw) kw.value = id;
+  } catch(e) {}
+})();
+
 // ── SESSION RESTORE ────────────────────────────────────────────
 (function restoreSession() {
   try {
