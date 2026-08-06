@@ -2133,6 +2133,7 @@ function renderCard(o, inGroup=false) {
   })();
   const cardCls=isOv?'ocard ov':isSoon?'ocard soon':'ocard';
   const dlCls=isOv?'dl-ov':isSoon?'dl-soon':'text-white/75';
+  const dlTimeStr=o.deadlineTime?` · ${o.deadlineTime}`:'';
   const dlBadge=isOv?' 🔴 TRỄ':isSoon?` ⚠️ Còn ${Math.ceil(diff)}n`:'';
   const allFieldKeys=new Set([...Object.keys(FIELD_LABELS),...Object.keys(dynamicSchema)]);
   // Loại các field đã hiển thị riêng (khớp skipFields của tracker.html) để không hiện trùng
@@ -2176,7 +2177,7 @@ function renderCard(o, inGroup=false) {
       <div class="flex flex-wrap gap-x-6 gap-y-1 text-xs mb-2">
         <div><span style="color:var(--atext3)">Người gửi: </span><span class="font-medium" style="color:var(--atext2)">${o.requester||'–'}</span></div>
         <div><span style="color:var(--atext3)">Ngày gửi: </span><span style="color:var(--atext2)">${submitted}</span></div>
-        <div><span style="color:var(--atext3)">Deadline: </span><span class="${dlCls}" ${!dlCls?`style="color:var(--atext2)"`:''}>${dlStr}${dlBadge}</span></div>
+        <div><span style="color:var(--atext3)">Deadline: </span><span class="${dlCls}" ${!dlCls?`style="color:var(--atext2)"`:''}>${dlStr}${dlTimeStr}${dlBadge}</span></div>
         ${curAssigned.length?`<div><span style="color:var(--atext3)">Phân công: </span><span class="font-medium" style="color:var(--atext2)">👤 ${curAssigned.join(', ')}</span></div>`:''}
         ${o.completedAt?`<div class="flex items-center gap-2 flex-wrap"><span style="color:var(--atext3)">Hoàn thành: </span><span class="text-green-500 font-medium">${completed}${o.completedBy?' · 👤 '+o.completedBy:''}</span>${isLateDone?`<span style="background:rgba(239,68,68,.15);color:#f87171;padding:1px 6px;border-radius:5px;font-size:.7rem;font-weight:600">⚠️ Trễ deadline</span>`:''}</div>`:''}
       </div>
