@@ -942,12 +942,8 @@ function _renderGrouped(list){
 function _renderProjectGroup(projectCode, groupItems){
   const parent=groupItems.find(o=>o.type==='du-an-tong-hop');
   const subItems=groupItems.filter(o=>o.type!=='du-an-tong-hop');
-  // tracker.html chia danh sách theo trạng thái (Cần xử lý/Đang làm/Chưa làm/Hoàn thành)
-  // thành các khu RIÊNG BIỆT trước khi gọi hàm này — nếu order gốc "Dự án tổng hợp" (đã
-  // Hoàn thành) rơi vào khu khác với các việc con (còn Chưa làm/Đang làm), nó sẽ đứng MỘT
-  // MÌNH trong lượt gọi này (0 việc con thật trong CHÍNH khu vực đang vẽ) — vẽ khối rỗng sẽ
-  // mất card của chính order đó, nên rơi về vẽ như card bình thường (vẫn có badge tiến độ
-  // đầy đủ vì renderCard() tự tính lại từ TOÀN BỘ allOrders, không phụ thuộc khu vực).
+  // Phòng trường hợp nhóm truyền vào chỉ có mỗi order gốc, chưa có việc con nào đi kèm —
+  // rơi về vẽ như card bình thường thay vì khối rỗng "0/N việc" (khớp admin.html).
   if(!subItems.length) return groupItems.map(o=>o._isInt?renderIntCard(o):renderCard(o)).join('');
   const stats=_getProjectStats(projectCode);
   const name=_getProjectDisplayName(projectCode);
@@ -968,92 +964,29 @@ function _renderProjectGroup(projectCode, groupItems){
     ${rowsHtml}
   </div>`;
 }
+// Danh sách phẳng liên tục, sắp theo độ ưu tiên/deadline — KHÔNG chia khu theo trạng thái
+// nữa (trước đây chia 5 khu Cần xử lý/Đang làm/Feedback/Chưa làm/Hoàn thành, xem Task #95-96
+// trong MIDU_QLCV_TAILIEU.md). Người dùng yêu cầu vị trí hiển thị khớp hệt admin.html — admin
+// vốn đã dùng danh sách phẳng, nên đổi tracker cho khớp thay vì ngược lại.
 function render() {
   const {rows: filteredRows, intRows: allIntRows} = getFilteredRows();
   const rows=sortedList(filteredRows);
-  const allRows=[
-    ...rows.map(r=>({...r,_isInt:false})),
-    ...allIntRows.map(t=>({...t,_isInt:true,deadline:t.deadline||t.plannedDate||''}))
-  ];
 
   const list=document.getElementById('list'), empty=document.getElementById('empty-state');
-  if(!allRows.length) {
+  if(!rows.length && !allIntRows.length) {
     list.innerHTML='';
     const stillLoading = !document.getElementById('loading-state').classList.contains('hidden');
     if(!stillLoading) empty.classList.remove('hidden');
     return;
   }
   empty.classList.add('hidden');
-
-  // Tách hẳn các item thuộc 1 dự án THẬT ra khỏi luồng phân loại theo trạng thái từng cái
-  // riêng lẻ — nhưng KHÔNG dồn cứng vào 1 khu cố định ở đầu (đã làm ở Task #95, người dùng
-  // phản hồi muốn đúng theo độ ưu tiên thật như admin.html thay vì luôn ở trên đầu). Thay
-  // vào đó: chọn ra việc con "khẩn cấp nhất" trong dự án (dlPriority thấp nhất, deadline sớm
-  // nhất) làm "đại diện" — dùng đúng status/deadline của đại diện đó để quyết định dự án rơi
-  // vào ĐÚNG khu trạng thái nào + đúng vị trí ưu tiên trong khu đó, mô phỏng cách admin.html
-  // đặt cả khối vào vị trí của thành viên ưu tiên cao nhất. Khi vẽ, "đại diện" này được thay
-  // bằng cả khối dự án đầy đủ (mọi việc con, không chỉ đại diện).
-  const projectCodes=new Set();
-  allRows.forEach(o=>{ if(_isRealProject(o.projectCode)) projectCodes.add(o.projectCode); });
-  const projectItemsByCode={};
-  projectCodes.forEach(code=>{ projectItemsByCode[code]=allRows.filter(o=>o.projectCode===code); });
-  const restItems=allRows.filter(o=>!projectCodes.has(o.projectCode));
-  const projectMarkers=[...projectCodes].map(code=>{
-    const children=projectItemsByCode[code].filter(o=>o.type!=='du-an-tong-hop');
-    const rep=[...children].sort((a,b)=>{
-      const p=dlPriority(a)-dlPriority(b); if(p) return p;
-      const da=parseDl(a)||new Date('2099-01-01'), db=parseDl(b)||new Date('2099-01-01');
-      return da-db;
-    })[0] || projectItemsByCode[code][0];
-    return { ...rep, _isProjectMarker:true, _projectCode:code };
-  });
-  const classifyPool=[...restItems, ...projectMarkers];
-
-  // "huy" gộp chung nhóm Hoàn thành (đã đóng, không còn là việc cần làm) — tránh rơi khỏi
-  // mọi nhóm nếu chỉ loại trừ ở urgent mà không xếp nó vào đâu cả.
-  const urgent   = sortedList(classifyPool.filter(o=>o.status!=='hoan-thanh'&&o.status!=='feedback'&&o.status!=='huy'&&dlPriority(o)<=1));
-  const doing    = sortedList(classifyPool.filter(o=>o.status==='dang-xu-ly'&&dlPriority(o)>1));
-  const feedback = sortedList(classifyPool.filter(o=>o.status==='feedback'));
-  const pending  = sortedList(classifyPool.filter(o=>o.status==='chua-lam'&&dlPriority(o)>1));
-  const done     = sortedList(classifyPool.filter(o=>o.status==='hoan-thanh'||o.status==='huy'));
-
-  const renderMixed=(items)=>items.map(o=>{
-    if(o._isProjectMarker) return _renderProjectGroup(o._projectCode, sortedList(projectItemsByCode[o._projectCode]));
-    return o._isInt?renderIntCard(o):renderCard(o);
-  }).join('');
-  list.innerHTML=[
-    renderGroup('🔴 Cần xử lý', urgent,   'urgent',   true,  '#f87171','rgba(239,68,68,.12)', renderMixed),
-    renderGroup('🔄 Đang làm',  doing,    'doing',    true,  '#60a5fa','rgba(96,165,250,.12)', renderMixed),
-    renderGroup('💬 Feedback',  feedback, 'feedback', true,  '#a78bfa','rgba(167,139,250,.12)', renderMixed),
-    renderGroup('⏳ Chưa làm',  pending,  'pending',  true,  '#f97316','rgba(249,115,22,.12)', renderMixed),
-    renderGroup('✅ Hoàn thành',done,     'done',     false, '#22c55e','rgba(34,197,94,.1)', renderMixed),
-  ].filter(Boolean).join('');
-}
-
-function renderGroup(title,items,key,defaultOpen,color,bg,renderer) {
-  if(!items.length) return '';
-  const hasKw=!!(document.getElementById('f-kw')?.value?.trim());
-  const open=hasKw?true:(localStorage.getItem('grp_'+key)??(defaultOpen?'1':'0'))==='1';
-  const body=renderer?renderer(items):items.map(o=>renderCard(o)).join('');
-  return `<div>
-    <div class="group-hdr" onclick="toggleGroup('${key}',this)">
-      <span class="group-title">
-        <span class="group-arrow ${open?'open':''}">▶</span>
-        ${title}
-        <span class="group-badge" style="background:${bg};color:${color}">${items.length}</span>
-      </span>
-    </div>
-    <div id="grp-${key}" class="group-body ${open?'open':''} space-y-3 pb-1">
-      ${body}
-    </div>
-  </div>`;
-}
-
-function toggleGroup(key,hdr) {
-  const body=document.getElementById('grp-'+key), arrow=hdr.querySelector('.group-arrow');
-  const isOpen=body.classList.toggle('open');
-  arrow.classList.toggle('open',isOpen);
-  localStorage.setItem('grp_'+key,isOpen?'1':'0');
+  // Gộp GAS orders + internal tasks vào 1 danh sách, sort chung theo deadline priority —
+  // giống hệt admin.html render().
+  const allMixed = sortedList([
+    ...rows.map(r=>({...r,_isInt:false})),
+    ...allIntRows.map(t=>({...t,_isInt:true,deadline:t.deadline||t.plannedDate||''}))
+  ]);
+  list.innerHTML = _renderGrouped(allMixed);
 }
 
 // % hoàn thành của cả dự án (nhóm theo projectCode) — tính "sống" từ allOrders, xem
