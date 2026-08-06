@@ -1512,7 +1512,7 @@ Mỗi field id chỉ cần trùng với field id ĐÃ CÓ ở bất kỳ loại 
 | Tracker | https://tuananhleo.github.io/midu-qlcv/tracker.html |
 | GitHub repo | https://github.com/tuananhleo/midu-qlcv |
 | GAS editor | https://script.google.com/home |
-| GAS backend URL | https://script.google.com/macros/s/AKfycbw5klIN8zAsl6cYSfIYDu8GNol4tCR4KQt8-fvldq_SZC1DDgUeK6bk73jF-ZoMdCjF/exec |
+| GAS backend URL | https://script.google.com/macros/s/AKfycbyYgHkB8bngq9SQ23TACimx9svMpl1ZPZw8Yo3PC0YRYMoER5indo9ULZlAgldIKLMH/exec |
 | Supabase dashboard | https://supabase.com/dashboard/project/loqcqtuouagzaqwdmhji |
 | Lịch Content (link chung, đổi board bằng dropdown "BẢNG CỦA" hoặc `#ws=<id>`) | https://content-marketing.pages.dev/ |
 | Lịch Content — board Khánh Huyền | https://content-marketing.pages.dev/#ws=khanh-huyen |
