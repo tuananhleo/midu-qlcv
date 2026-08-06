@@ -1453,8 +1453,12 @@ async function afterLogin() {
   if (sg) { sg.value = getGasUrl(); }
   const sd = document.getElementById('s-depts');
   if (sd) { sd.value = getDepts().join('\n'); }
-  await loadRoles(); // vai trò/quyền giờ lấy từ server (sheet Roles), không còn hard-code
+  // Vai trò/quyền giờ lấy từ server (sheet Roles) — KHÔNG await ở đây, chặn cả trang chờ
+  // xong 1 lượt gọi GAS riêng mới bắt đầu tải đơn hàng (làm chậm hẳn tốc độ mở trang).
+  // applyRoleUI() dùng fallback BUILTIN_ROLES ngay lập tức, chạy lại lần 2 khi có dữ liệu
+  // server thật (chỉ khác nếu có vai trò tuỳ chỉnh/permLevel bị đổi so với mặc định).
   applyRoleUI();
+  loadRoles().then(applyRoleUI);
   showCached();
   // Safety net: ẩn spinner dù cache có hay không
   const _ls=document.getElementById('loading-state');
@@ -2532,6 +2536,14 @@ async function saveRow(id) {
 
     adminNote:document.getElementById('note-'+id).value,
   };
+  // Bắt buộc phải có Link kết quả mới cho chuyển "Hoàn thành" (không áp dụng cho
+  // _autoCompleteFeedback24h() — hàm đó gọi thẳng action updateOrder, không qua đây,
+  // vì mục đích khác: tự đóng feedback không phản hồi sau 24h, không cần link kết quả).
+  if(fields.status==='hoan-thanh' && !fields.linkResult){
+    showToast('❌ Cần nhập Link kết quả trước khi chuyển sang Hoàn thành','error');
+    document.getElementById('link-'+id)?.focus();
+    return;
+  }
   if(fields.linkResult&&!o.completedAt) fields.completedAt=fmtDate(new Date());
   else if(!fields.linkResult) fields.completedAt='';
   if(fields.linkResult && !o.resultBy) {
@@ -2631,6 +2643,11 @@ async function saveEdit(){
     resultBy:document.getElementById('e-resultBy').value,
     adminNote:document.getElementById('e-adminNote').value,
   };
+  if(updates.status==='hoan-thanh' && !updates.linkResult){
+    showToast('❌ Cần nhập Link kết quả trước khi chuyển sang Hoàn thành','error');
+    document.getElementById('e-linkResult')?.focus();
+    return;
+  }
   const defs=(formSchema[o.type]||DEFAULT_FORM_SCHEMA[o.type]||[]);
   defs.forEach(f=>{const el=document.getElementById('e-'+f.id);if(el) updates[f.id]=el.value;});
   // Auto-set nếu field đang trống (không ghi đè khi admin đã nhập tay)
@@ -2866,7 +2883,10 @@ const CHART_DEFAULTS = getChartDefaults();
 // Bảng màu định danh (categorical) đã kiểm tra an toàn cho người mù màu — xem dataviz skill.
 // Gán màu theo VỊ TRÍ của type trong TYPE_MAP (danh sách đầy đủ, cố định), không theo thứ tự
 // xuất hiện trong dữ liệu đang lọc — để đổi bộ lọc không làm đổi màu của loại đã hiển thị trước đó.
-const CAT_PALETTE=['#3987e5','#008300','#d55181','#c98500','#199e70','#d95926','#9085e9','#e66767'];
+// 12 màu — nhiều hơn hẳn 9 loại đơn hiện có (TYPE_MAP) để còn dư khi thêm loại mới qua
+// form builder, tránh lặp màu do %CAT_PALETTE.length như trước (8 màu/9 loại khiến
+// "Chatbot" trùng hệt màu "Thiết kế", khó phân biệt trên biểu đồ).
+const CAT_PALETTE=['#3987e5','#008300','#d55181','#c98500','#199e70','#d95926','#9085e9','#e66767','#eab308','#0891b2','#65a30d','#be185d'];
 function getTypeColor(typeKey){
   const idx=Object.keys(TYPE_MAP).indexOf(typeKey);
   return idx>=0 ? CAT_PALETTE[idx%CAT_PALETTE.length] : '#64748b';
