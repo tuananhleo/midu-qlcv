@@ -4518,7 +4518,7 @@ function openEditInternal(id){
   document.getElementById('int-date').value = t.plannedDate||t.deadline||'';
   document.getElementById('int-link').value = t.linkResult||'';
   document.getElementById('int-note').value = t.adminNote||'';
-  document.getElementById('int-del-btn').classList.toggle('hidden', !!t._fromContentOrder);
+  document.getElementById('int-del-btn').classList.toggle('hidden', !!t._fromContentOrder || !perm().canDelete);
   document.getElementById('int-status').innerHTML = statusConfig.map(s=>`<option value="${s.id}"${s.id===t.status?' selected':''}>${s.label}</option>`).join('');
   document.getElementById('int-priority').innerHTML = priorityConfig.map(p=>`<option value="${p.id}"${p.id===(t.priority||'')?' selected':''}>${p.icon||''} ${p.label}</option>`).join('');
   const panel=document.getElementById('int_ms_panel');
@@ -4565,11 +4565,23 @@ function saveInternalTask(){
   showToast(id?'✓ Đã cập nhật':'✓ Đã thêm công việc');
   closeAddInternal();
 }
-function deleteInternalTask(){
+async function deleteInternalTask(){
   const id=document.getElementById('int-edit-id')?.value||''; if(!id) return;
+  if(!perm().canDelete){ showToast('❌ Chỉ admin mới được xoá việc nội bộ','error'); return; }
   if(!confirm('Xóa công việc này?')) return;
   const idx=internalTasks.findIndex(t=>t.id===id);
   if(idx>=0){ internalTasks.splice(idx,1); _saveInternal(); }
+  // internalTasks chỉ lưu localStorage (không đồng bộ giữa các máy), nhưng nếu việc này đã
+  // từng được mirror sang sheet Orders làm bản sao lưu (_mirrorOrderToSheet) thì dòng đó sẽ
+  // nằm lại vĩnh viễn không ai xoá được nữa nếu không dọn ở đây — mirror chỉ ghi 1 chiều.
+  if(_sheetOrderIds.has(id)){
+    try{
+      const r=await fetch(getGasUrl(),{method:'POST',body:JSON.stringify({action:'deleteOrder',id})});
+      const d=await r.json();
+      if(d.error) console.warn('[deleteInternalTask] xoá bản sao lưu thất bại:', d.error);
+      else _sheetOrderIds.delete(id);
+    }catch(e){ console.warn('[deleteInternalTask] xoá bản sao lưu thất bại:', e.message); }
+  }
   updateStats(); render(); showToast('✓ Đã xóa','warn'); closeAddInternal();
 }
 
