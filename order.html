@@ -224,6 +224,40 @@ label { display:block; font-size:.67rem; font-weight:800; letter-spacing:.06em; 
 <script>
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbyYgHkB8bngq9SQ23TACimx9svMpl1ZPZw8Yo3PC0YRYMoER5indo9ULZlAgldIKLMH/exec';
 
+// ── Thông báo Zalo khi có order mới (qua Smax.ai) ─────────────────
+// Gọi THẲNG từ trình duyệt thay vì qua GAS — GAS bị vướng lỗi Google Apps Script
+// chặn UrlFetchApp khi web app được gọi ẩn danh (không tìm được cách sửa dứt điểm,
+// xem trao đổi ngày 2026-08-06). Đánh đổi: token nằm trong code public này, ai xem
+// source cũng lấy được — đã trao đổi và người dùng chấp nhận đánh đổi này để tính
+// năng chạy được ngay. Lỗi khi bắn Zalo không được chặn luồng gửi order chính,
+// nên luôn bọc try/catch + không await (chạy nền, không chờ kết quả).
+const SMAX_TRIGGER_URL = 'https://api.smax.ai/public/bizs/diemptccmidu/triggers/6a7463a948305a18ab496150';
+const SMAX_TRIGGER_TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0cmlnZ2VyX2lkIjoiNmE3NDYzYTk0ODMwNWExOGFiNDk2MTUwIiwiaWF0IjoxNzg2MDEyNTg1LCJleHAiOjMxNzMzMDQ1NDk4NX0.8eoStSRXskfu8evOn_y17MUMIgHt3DppwRSxl0rIuwM';
+const ZALO_NOTIFY_CUSTOMER_ID = 'zlw1144781742322123292';
+const ZALO_NOTIFY_PAGE_ID = 'zlw852060909005878828';
+const ADMIN_URL = 'https://tuananhleo.github.io/midu-qlcv/admin.html';
+function _notifyZaloNewOrder(order, id) {
+  try {
+    var typeLabel = TYPE_MAP[order.type] || order.type || 'Khác';
+    var timeStr = order.type === 'lich-truyen-thong' ? (order.d_gio_ban_bot || '') : (order.deadlineTime || '');
+    var dlStr = (order.deadline || '') + (timeStr ? ' ' + timeStr : '');
+    var lines = [
+      typeLabel + ' — ' + (order.projectName || '(chưa đặt tên)'),
+      'Người gửi: ' + (order.requester || '–') + ' · ' + (order.department || '–'),
+      'Deadline: ' + (dlStr || 'chưa có'),
+      'Xem chi tiết: ' + ADMIN_URL + '?id=' + encodeURIComponent(id),
+    ];
+    fetch(SMAX_TRIGGER_URL, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + SMAX_TRIGGER_TOKEN, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        customer: { id: ZALO_NOTIFY_CUSTOMER_ID, page_id: ZALO_NOTIFY_PAGE_ID },
+        attrs: [{ name: 'thongtinlead', value: lines.join('\n') }],
+      })
+    }).catch(function(){});
+  } catch(e) {}
+}
+
 const TYPES = [
   { id:'thiet-ke',        label:'Thiết kế',       icon:'🎨', sub:'Banner, poster, ấn phẩm...', color:'#f472b6', colorRGB:'244,114,182' },
   { id:'video-ai',        label:'Video AI',        icon:'🎬', sub:'Video AI, storytelling...',   color:'#a78bfa', colorRGB:'167,139,250' },
@@ -757,6 +791,7 @@ async function submitForm() {
     var data = await res.json();
     if (data.error) throw new Error(data.error);
     var ids = data.ids || orders.map(function(_,i){ return '#'+(i+1); });
+    ids.forEach(function(id, i){ _notifyZaloNewOrder(orders[i], id); });
     document.getElementById('main-form').style.display = 'none';
     var ss = document.getElementById('success-screen');
     ss.style.display = 'block'; ss.classList.add('show');
