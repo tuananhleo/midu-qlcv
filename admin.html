@@ -1074,6 +1074,13 @@ let allUsers    = [];   // cache từ GAS
 let authToken   = null; // session token trả về khi loginUser — GAS bắt buộc kèm token này
                          // cho mọi action ghi/xoá (trước đây API mở, ai biết URL cũng gọi
                          // thẳng được không cần đăng nhập).
+// null = chưa fetch xong, dùng tạm BUILTIN_ROLES (fallback trong getAllRoles()). Khai báo
+// sớm ở đây (không phải gần loadRoles() bên dưới) vì restoreSession() có thể gọi thẳng
+// afterLogin() → applyRoleUI() → getAllRoles() NGAY LÚC SCRIPT ĐANG CHẠY DỞ (session cũ tự
+// khôi phục) — nếu để let này ở dưới, getAllRoles() sẽ đọc biến lúc còn trong temporal dead
+// zone, ném ReferenceError, làm treo cả trang ở "Đang tải..." (chỉ ai có session cũ mới
+// dính, đăng nhập lại tay thì không sao vì lúc đó script đã chạy xong hết rồi).
+let _serverRoles = null;
 
 // Tự động gắn token vào mọi request POST tới GAS (trừ loginUser) ở tầng fetch,
 // thay vì sửa từng lời gọi rải rác trong file — tránh bỏ sót. Nếu GAS báo phiên
@@ -3562,8 +3569,7 @@ document.addEventListener('keydown',e=>{
 })();
 
 // ── VAI TRÒ (server) ────────────────────────────────────────────
-let _serverRoles = null; // null = chưa fetch xong, dùng tạm BUILTIN_ROLES
-
+// _serverRoles khai báo sớm hơn ở gần đầu file, xem comment ở đó.
 async function loadRoles() {
   try {
     const r = await fetch(`${getGasUrl()}?action=getRoles&token=${encodeURIComponent(authToken||'')}`);
