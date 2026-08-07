@@ -1081,6 +1081,14 @@ let authToken   = null; // session token trả về khi loginUser — GAS bắt 
 // zone, ném ReferenceError, làm treo cả trang ở "Đang tải..." (chỉ ai có session cũ mới
 // dính, đăng nhập lại tay thì không sao vì lúc đó script đã chạy xong hết rồi).
 let _serverRoles = null;
+// 2 biến dưới đây CŨNG bị đúng lỗi temporal-dead-zone y hệt _serverRoles ở trên (phát hiện
+// qua console thật lúc kiểm tra trước go-live) — restoreSession() gọi afterLogin() rồi
+// loadAll() chạy đồng bộ tới tận _loadContentTasks()/_periodicContentSync() lúc script còn
+// đang parse dở, đọc phải các hằng/biến này TRƯỚC khi khai báo gốc (nằm tuốt cuối file)
+// kịp chạy. Khai báo sớm ở đây, xoá bản khai báo cũ bên dưới thay vì để 2 nơi.
+let _contentSyncInterval = null;
+const _SB_URL='https://loqcqtuouagzaqwdmhji.supabase.co';
+const _SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxvcWNxdHVvdWFnemFxd2RtaGppIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMwNjUyNDgsImV4cCI6MjA5ODY0MTI0OH0.zoiWEgtNORL1ecxAgSpkZ3HMDaLP3nnpma3moM8QsDc';
 
 // Tự động gắn token vào mọi request POST tới GAS (trừ loginUser) ở tầng fetch,
 // thay vì sửa từng lời gọi rải rác trong file — tránh bỏ sót. Nếu GAS báo phiên
@@ -4059,8 +4067,6 @@ const _CONTENT_STATUS_MAP={
   'Chờ duyệt':'dang-xu-ly','Đã lên lịch':'dang-xu-ly',
   'Đã đăng':'hoan-thanh','Huỷ':'huy','Hủy':'huy','Order Thiết kế':'dang-xu-ly'
 };
-const _SB_URL='https://loqcqtuouagzaqwdmhji.supabase.co';
-const _SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxvcWNxdHVvdWFnemFxd2RtaGppIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMwNjUyNDgsImV4cCI6MjA5ODY0MTI0OH0.zoiWEgtNORL1ecxAgSpkZ3HMDaLP3nnpma3moM8QsDc';
 // Trang Content đã lên mô hình nhiều board — mỗi board có key riêng dạng
 // "<base>--<workspaceId>". Thêm người mới = thêm 1 dòng vào đây.
 const _CONTENT_SOURCES=[
@@ -4436,7 +4442,7 @@ async function _autoSyncContent(){
 }
 // Đồng bộ nền định kỳ (không toast, không khoá nút) — để việc bài Content bị xoá/sửa/thêm
 // bên trang Content phản ánh sang đây mà không cần bấm "Tải lại" thủ công.
-let _contentSyncInterval=null;
+// (_contentSyncInterval khai báo sớm hơn ở gần đầu file, xem comment ở đó)
 function _hasActiveInput(){
   const el=document.activeElement;
   return !!el && ['INPUT','TEXTAREA','SELECT'].includes(el.tagName);
