@@ -775,6 +775,7 @@ async function loadOrders(notify=false) {
   // ── B6: Render cuối + luôn tắt spinner ──────────────────────────
   // Không render đè khi đang có ô đang gõ dở (auto-reload mỗi 120s có thể trúng lúc
   // đang sửa Phân công/Trạng thái/Link kết quả trên card) — tránh mất nội dung chưa lưu.
+  _dataReady = true; // cả đơn GAS lẫn Content đã cùng ở bản mới nhất — an toàn để hiện số tổng
   try { updateStats(); buildDeptChips(); buildTypeChips(); buildStatusChips(); updatePeriodLabel(); if(!_hasActiveInput()) render(); } catch(e){}
   document.getElementById('loading-state').classList.add('hidden');
   document.getElementById('list').classList.remove('hidden');
@@ -856,15 +857,23 @@ function getFilteredRows(){
   });
   return {rows, intRows};
 }
+// true khi đơn GAS (allOrders) VÀ dữ liệu Content (Supabase) đã cùng ở bản mới nhất trong
+// lượt tải hiện tại — loadOrders() hiện số tạm tới 3 lần khi đang tải (cache → Content mới +
+// GAS cache cũ → GAS mới), 2 nguồn lệch độ mới ở các bước giữa khiến tổng số nhảy qua vài
+// giá trị trước khi ổn định, nhìn như đếm sai. Giữ nguyên số cũ cho tới khi thật sự xong,
+// khớp cách làm ở admin.html.
+let _dataReady = false;
 function updateStats() {
   const {rows, intRows} = getFilteredRows();
   const all=[...rows,...intRows];
   const active=all.filter(o=>o.status!=='hoan-thanh'&&o.status!=='huy');
   const overdue=active.filter(o=>{ const d=dlDiff({...o,deadline:o.deadline||o.plannedDate||''}); return d!==null&&d<0; });
-  document.getElementById('st-total').textContent=all.length;
-  document.getElementById('st-overdue').textContent=overdue.length;
-  document.getElementById('st-progress').textContent=all.filter(o=>o.status==='dang-xu-ly').length;
-  document.getElementById('st-done').textContent=all.filter(o=>o.status==='hoan-thanh').length;
+  if (_dataReady) {
+    document.getElementById('st-total').textContent=all.length;
+    document.getElementById('st-overdue').textContent=overdue.length;
+    document.getElementById('st-progress').textContent=all.filter(o=>o.status==='dang-xu-ly').length;
+    document.getElementById('st-done').textContent=all.filter(o=>o.status==='hoan-thanh').length;
+  }
 }
 
 function normDept(s){ return (s||'').trim().replace(/^Ph[oòó]ng\s+/i,''); }

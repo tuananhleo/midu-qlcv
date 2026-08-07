@@ -1805,6 +1805,7 @@ async function loadAll(notify=false) {
     console.error('[loadAll] GAS error:', e);
     if (!allOrders.length) showToast('Lỗi tải dữ liệu: '+e.message,'error');
   }
+  _dataReady = true; // cả đơn GAS lẫn Content đã cùng ở bản mới nhất — an toàn để hiện số tổng
   try { updateStats(); buildDeptChips(); buildTypeChips(); renderStatusChips(); render(); } catch(e) {}
   _autoCompleteFeedback24h();
   if (document.getElementById('tab-report').classList.contains('hidden') === false) {
@@ -1937,15 +1938,23 @@ function getFilteredRows(){
   });
   return {rows, intRows};
 }
+// true khi ĐÃ có đủ cả đơn GAS (allOrders) lẫn dữ liệu Content (Supabase) trong lần tải
+// hiện tại — trước khi cả 2 nguồn về, allOrders có thể vẫn là bản cache cũ (showCached())
+// trong khi contentTasks/contentOrders đã là bản mới nhất, 2 nguồn LỆCH ĐỘ MỚI khiến tổng
+// số hiện ra 1 con số tạm rồi nhảy sang số khác vài giây sau — nhìn như "đếm sai". Giữ
+// nguyên số cũ (hoặc "…" nếu chưa từng có) cho tới khi cả 2 nguồn đã đồng bộ cùng lúc.
+let _dataReady = false;
 function updateStats() {
   const {rows, intRows} = getFilteredRows();
   const all = [...rows, ...intRows];
   const active  = all.filter(o=>o.status!=='hoan-thanh'&&o.status!=='huy');
   const overdue = active.filter(o=>{ const dl=parseDl(o); return dl&&dl<today; });
-  document.getElementById('st-total').textContent    = all.length;
-  document.getElementById('st-overdue').textContent  = overdue.length;
-  document.getElementById('st-progress').textContent = all.filter(o=>o.status==='dang-xu-ly').length;
-  document.getElementById('st-done').textContent     = all.filter(o=>o.status==='hoan-thanh').length;
+  if (_dataReady) {
+    document.getElementById('st-total').textContent    = all.length;
+    document.getElementById('st-overdue').textContent  = overdue.length;
+    document.getElementById('st-progress').textContent = all.filter(o=>o.status==='dang-xu-ly').length;
+    document.getElementById('st-done').textContent     = all.filter(o=>o.status==='hoan-thanh').length;
+  }
   _updateAiPendingBanner();
 }
 // Dự án tổng hợp (order.html) chưa được tách việc bằng AI — dùng LUÔN allOrders (không lọc
