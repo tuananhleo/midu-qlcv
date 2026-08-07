@@ -1503,6 +1503,43 @@ Mỗi field id chỉ cần trùng với field id ĐÃ CÓ ở bất kỳ loại 
 
 ---
 
+### Task #101 — Thông báo Zalo khi có order mới (qua Smax.ai)
+
+**Yêu cầu:** bắn thông báo vào 1 group/tài khoản Zalo (qua nền tảng Smax.ai) mỗi khi có order mới, nội dung gồm loại yêu cầu + tên dự án, người gửi + phòng ban, deadline, link mở thẳng đơn đó trên admin.html.
+
+**Thiết kế ban đầu (server-side, GAS):** thêm `notifyZaloNewOrder(order)` trong `MIDU_MKT_Script.gs`, gọi từ `submitOrdersData()` sau khi tạo đơn thành công — token bí mật của Smax lưu ở Script Properties (`SMAX_TRIGGER_TOKEN`), giống cách làm với `GEMINI_API_KEY`, không lộ ra client. Deep-link `admin.html?id=<mã đơn>` tự điền sẵn ô tìm kiếm khi mở từ link thông báo.
+
+**Sự cố kéo dài không sửa được (Google Apps Script):** sau khi deploy, GAS báo lỗi `Bạn không có quyền thực hiện lệnh gọi UrlFetchApp.fetch` — **chỉ xảy ra khi web app được gọi ẩn danh** (đúng cách order.html hoạt động thật), trong khi chạy thử bằng nút "Chạy" trong trình soạn thảo lại không lỗi (chạy với quyền chủ script, không đại diện cho request ẩn danh thật). Đã thử đủ cách chuẩn mà không sửa được:
+- Thu hồi + cấp lại quyền qua myaccount.google.com/permissions.
+- Deploy lại nhiều lần ("New version" lẫn "New deployment" — nhiều lần lỡ tạo deployment mới thay vì cập nhật đúng bản đang chạy, phải dò lại URL đúng qua từng lần).
+- Kiểm tra `appsscript.json` (không có `oauthScopes` tường minh — dùng auto-detect bình thường).
+- Dùng kỹ thuật ghi kết quả gọi Smax vào `adminNote` của chính order để đọc log từ xa qua `getOrders` (không xem được Execution log của GAS từ bên ngoài) — xác nhận chính xác đây là lỗi quyền, không phải lỗi Smax hay lỗi code.
+- Test qua link "Test deployments" (chạy với danh tính người phát triển, không lỗi — càng xác nhận vấn đề chỉ xảy ra với caller ẩn danh).
+
+**Quyết định:** người dùng yêu cầu bỏ hẳn đường GAS, chuyển sang gọi thẳng Smax.ai **từ trình duyệt** (`order.html`, client-side) — đã trao đổi rõ đánh đổi: token Smax nằm trong code public, ai xem source cũng lấy được, người dùng chấp nhận đánh đổi này để tính năng chạy được ngay (phương án an toàn hơn — Firebase Cloud Function giữ token server-side — cần nâng cấp Firebase lên gói Blaze, để sau nếu cần). Đã xoá sạch `notifyZaloNewOrder`/debug write khỏi `MIDU_MKT_Script.gs`.
+
+**Fix trong lúc làm — tên attribute sai chính tả:** người dùng cho tên attribute template Smax là `thontinlead` (thiếu chữ "g"), code làm đúng theo tên đó nên tin nhắn gửi được nhưng Smax không điền được nội dung vào (chỉ hiện phần chữ tĩnh có sẵn trong mẫu). Xác nhận lại đúng tên là `thongtinlead`, sửa lại khớp.
+
+**Xác nhận hoạt động bằng dữ liệu thật:** gọi thẳng Smax API qua console trình duyệt tại đúng origin `tuananhleo.github.io` (không bị CORS chặn) → có tin. Điền và gửi 1 đơn thật qua giao diện order.html (mã `TK-260807-103535`) → Zalo nhận đúng đủ nội dung (loại đơn, tên dự án, người gửi, deadline kèm giờ, link mở đơn) — xác nhận hoạt động trọn vẹn qua đúng luồng người dùng thật sẽ dùng.
+
+---
+
+### Task #102 — Ổn định số lượng công việc hiển thị (Tổng/Trễ deadline/Đang làm/Hoàn thành) + fix hiển thị giờ
+
+**Câu hỏi/phản hồi:** "Số lượng công việc ở admin và tracker mỗi lần vào là 1 con số, k khớp nhau", sau đó nhấn mạnh cần "làm cho ổn định" chứ không chỉ giải thích.
+
+**Kiểm tra bằng dữ liệu thật (console cả 2 trang cùng lúc, cùng bộ lọc):** `getFilteredRows()` của `admin.html` và `tracker.html` trả về **kết quả khớp tuyệt đối** (rows=12, intRows=41, tổng=53) với cùng dữ liệu nguồn (allOrders=78, contentTasks=89, contentOrders=42) — xác nhận thuật toán đếm (đã thống nhất ở Task #99) vẫn đúng, không lệch giữa 2 trang tại 1 thời điểm.
+
+**Nguyên nhân thật của cảm giác "nhảy múa":** cả `loadAll()` (admin.html) và `loadOrders()` (tracker.html) hiện số **nhiều lần trong lúc đang tải** để không phải chờ trắng màn hình — lần đầu dùng cache cũ, lần giữa dùng Content (Supabase) mới nhưng đơn GAS (`allOrders`) vẫn còn là bản cache cũ, chỉ lần cuối (sau khi GAS trả lời) mới thật sự đồng bộ cả 2 nguồn. 2 nguồn **lệch độ mới** ở các bước giữa khiến tổng số hiện ra 1 giá trị tạm rồi nhảy sang giá trị khác vài giây sau — nhìn giống như đếm sai, dù thực chất chỉ là hiệu ứng phụ của cách tải tiệm tiến.
+
+**Fix:** thêm cờ `_dataReady` (mặc định `false`) ở cả 2 file — `updateStats()` chỉ thực sự ghi số vào 4 ô KPI khi cờ này bật; giữ nguyên số cũ (hoặc "–" mặc định lần đầu) trong lúc chưa đủ dữ liệu thay vì hiện số tạm rồi nhảy. Bật cờ `_dataReady = true` đúng lúc cả đơn GAS lẫn Content đã cùng về bản mới nhất (cuối `loadAll()`/bước B6 của `loadOrders()`), ngay trước lần gọi `updateStats()` cuối cùng.
+
+**Fix kèm theo (phát hiện qua ảnh chụp thật lúc kiểm tra):**
+1. Card đơn thường (`renderCard`) thiếu hiện giờ deadline (`deadlineTime`) — chỉ có ngày, trong khi card Lịch Content/Nội bộ đã có sẵn. Thêm `dlTimeStr` giống các loại card khác.
+2. "Ngày gửi" hiện sai giờ (VD `07:00:00` dù gửi lúc 17:47) — do Google Sheets tự động chuyển chuỗi "dd/mm/yyyy HH:MM:SS" client gửi lên thành ô Date thật, nhưng `fmtCell()` (GAS, đọc dữ liệu trả về client) chỉ lấy phần ngày `YYYY-MM-DD`, bỏ mất giờ. Client parse lại chuỗi ngày trơn đó thành `Date`, JS hiểu là nửa đêm UTC, quy đổi sang giờ VN (UTC+7) ra lệch đúng 7 tiếng. Sửa `fmtCell()` giữ nguyên giờ khi khác nửa đêm — field ngày thuần thật (`deadline`) vẫn hiện đúng dạng chỉ-ngày như cũ vì luôn có giờ = 00:00:00.
+
+---
+
 ## 14. Liên kết nhanh
 
 | Tên | URL |
