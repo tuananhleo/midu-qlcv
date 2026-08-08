@@ -1089,6 +1089,21 @@ let _serverRoles = null;
 let _contentSyncInterval = null;
 const _SB_URL='https://loqcqtuouagzaqwdmhji.supabase.co';
 const _SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxvcWNxdHVvdWFnemFxd2RtaGppIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMwNjUyNDgsImV4cCI6MjA5ODY0MTI0OH0.zoiWEgtNORL1ecxAgSpkZ3HMDaLP3nnpma3moM8QsDc';
+// Cùng lý do TDZ ở trên — mọi hằng Supabase/Content dùng bởi _loadContentTasks()/
+// _loadContentOrders()/_loadLichTT() (chạy đồng bộ từ restoreSession→afterLogin→loadAll)
+// đều phải khai báo TRƯỚC vị trí restoreSession() trong file, dù để tự nhiên (không cố ý)
+// nằm ở cuối file lúc viết thêm tính năng sau này.
+const _CONTENT_STATUS_MAP={
+  'Lên kế hoạch':'chua-lam','Đang soạn':'dang-xu-ly',
+  'Chờ duyệt':'dang-xu-ly','Đã lên lịch':'dang-xu-ly',
+  'Đã đăng':'hoan-thanh','Huỷ':'huy','Hủy':'huy','Order Thiết kế':'dang-xu-ly'
+};
+const _CONTENT_SOURCES=[
+  {id:'kim-oanh', name:'Kim Oanh'},
+  {id:'khanh-huyen', name:'Khánh Huyền'},
+];
+const CONTENT_APP_URL='https://content-marketing.pages.dev/';
+const _LC_TASK_STATUS_REVERSE={'chua-lam':'Lên kế hoạch','dang-xu-ly':'Đang soạn','hoan-thanh':'Đã đăng','huy':'Huỷ'};
 
 // Tự động gắn token vào mọi request POST tới GAS (trừ loginUser) ở tầng fetch,
 // thay vì sửa từng lời gọi rải rác trong file — tránh bỏ sót. Nếu GAS báo phiên
@@ -4062,18 +4077,8 @@ function applyRangePicker(){
 
 
 // ── Lịch Content → Tasks (Supabase) ───────────────────────────
-const _CONTENT_STATUS_MAP={
-  'Lên kế hoạch':'chua-lam','Đang soạn':'dang-xu-ly',
-  'Chờ duyệt':'dang-xu-ly','Đã lên lịch':'dang-xu-ly',
-  'Đã đăng':'hoan-thanh','Huỷ':'huy','Hủy':'huy','Order Thiết kế':'dang-xu-ly'
-};
-// Trang Content đã lên mô hình nhiều board — mỗi board có key riêng dạng
-// "<base>--<workspaceId>". Thêm người mới = thêm 1 dòng vào đây.
-const _CONTENT_SOURCES=[
-  {id:'kim-oanh', name:'Kim Oanh'},
-  {id:'khanh-huyen', name:'Khánh Huyền'},
-];
-const CONTENT_APP_URL='https://content-marketing.pages.dev/';
+// _CONTENT_STATUS_MAP, _CONTENT_SOURCES, CONTENT_APP_URL đã chuyển lên đầu file
+// (gần currentUser/_serverRoles) để tránh lỗi TDZ khi restoreSession() chạy đồng bộ.
 // Trang Content tự hỗ trợ deep-link #ws=<board>&task=<id bài> — nhảy thẳng tới đúng bài,
 // tự chuyển board nếu khác, highlight dòng đó (xem handleDeepLink() trong file Content).
 function _contentDeepLink(ws, taskId){
@@ -4393,9 +4398,7 @@ async function _writeBackContentOrder(orderId, deliverableLink, lcStatus, ws){
     await fetch(`${_SB_URL}/rest/v1/plan_data`,{method:'POST',headers:hdrs,body:JSON.stringify({id:'content-plan-orders-v1--'+ws,value:orders})});
   }catch(e){console.warn('[LC write-back] lỗi:',e.message);}
 }
-// Chiều ngược lại của _CONTENT_STATUS_MAP — chỉ map 4 trạng thái có ý nghĩa rõ ràng bên
-// Content (bỏ qua 'feedback', khái niệm đó không tồn tại trong luồng lịch bài đăng).
-const _LC_TASK_STATUS_REVERSE={'chua-lam':'Lên kế hoạch','dang-xu-ly':'Đang soạn','hoan-thanh':'Đã đăng','huy':'Huỷ'};
+// _LC_TASK_STATUS_REVERSE (chiều ngược lại của _CONTENT_STATUS_MAP) đã chuyển lên đầu file — lý do TDZ như trên.
 async function _writeBackContentTask(taskId, status, ws){
   if(!ws||!taskId) return;
   const lcStatus=_LC_TASK_STATUS_REVERSE[status];
