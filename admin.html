@@ -482,7 +482,7 @@
         <div class="col-span-2"><label>Trạng thái</label>
           <select id="e-status" class="inp"></select>
         </div>
-        <div class="col-span-2"><label>Link kết quả</label><input id="e-linkResult" type="text" class="inp" placeholder="https://..."></div>
+        <div class="col-span-2"><label>Link kết quả</label><textarea id="e-linkResult" class="inp" rows="2" style="resize:vertical" placeholder="https://... (nhiều link thì mỗi link 1 dòng)"></textarea></div>
 
         <div class="col-span-2"><label>Ghi chú admin <span style="font-weight:400;text-transform:none;color:var(--atext3)">(nội bộ, không hiện tracker)</span></label><input id="e-adminNote" type="text" class="inp"></div>
       </div>
@@ -704,7 +704,7 @@
       </div>
       <div class="col-span-2">
         <label>Link kết quả</label>
-        <input id="int-link" type="text" class="inp" placeholder="https://..." oninput="intAutoStatus()">
+        <textarea id="int-link" class="inp" rows="2" style="resize:vertical" placeholder="https://... (nhiều link thì mỗi link 1 dòng)" oninput="intAutoStatus()"></textarea>
       </div>
       <div class="col-span-2">
         <label>Ghi chú</label>
@@ -2216,12 +2216,7 @@ function renderCard(o, inGroup=false) {
       ${o.note?`<div class="text-xs italic mb-2" style="color:var(--atext3)">📋 ${o.note}</div>`:''}
       ${detHTML?`<div class="mt-2 pt-2 border-t grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-1 text-xs" style="border-color:var(--acborder)">${detHTML}</div>`:''}
       ${o.linkResult?`<div class="mt-2 pt-2 border-t" style="border-color:var(--acborder)">
-        <div class="flex items-center gap-2 flex-wrap">
-          <span class="text-xs flex-shrink-0" style="color:var(--atext3)">🔗 Kết quả:</span>
-          ${isUrl(o.linkResult)?`<a href="${o.linkResult}" target="_blank" rel="noopener" class="text-xs text-indigo-400 underline break-all flex-1">${o.linkResult}</a>`:`<span class="text-xs break-all flex-1" style="color:var(--atext2)">${o.linkResult}</span>`}
-          <button type="button" onclick="copyLink(this)" data-copy="${escapeHtml(o.linkResult)}" class="btn btn-ghost flex-shrink-0" style="padding:4px 8px;font-size:.75rem">📋 Sao chép</button>
-          ${isUrl(o.linkResult)?`<a href="${o.linkResult}" target="_blank" rel="noopener" class="btn btn-ghost flex-shrink-0" style="padding:4px 8px;font-size:.75rem">🔗 Mở link</a>`:''}
-        </div>
+        ${_linkRowsHTML(o.linkResult,'--atext3','--atext2')}
         ${o.resultBy?`<div class="text-xs mt-1" style="color:var(--atext3)">👤 ${o.resultBy}${o.resultAt?' · '+o.resultAt:''}</div>`:''}
       </div>`:''}
       ${!o.linkResult&&o.resultBy?`<div class="mt-2 pt-2 border-t text-xs" style="border-color:var(--acborder);color:var(--atext2)">👤 Người cập nhật KQ: <span style="color:var(--atext3)">${o.resultBy}${o.resultAt?' · '+o.resultAt:''}</span></div>`:''}
@@ -2237,7 +2232,7 @@ function renderCard(o, inGroup=false) {
         </select>
       </div>
       <div style="min-width:200px;flex:2"><label>Link kết quả</label>
-        <input id="link-${o.id}" type="text" value="${(o.linkResult||'').replace(/"/g,'&quot;')}" placeholder="https://..." class="cinp" oninput="autoStatus('${o.id}')">
+        <textarea id="link-${o.id}" placeholder="https://... (nhiều link thì mỗi link 1 dòng)" class="cinp" rows="2" style="resize:vertical" oninput="autoStatus('${o.id}')">${escapeHtml(o.linkResult||'')}</textarea>
       </div>
 
       <div style="min-width:130px;flex:1"><label>Ghi chú admin</label>
@@ -2325,12 +2320,7 @@ function renderIntCard(t){
           ${ro.priority?`<div><span style="color:var(--atext3)">Ưu tiên: </span><span style="color:var(--atext2)">${ro.priority}</span></div>`:''}
         </div>
         ${t.linkResult?`<div class="mt-2 pt-2 border-t" style="border-color:var(--acborder)">
-          <div class="flex items-center gap-2 flex-wrap">
-            <span class="text-xs flex-shrink-0" style="color:var(--atext3)">🔗 Kết quả:</span>
-            ${isUrl(t.linkResult)?`<a href="${t.linkResult}" target="_blank" rel="noopener" class="text-xs text-indigo-400 underline break-all flex-1">${t.linkResult}</a>`:`<span class="text-xs break-all flex-1" style="color:var(--atext2)">${t.linkResult}</span>`}
-            <button type="button" onclick="copyLink(this)" data-copy="${escapeHtml(t.linkResult)}" class="btn btn-ghost flex-shrink-0" style="padding:4px 8px;font-size:.75rem">📋 Sao chép</button>
-            ${isUrl(t.linkResult)?`<a href="${t.linkResult}" target="_blank" rel="noopener" class="btn btn-ghost flex-shrink-0" style="padding:4px 8px;font-size:.75rem">🔗 Mở link</a>`:''}
-          </div>
+          ${_linkRowsHTML(t.linkResult,'--atext3','--atext2')}
         </div>`:''}
         <div class="mt-2 flex gap-1.5 flex-wrap">
           <button onclick="openLcoDetail('${t.id}')" class="btn btn-ghost" style="font-size:.72rem;padding:3px 10px">👁 Xem chi tiết brief / order</button>
@@ -2345,7 +2335,7 @@ function renderIntCard(t){
           <select class="cinp" id="${lcId}_stat">${statusOpts}</select>
         </div>
         <div style="min-width:200px;flex:2"><label>Link kết quả</label>
-          <input id="${lcId}_link" type="text" class="cinp" value="${(t.linkResult||'').replace(/"/g,'&quot;')}" placeholder="https://...">
+          <textarea id="${lcId}_link" class="cinp" rows="2" style="resize:vertical" placeholder="https://... (nhiều link thì mỗi link 1 dòng)">${escapeHtml(t.linkResult||'')}</textarea>
         </div>
         <div class="flex-shrink-0 flex gap-1.5 items-end">
           <div><label>&nbsp;</label><button type="button" onclick="_saveLcCard('${t.id}','${lcId}')" class="btn btn-primary">💾 Lưu</button></div>
@@ -2379,12 +2369,7 @@ function renderIntCard(t){
         </div>
         ${e.noiDung?`<div class="text-xs italic mb-2" style="color:var(--atext3)">📝 ${e.noiDung}</div>`:''}
         ${t.linkResult?`<div class="mt-2 pt-2 border-t" style="border-color:var(--acborder)">
-          <div class="flex items-center gap-2 flex-wrap">
-            <span class="text-xs flex-shrink-0" style="color:var(--atext3)">🔗 Kết quả:</span>
-            ${isUrl(t.linkResult)?`<a href="${t.linkResult}" target="_blank" rel="noopener" class="text-xs text-indigo-400 underline break-all flex-1">${t.linkResult}</a>`:`<span class="text-xs break-all flex-1" style="color:var(--atext2)">${t.linkResult}</span>`}
-            <button type="button" onclick="copyLink(this)" data-copy="${escapeHtml(t.linkResult)}" class="btn btn-ghost flex-shrink-0" style="padding:4px 8px;font-size:.75rem">📋 Sao chép</button>
-            ${isUrl(t.linkResult)?`<a href="${t.linkResult}" target="_blank" rel="noopener" class="btn btn-ghost flex-shrink-0" style="padding:4px 8px;font-size:.75rem">🔗 Mở link</a>`:''}
-          </div>
+          ${_linkRowsHTML(t.linkResult,'--atext3','--atext2')}
         </div>`:''}
       </div>
       <div class="admin-strip">
@@ -2395,7 +2380,7 @@ function renderIntCard(t){
           <select class="cinp" id="${lttId}_stat">${statusOpts}</select>
         </div>
         <div style="min-width:200px;flex:2"><label>Link kết quả</label>
-          <input id="${lttId}_link" type="text" class="cinp" value="${(t.linkResult||'').replace(/"/g,'&quot;')}" placeholder="https://...">
+          <textarea id="${lttId}_link" class="cinp" rows="2" style="resize:vertical" placeholder="https://... (nhiều link thì mỗi link 1 dòng)">${escapeHtml(t.linkResult||'')}</textarea>
         </div>
         <div class="flex-shrink-0 flex gap-1.5 items-end">
           <div><label>&nbsp;</label><button type="button" onclick="_saveLichTTCard('${t.id}','${lttId}')" class="btn btn-primary">💾 Lưu</button></div>
@@ -2426,12 +2411,7 @@ function renderIntCard(t){
       </div>
       ${t.adminNote?`<div class="mt-2 text-xs px-3 py-2 rounded-lg" style="color:var(--atext3);background:var(--abg3);border:1px solid var(--aborder);white-space:pre-line">📝 ${t.adminNote}</div>`:''}
       ${t.linkResult?`<div class="mt-2 pt-2 border-t" style="border-color:var(--acborder)">
-        <div class="flex items-center gap-2 flex-wrap">
-          <span class="text-xs flex-shrink-0" style="color:var(--atext3)">🔗 Kết quả:</span>
-          ${isUrl(t.linkResult)?`<a href="${t.linkResult}" target="_blank" rel="noopener" class="text-xs text-indigo-400 underline break-all flex-1">${t.linkResult}</a>`:`<span class="text-xs break-all flex-1" style="color:var(--atext2)">${t.linkResult}</span>`}
-          <button type="button" onclick="copyLink(this)" data-copy="${escapeHtml(t.linkResult)}" class="btn btn-ghost flex-shrink-0" style="padding:4px 8px;font-size:.75rem">📋 Sao chép</button>
-          ${isUrl(t.linkResult)?`<a href="${t.linkResult}" target="_blank" rel="noopener" class="btn btn-ghost flex-shrink-0" style="padding:4px 8px;font-size:.75rem">🔗 Mở link</a>`:''}
-        </div>
+        ${_linkRowsHTML(t.linkResult,'--atext3','--atext2')}
       </div>`:''}
     </div>
     ${t._sourceUrl?`<div style="background:rgba(99,102,241,.06);border-top:1px solid rgba(99,102,241,.12);padding:10px 14px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
@@ -3534,6 +3514,31 @@ async function fbSyncAll() {
 // Tìm kiếm bỏ qua dấu tiếng Việt: "khanh huyen" phải khớp được "Khánh Huyền".
 function normVN(s){ return String(s??'').toLowerCase().replace(/đ/g,'d').normalize('NFD').replace(/[̀-ͯ]/g,''); }
 function escapeHtml(s){ return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+// Link kết quả có thể chứa NHIỀU link (dán nhiều dòng, hoặc cách nhau bằng dấu phẩy/xuống dòng/khoảng
+// trắng trước "http"). Tách ra để mỗi link có nút Sao chép/Mở link riêng, tránh dồn 1 cục rối mắt.
+// Khai báo bằng "function" (hoisted) chứ không phải const/let — 2 hàm này được renderCard() gọi
+// trong chuỗi restoreSession()->afterLogin()->loadAll() chạy đồng bộ lúc script còn đang parse,
+// const/let ở vị trí sau sẽ dính lại đúng lỗi TDZ đã mất cả buổi sửa hôm nay.
+function _splitLinkResult(raw){
+  let parts=String(raw||'').split(/[\n,;]+/).map(s=>s.trim()).filter(Boolean);
+  if(parts.length===1){
+    const multi=parts[0].split(/\s+(?=https?:\/\/)/i).map(s=>s.trim()).filter(Boolean);
+    if(multi.length>1) parts=multi;
+  }
+  return parts;
+}
+function _linkRowsHTML(raw, c3, c2){
+  return _splitLinkResult(raw).map((link,i,arr)=>{
+    const label=arr.length>1?`🔗 Kết quả ${i+1}:`:'🔗 Kết quả:';
+    const url=/^https?:\/\//i.test(link);
+    return `<div class="flex items-center gap-2 flex-wrap"${i>0?' style="margin-top:6px"':''}>
+          <span class="text-xs flex-shrink-0" style="color:var(${c3})">${label}</span>
+          ${url?`<a href="${link}" target="_blank" rel="noopener" class="text-xs text-indigo-400 underline break-all flex-1">${link}</a>`:`<span class="text-xs break-all flex-1" style="color:var(${c2})">${link}</span>`}
+          <button type="button" onclick="copyLink(this)" data-copy="${escapeHtml(link)}" class="btn btn-ghost flex-shrink-0" style="padding:4px 8px;font-size:.75rem">📋 Sao chép</button>
+          ${url?`<a href="${link}" target="_blank" rel="noopener" class="btn btn-ghost flex-shrink-0" style="padding:4px 8px;font-size:.75rem">🔗 Mở link</a>`:''}
+        </div>`;
+  }).join('');
+}
 // btn: nút bấm, đọc link/đường dẫn từ data-copy (tránh nhúng thẳng vào onclick — path ổ cứng
 // có dấu \ sẽ bị JS hiểu nhầm thành ký tự escape như \f \n, làm hỏng chuỗi copy).
 function copyLink(btn){

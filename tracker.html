@@ -1099,12 +1099,7 @@ function renderCard(o, inGroup=false) {
     </div>
     ${hasBottom?`<div class="info-strip space-y-2">
       ${o.linkResult?`<div>
-        <div class="flex items-center gap-2">
-          <span class="text-xs flex-shrink-0" style="color:var(--ttext3)">🔗 Kết quả:</span>
-          ${isLink?`<a href="${o.linkResult}" target="_blank" rel="noopener" class="text-xs text-indigo-400 underline break-all flex-1">${o.linkResult}</a>`:`<span class="text-xs break-all flex-1" style="color:var(--ttext2)">${o.linkResult}</span>`}
-          <button type="button" onclick="copyLink(this)" data-copy="${escapeHtml(o.linkResult)}" class="btn btn-ghost flex-shrink-0" style="padding:4px 8px;font-size:.75rem">📋 Sao chép</button>
-          ${isLink?`<a href="${o.linkResult}" target="_blank" rel="noopener" class="btn btn-ghost flex-shrink-0" style="padding:4px 8px;font-size:.75rem">🔗 Mở link</a>`:''}
-        </div>
+        ${_linkRowsHTML(o.linkResult,'--ttext3','--ttext2')}
         ${o.resultBy?`<div class="text-xs mt-1" style="color:var(--ttext2)">👤 Người cập nhật KQ: <span style="color:var(--ttext3)">${o.resultBy}${o.resultAt?' · '+o.resultAt:''}</span></div>`:''}
       </div>`:''}
       ${!o.linkResult&&o.resultBy?`<div class="text-xs" style="color:var(--ttext2)">👤 Người cập nhật KQ: <span style="color:var(--ttext3)">${o.resultBy}${o.resultAt?' · '+o.resultAt:''}</span></div>`:''}
@@ -1188,12 +1183,7 @@ function renderIntCard(t) {
       </div>
     ${t.linkResult?`<div class="info-strip space-y-2">
       <div>
-        <div class="flex items-center gap-2 flex-wrap">
-          <span class="text-xs flex-shrink-0" style="color:var(--ttext3)">🔗 Kết quả:</span>
-          ${isUrl(t.linkResult)?`<a href="${t.linkResult}" target="_blank" rel="noopener" class="text-xs text-indigo-400 underline break-all flex-1">${t.linkResult}</a>`:`<span class="text-xs break-all flex-1" style="color:var(--ttext2)">${t.linkResult}</span>`}
-          <button type="button" onclick="copyLink(this)" data-copy="${escapeHtml(t.linkResult||'')}" class="btn btn-ghost flex-shrink-0" style="padding:4px 8px;font-size:.75rem">📋 Sao chép</button>
-          ${isUrl(t.linkResult)?`<a href="${t.linkResult}" target="_blank" rel="noopener" class="btn btn-ghost flex-shrink-0" style="padding:4px 8px;font-size:.75rem">🔗 Mở link</a>`:''}
-        </div>
+        ${_linkRowsHTML(t.linkResult,'--ttext3','--ttext2')}
         ${t.resultBy?`<div class="text-xs mt-1" style="color:var(--ttext2)">👤 Người cập nhật KQ: <span style="color:var(--ttext3)">${t.resultBy}${t.resultAt?' · '+t.resultAt:''}</span></div>`:''}
       </div>
     </div>`:''}
@@ -1221,11 +1211,7 @@ function renderIntCard(t) {
         </div>
         ${e.noiDung?`<div class="text-xs italic mb-2" style="color:var(--ttext3)">📝 ${e.noiDung}</div>`:''}
       </div>
-    ${t.linkResult?`<div class="info-strip space-y-2"><div class="flex items-center gap-2 flex-wrap">
-        <span class="text-xs flex-shrink-0" style="color:var(--ttext3)">🔗 Kết quả:</span>
-        ${isUrl(t.linkResult)?`<a href="${t.linkResult}" target="_blank" rel="noopener" class="text-xs text-indigo-400 underline break-all flex-1">${t.linkResult}</a>`:`<span class="text-xs break-all flex-1" style="color:var(--ttext2)">${t.linkResult}</span>`}
-        <button type="button" onclick="copyLink(this)" data-copy="${escapeHtml(t.linkResult||'')}" class="btn btn-ghost flex-shrink-0" style="padding:4px 8px;font-size:.75rem">📋 Sao chép</button>
-      </div></div>`:''}
+    ${t.linkResult?`<div class="info-strip space-y-2">${_linkRowsHTML(t.linkResult,'--ttext3','--ttext2')}</div>`:''}
     </div>`;
   }
 
@@ -1250,12 +1236,7 @@ function renderIntCard(t) {
           ${t.d_content_type?`<div><span style="color:var(--ttext3)">Loại: </span><span style="color:var(--ttext2)">${t.d_content_type}</span></div>`:''}
         </div>
         ${t.linkResult?`<div class="mt-2 pt-2 border-t" style="border-color:var(--tborder)">
-          <div class="flex items-center gap-2 flex-wrap">
-            <span class="text-xs flex-shrink-0" style="color:var(--ttext3)">🔗 Kết quả:</span>
-            ${isUrl(t.linkResult)?`<a href="${t.linkResult}" target="_blank" rel="noopener" class="text-xs text-indigo-400 underline break-all flex-1">${t.linkResult}</a>`:`<span class="text-xs break-all flex-1" style="color:var(--ttext2)">${t.linkResult}</span>`}
-            <button type="button" onclick="copyLink(this)" data-copy="${escapeHtml(t.linkResult||'')}" class="btn btn-ghost flex-shrink-0" style="padding:4px 8px;font-size:.75rem">📋 Sao chép</button>
-            ${isUrl(t.linkResult)?`<a href="${t.linkResult}" target="_blank" rel="noopener" class="btn btn-ghost flex-shrink-0" style="padding:4px 8px;font-size:.75rem">🔗 Mở link</a>`:''}
-          </div>
+          ${_linkRowsHTML(t.linkResult,'--ttext3','--ttext2')}
         </div>`:''}
         <div class="mt-2"><button onclick="openContentTaskDetail('${t.id}')" class="btn btn-ghost" style="font-size:.72rem;padding:3px 10px">👁 Xem chi tiết nội dung</button></div>
       </div>
@@ -1287,12 +1268,7 @@ function renderIntCard(t) {
     </div>
     ${t.linkResult?`<div class="info-strip space-y-2">
       <div>
-        <div class="flex items-center gap-2 flex-wrap">
-          <span class="text-xs flex-shrink-0" style="color:var(--ttext3)">🔗 Kết quả:</span>
-          ${isUrl(t.linkResult)?`<a href="${t.linkResult}" target="_blank" rel="noopener" class="text-xs text-indigo-400 underline break-all flex-1">${t.linkResult}</a>`:`<span class="text-xs break-all flex-1" style="color:var(--ttext2)">${t.linkResult}</span>`}
-          <button type="button" onclick="copyLink(this)" data-copy="${escapeHtml(t.linkResult||'')}" class="btn btn-ghost flex-shrink-0" style="padding:4px 8px;font-size:.75rem">📋 Sao chép</button>
-          ${isUrl(t.linkResult)?`<a href="${t.linkResult}" target="_blank" rel="noopener" class="btn btn-ghost flex-shrink-0" style="padding:4px 8px;font-size:.75rem">🔗 Mở link</a>`:''}
-        </div>
+        ${_linkRowsHTML(t.linkResult,'--ttext3','--ttext2')}
         ${t.resultBy?`<div class="text-xs mt-1" style="color:var(--ttext2)">👤 Người cập nhật KQ: <span style="color:var(--ttext3)">${t.resultBy}${t.resultAt?' · '+t.resultAt:''}</span></div>`:''}
       </div>
     </div>`:''}
@@ -1300,6 +1276,28 @@ function renderIntCard(t) {
 }
 
 function escapeHtml(s){ return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+// Link kết quả có thể chứa NHIỀU link — tách ra để mỗi link có nút Sao chép/Mở link riêng
+// (đồng bộ với admin.html, xem giải thích ở đó). "function" chứ không phải const/let để tránh TDZ.
+function _splitLinkResult(raw){
+  let parts=String(raw||'').split(/[\n,;]+/).map(s=>s.trim()).filter(Boolean);
+  if(parts.length===1){
+    const multi=parts[0].split(/\s+(?=https?:\/\/)/i).map(s=>s.trim()).filter(Boolean);
+    if(multi.length>1) parts=multi;
+  }
+  return parts;
+}
+function _linkRowsHTML(raw, c3, c2){
+  return _splitLinkResult(raw).map((link,i,arr)=>{
+    const label=arr.length>1?`🔗 Kết quả ${i+1}:`:'🔗 Kết quả:';
+    const url=/^https?:\/\//i.test(link);
+    return `<div class="flex items-center gap-2 flex-wrap"${i>0?' style="margin-top:6px"':''}>
+          <span class="text-xs flex-shrink-0" style="color:var(${c3})">${label}</span>
+          ${url?`<a href="${link}" target="_blank" rel="noopener" class="text-xs text-indigo-400 underline break-all flex-1">${link}</a>`:`<span class="text-xs break-all flex-1" style="color:var(${c2})">${link}</span>`}
+          <button type="button" onclick="copyLink(this)" data-copy="${escapeHtml(link)}" class="btn btn-ghost flex-shrink-0" style="padding:4px 8px;font-size:.75rem">📋 Sao chép</button>
+          ${url?`<a href="${link}" target="_blank" rel="noopener" class="btn btn-ghost flex-shrink-0" style="padding:4px 8px;font-size:.75rem">🔗 Mở link</a>`:''}
+        </div>`;
+  }).join('');
+}
 // Tìm kiếm bỏ qua dấu tiếng Việt: "khanh huyen" phải khớp được "Khánh Huyền".
 function normVN(s){ return String(s??'').toLowerCase().replace(/đ/g,'d').normalize('NFD').replace(/[̀-ͯ]/g,''); }
 // btn: nút bấm, đọc link/đường dẫn từ data-copy (tránh nhúng thẳng vào onclick — path ổ cứng
