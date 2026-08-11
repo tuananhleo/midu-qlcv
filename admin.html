@@ -4118,6 +4118,35 @@ function _addHiddenId(id){ const s=_getHiddenIds(); s.add(id); localStorage.setI
 const KEY_MIRRORED_IDS = 'midu_mirrored_sheet_ids';
 function _getMirroredIds(){ try{return new Set(JSON.parse(localStorage.getItem(KEY_MIRRORED_IDS)||'[]'));}catch(e){return new Set();} }
 function _addMirroredId(id){ const s=_getMirroredIds(); s.add(id); localStorage.setItem(KEY_MIRRORED_IDS,JSON.stringify([...s])); }
+// Thông báo Zalo cho Order Content (trang Content, tab "Order") — cùng cơ chế/token với
+// order.html (xem giải thích ở đó), gọi thẳng từ trình duyệt vì GAS chặn UrlFetchApp ẩn danh.
+// Gắn vào đúng chỗ _mirrorOrderToSheet() xác nhận 1 order MỚI LẦN ĐẦU (đã chống trùng qua
+// _sheetOrderIds dùng chung mọi máy) — không tách hàm riêng theo dõi "mới" để tránh trùng
+// logic phát hiện mới. Chỉ áp dụng order._fromContentOrder (tab Order), KHÔNG áp dụng cho
+// content task thường (lịch bài đăng) hay việc nội bộ — 2 loại đó không phải "order" ai gửi.
+const SMAX_TRIGGER_URL='https://api.smax.ai/public/bizs/diemptccmidu/triggers/6a7463a948305a18ab496150';
+const SMAX_TRIGGER_TOKEN='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0cmlnZ2VyX2lkIjoiNmE3NDYzYTk0ODMwNWExOGFiNDk2MTUwIiwiaWF0IjoxNzg2MDEyNTg1LCJleHAiOjMxNzMzMDQ1NDk4NX0.8eoStSRXskfu8evOn_y17MUMIgHt3DppwRSxl0rIuwM';
+const ZALO_NOTIFY_CUSTOMER_ID='zlw1144781742322123292';
+const ZALO_NOTIFY_PAGE_ID='zlw852060909005878828';
+const ADMIN_SELF_URL='https://tuananhleo.github.io/midu-qlcv/admin.html';
+function _notifyZaloContentOrder(order){
+  try{
+    const typeLabel=TYPE_MAP[order.type]||order.type||'Khác';
+    const dlStr=(order.deadline||'')+(order.deadlineTime?' '+order.deadlineTime:'');
+    const lines=[
+      typeLabel+' — '+(order.projectName||order.title||'(chưa đặt tên)'),
+      'Người gửi: '+(order.requester||'–')+' · '+(order.department||'–'),
+      'Deadline: '+(dlStr||'chưa có'),
+      'Nguồn: Lịch Content',
+      'Xem chi tiết: '+ADMIN_SELF_URL+'?id='+encodeURIComponent(order.id),
+    ];
+    fetch(SMAX_TRIGGER_URL,{
+      method:'POST',
+      headers:{'Authorization':'Bearer '+SMAX_TRIGGER_TOKEN,'Content-Type':'application/json'},
+      body:JSON.stringify({customer:{id:ZALO_NOTIFY_CUSTOMER_ID,page_id:ZALO_NOTIFY_PAGE_ID},attrs:[{name:'thongtinlead',value:lines.join('\n')}]})
+    }).catch(()=>{});
+  }catch(e){}
+}
 async function _mirrorOrderToSheet(order){
   if(!order?.id || order._fromLichTT) return;
   if(_getMirroredIds().has(order.id)) return; // chính trình duyệt này đã ghi rồi
@@ -4139,7 +4168,10 @@ async function _mirrorOrderToSheet(order){
     };
     const resp=await fetch(getGasUrl(),{method:'POST',body:JSON.stringify({action:'addOrder',order:payload})});
     const data=await resp.json();
-    if(data && !data.error){ _addMirroredId(order.id); _sheetOrderIds.add(order.id); }
+    if(data && !data.error){
+      _addMirroredId(order.id); _sheetOrderIds.add(order.id);
+      if(order._fromContentOrder) _notifyZaloContentOrder(order);
+    }
   }catch(e){ console.warn('[Mirror→Sheet] lỗi ghi mới:', e.message); }
 }
 async function _mirrorUpdateSheet(id, fields){
