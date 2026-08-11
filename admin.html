@@ -4185,6 +4185,37 @@ async function _mirrorAllSequential(items){
   for(const it of items){ await _mirrorOrderToSheet(it); }
 }
 
+// Vá lỗi font "double UTF-8" (UTF-8 bị đọc nhầm thành Latin-1/Windows-1252 rồi mã hoá lại
+// UTF-8 lần 2) — phát hiện ở dữ liệu board Khánh Huyền bên trang Content (2026-08-11), nguồn
+// gốc nằm ở phía họ ghi dữ liệu, không phải lỗi đọc bên mình — nhưng anh yêu cầu tự vá hiển
+// thị bên QLCV, không đụng vào trang Content. Dấu hiệu nhận biết: byte nối tiếp (continuation
+// byte 0x80-0xBF) của UTF-8 khi bị đọc nhầm Latin-1 luôn rơi vào dải ký hiệu Latin-1
+// Supplement U+00A1-U+00BF (¡¢£¤¥¦...) — dải KHÔNG xuất hiện trong văn bản tiếng Việt/công
+// việc bình thường. Lưu ý: KHÔNG được dùng Ã/Â để dò vì đó là 2 chữ cái tiếng Việt hợp lệ
+// (ã, â) — dò thẳng 2 ký tự đó sẽ báo sai tràn lan, đã tự kiểm chứng và loại bỏ cách đó.
+function _looksMojibake(s){
+  if(typeof s!=='string'||!s) return false;
+  return ((s.match(/[¡-¿]/g)||[]).length)>=2;
+}
+function _fixMojibakeText(rawText){
+  if(!_looksMojibake(rawText)) return rawText;
+  try{
+    const bytes=Uint8Array.from([...rawText].map(c=>c.charCodeAt(0)&0xFF));
+    const fixed=new TextDecoder('utf-8',{fatal:false}).decode(bytes);
+    return fixed;
+  }catch(e){ return rawText; }
+}
+// Đôi khi việc vá làm rơi thẳng ký tự điều khiển (control character) vào giữa 1 chuỗi JSON
+// (VD ký tự xuống dòng thật thay vì \n) khiến JSON.parse hỏng luôn cả bản ghi — đã gặp thực
+// tế ở content-plan-orders-v1--khanh-huyen. Thà giữ nguyên bản gốc (còn lỗi font nhưng vẫn
+// tải được) còn hơn crash cả lượt tải Content, nên luôn có đường lùi về bản chưa vá.
+function _parseContentJSON(rawText){
+  const fixed=_fixMojibakeText(rawText);
+  if(fixed!==rawText){
+    try{ return JSON.parse(fixed); }catch(e){ /* vá làm hỏng cấu trúc JSON, quay về bản gốc */ }
+  }
+  return JSON.parse(rawText);
+}
 async function _loadContentChannels(){
   _contentChannelMap={};
   // Đọc key cũ (không hậu tố) và từng board song song (trước đây tuần tự từng key,
@@ -4195,7 +4226,7 @@ async function _loadContentChannels(){
     try{
       const resp=await fetch(`${_CT_API_BASE}?id=${encodeURIComponent(id)}`,{signal:AbortSignal.timeout(8000)});
       if(!resp.ok) return [];
-      const data=await resp.json();
+      const data=_parseContentJSON(await resp.text());
       const raw=data?.[0]?.value;
       return typeof raw==='string'?JSON.parse(raw):(Array.isArray(raw)?raw:[]);
     }catch(e){ console.warn('[Channels]',id,e.message); return []; }
@@ -4211,7 +4242,7 @@ async function _loadContentTasks(){
    try{
     const resp=await fetch(`${_CT_API_BASE}?id=${encodeURIComponent('content-plan-tasks-v2--'+src.id)}`,{signal:AbortSignal.timeout(8000)});
     if(!resp.ok) return [];
-    const data=await resp.json();
+    const data=_parseContentJSON(await resp.text());
     const raw=data?.[0]?.value;
     const tasks=typeof raw==='string'?JSON.parse(raw):(Array.isArray(raw)?raw:[]);
     return tasks
@@ -4289,7 +4320,7 @@ async function _loadContentOrders(){
    try{
     const resp=await fetch(`${_CT_API_BASE}?id=${encodeURIComponent('content-plan-orders-v1--'+src.id)}`,{signal:AbortSignal.timeout(8000)});
     if(!resp.ok) return [];
-    const data=await resp.json();
+    const data=_parseContentJSON(await resp.text());
     const raw=data?.[0]?.value;
     const orders=typeof raw==='string'?JSON.parse(raw):(Array.isArray(raw)?raw:[]);
     return orders

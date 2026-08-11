@@ -603,6 +603,32 @@ function loadInternalTasks() {
   } catch(e) { internalTasks=[]; }
 }
 
+// Vá lỗi font "double UTF-8" ở dữ liệu board Khánh Huyền bên trang Content — xem giải
+// thích đầy đủ ở admin.html (cùng hàm, cùng lý do, cùng cách dò dựa vào dải ký hiệu
+// Latin-1 Supplement U+00A1-U+00BF thay vì dò Ã/Â vì đó là chữ cái tiếng Việt hợp lệ).
+// Chỉ áp dụng khi ĐỌC để hiển thị, không ghi gì ngược lại Content nên không đụng tới
+// dữ liệu gốc bên đó.
+function _looksMojibake(s){
+  if(typeof s!=='string'||!s) return false;
+  return ((s.match(/[¡-¿]/g)||[]).length)>=2;
+}
+function _fixMojibakeText(rawText){
+  if(!_looksMojibake(rawText)) return rawText;
+  try{
+    const bytes=Uint8Array.from([...rawText].map(c=>c.charCodeAt(0)&0xFF));
+    return new TextDecoder('utf-8',{fatal:false}).decode(bytes);
+  }catch(e){ return rawText; }
+}
+// Đường lùi: nếu vá làm hỏng cấu trúc JSON (ký tự điều khiển lọt vào chuỗi — đã gặp thực tế
+// ở content-plan-orders-v1--khanh-huyen) thì quay về bản gốc, thà còn lỗi font còn hơn crash
+// cả lượt tải Content.
+function _parseContentJSON(rawText){
+  const fixed=_fixMojibakeText(rawText);
+  if(fixed!==rawText){
+    try{ return JSON.parse(fixed); }catch(e){ /* vá làm hỏng cấu trúc JSON, quay về bản gốc */ }
+  }
+  return JSON.parse(rawText);
+}
 async function _loadContentChannels(){
   _contentChannelMap={};
   // Đọc key cũ (không hậu tố) và từng board song song (trước đây tuần tự từng key,
@@ -613,7 +639,7 @@ async function _loadContentChannels(){
     try{
       const resp=await fetch(`${_CT_API_BASE}?id=${encodeURIComponent(id)}`,{signal:AbortSignal.timeout(8000)});
       if(!resp.ok) return [];
-      const data=await resp.json();
+      const data=_parseContentJSON(await resp.text());
       const raw=data?.[0]?.value;
       return typeof raw==='string'?JSON.parse(raw):(Array.isArray(raw)?raw:[]);
     }catch(e){ console.warn('[Channels]',id,e.message); return []; }
@@ -627,7 +653,7 @@ async function loadContentTasks() {
     try{
       const resp = await fetch(`${_CT_API_BASE}?id=${encodeURIComponent('content-plan-tasks-v2--'+src.id)}`, {signal:AbortSignal.timeout(8000)});
       if (!resp.ok) return [];
-      const data = await resp.json();
+      const data = _parseContentJSON(await resp.text());
       const raw = data?.[0]?.value;
       const tasks = typeof raw==='string' ? JSON.parse(raw) : (Array.isArray(raw)?raw:[]);
       return tasks
@@ -1409,7 +1435,7 @@ async function loadContentOrders(){
      try{
       const resp=await fetch(`${_CT_API_BASE}?id=${encodeURIComponent('content-plan-orders-v1--'+src.id)}`,{signal:AbortSignal.timeout(8000)});
       if(!resp.ok) return [];
-      const data=await resp.json();
+      const data=_parseContentJSON(await resp.text());
       const raw=data?.[0]?.value;
       const orders=typeof raw==='string'?JSON.parse(raw):(Array.isArray(raw)?raw:[]);
       return orders
