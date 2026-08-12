@@ -1783,18 +1783,23 @@ function showCached() {
 }
 
 async function loadAll(notify=false) {
-  // Kick off GAS (slow) without blocking — Supabase renders first
+  // Kick off GAS (slow) without blocking — Content (Cloudflare KV) renders first.
+  // _loadLichTT() cũng qua GAS (chậm như getOrders/getFormSchema) nên phải gộp vào đúng
+  // nhóm "chạy nền" này — trước đây bị để chung với _loadContentTasks/_loadContentOrders
+  // (Cloudflare KV, nhanh), khiến lần hiển thị ĐẦU TIÊN bị kẹt chờ GAS dù comment đã ghi
+  // rõ ý định ngược lại (phát hiện lúc kiểm tra tốc độ tải trang, 2026-08-12).
   const gasOrders = fetch(`${getGasUrl()}?action=getOrders`, {signal:AbortSignal.timeout(15000)}).then(r=>r.json()).catch(()=>null);
   const gasSchema = fetch(`${getGasUrl()}?action=getFormSchema&_=${Date.now()}`, {signal:AbortSignal.timeout(15000)}).then(r=>r.json()).catch(()=>null);
-  // Load Supabase (fast) and render immediately. Channels trước để tasks map ra tên kênh
+  const lichTT = _loadLichTT().catch(e=>console.warn('[loadAll] LichTT:', e.message));
+  // Load Content (Cloudflare KV, nhanh) và render ngay. Channels trước để tasks map ra tên kênh
   // thay vì ID thô (contentTasks đọc _contentChannelMap ngay lúc map, không phải lazy).
-  try { await _loadContentChannels(); await Promise.all([_loadContentTasks(), _loadContentOrders(), _loadLichTT()]); } catch(e) { console.warn('[loadAll] supabase:', e.message); }
+  try { await _loadContentChannels(); await Promise.all([_loadContentTasks(), _loadContentOrders()]); } catch(e) { console.warn('[loadAll] content:', e.message); }
   try { updateStats(); buildDeptChips(); buildTypeChips(); renderStatusChips(); render(); } catch(e) { console.error('[render] error:', e); }
   document.getElementById('loading-state').classList.add('hidden');
   document.getElementById('list').classList.remove('hidden');
-  // Wait for GAS then re-render with full data
+  // Wait for GAS (orders/schema/LichTT) then re-render with full data
   try {
-    const [ordRes, fmRes] = await Promise.all([gasOrders, gasSchema]);
+    const [ordRes, fmRes] = await Promise.all([gasOrders, gasSchema, lichTT]);
     if (ordRes) {
       const _raw = ordRes.orders || ordRes.data || (Array.isArray(ordRes) ? ordRes : []);
       _sheetOrderIds = new Set(_raw.map(o=>o.id));
@@ -2046,7 +2051,9 @@ function setChip(el,key,val) {
 }
 function render() {
   const {rows: filteredRows, intRows} = getFilteredRows();
-  let rows=sorted(filteredRows);
+  // KHÔNG sort ở đây — allMixed bên dưới sort lại toàn bộ (gộp cả intRows) nên sort rows
+  // riêng trước đó chỉ tốn công vô ích (chạy _isRealProject() O(n) cho từng item 1 lần thừa).
+  let rows=filteredRows;
 
   const list=document.getElementById('list');
   const empty=document.getElementById('empty-state');

@@ -771,17 +771,21 @@ async function loadOrders(notify=false) {
   }
 
   // ── B3: Khởi động network requests song song (timeout 8s) ───────
+  // loadLichTT() cũng qua GAS (chậm như getOrders) nên gộp chung nhóm "chạy nền" này —
+  // trước đây bị để chung với loadContentTasks/loadContentOrders (Cloudflare KV, nhanh)
+  // ở B4, khiến bước render B4 bị kẹt chờ GAS (phát hiện lúc kiểm tra tốc độ tải trang,
+  // 2026-08-12, xem cùng lý do ở admin.html).
   const SIG=()=>AbortSignal.timeout(8000);
   const gasPromise=fetch(`${getGasUrl()}?action=getOrders`,{signal:SIG()}).then(r=>r.json()).catch(()=>null);
+  const lichTTPromise=loadLichTT().catch(e=>console.warn('[LichTT]',e.message));
 
-  // ── B4: Chờ Supabase (nhanh) ────────────────────────────────────
+  // ── B4: Chờ Content (Cloudflare KV, nhanh) ───────────────────────
   // Channels PHẢI xong trước Tasks (map tên kênh ngay lúc load, không phải lazy) —
   // chạy chung Promise.all sẽ bị race, card hiện ID kênh thô thay vì tên.
   await _loadContentChannels().catch(e=>console.warn('[Channels]',e.message));
   await Promise.all([
     loadContentTasks().catch(e=>console.warn('[ContentTasks]',e.message)),
     loadContentOrders().catch(e=>console.warn('[ContentOrders]',e.message)),
-    loadLichTT().catch(e=>console.warn('[LichTT]',e.message)),
   ]);
   if(_hasData()){
     try { updateStats(); buildDeptChips(); buildTypeChips(); buildStatusChips(); updatePeriodLabel(); render(); } catch(e){}
@@ -789,8 +793,8 @@ async function loadOrders(notify=false) {
     document.getElementById('list').classList.remove('hidden');
   }
 
-  // ── B5: Chờ GAS ─────────────────────────────────────────────────
-  const gasResult=await gasPromise;
+  // ── B5: Chờ GAS (orders + LichTT) ─────────────────────────────────
+  const [gasResult] = await Promise.all([gasPromise, lichTTPromise]);
   if(gasResult){
     const fresh=(gasResult.orders||[]).filter(o=>!_isMirrorRow(o));
     if(fresh.length>0) allOrders=fresh; else if(allOrders.length===0) allOrders=fresh;
@@ -1006,7 +1010,9 @@ function _renderProjectGroup(projectCode, groupItems){
 // vốn đã dùng danh sách phẳng, nên đổi tracker cho khớp thay vì ngược lại.
 function render() {
   const {rows: filteredRows, intRows: allIntRows} = getFilteredRows();
-  const rows=sortedList(filteredRows);
+  // KHÔNG sort ở đây — allMixed bên dưới sort lại toàn bộ (gộp cả allIntRows) nên sort
+  // rows riêng trước đó chỉ tốn công vô ích, giống fix ở admin.html (2026-08-12).
+  const rows=filteredRows;
 
   const list=document.getElementById('list'), empty=document.getElementById('empty-state');
   if(!rows.length && !allIntRows.length) {
