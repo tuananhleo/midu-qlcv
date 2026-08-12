@@ -1540,6 +1540,110 @@ Mỗi field id chỉ cần trùng với field id ĐÃ CÓ ở bất kỳ loại 
 
 ---
 
+### Task #103 — Rà soát nốt lỗi TDZ còn sót trước khi đưa vào dùng thật (đợt cuối)
+
+**Bối cảnh:** theo yêu cầu "tự check các rule, tự test luồng trước khi đưa vào dùng thật", tiếp tục dò lỗi TDZ (temporal dead zone) trong `admin.html` — cùng lớp lỗi đã phát hiện trước đó ở `_serverRoles` và `_contentSyncInterval`/`_SB_URL`/`_SB_KEY`: biến khai báo bằng `let`/`const` ở cuối file nhưng bị `restoreSession()` (chạy đồng bộ ngay lúc script còn đang parse, nếu trình duyệt đã có session cũ) gọi tới thông qua chuỗi `afterLogin()→loadAll()→_loadContentTasks()/_loadContentOrders()` trước khi kịp chạy tới dòng khai báo gốc.
+
+**Phát hiện qua console thật (reload lại trang có session sẵn):** `Cannot access '_CONTENT_SOURCES' before initialization`. Rà thêm thấy cùng lỗi tiềm ẩn ở `_CONTENT_STATUS_MAP`, `CONTENT_APP_URL`, `_LC_TASK_STATUS_REVERSE` — cùng khai báo muộn, cùng bị gọi sớm.
+
+**Fix:** chuyển toàn bộ 4 hằng số này lên đầu file (gần `currentUser`/`_serverRoles`/`_contentSyncInterval`), xoá khai báo trùng ở vị trí cũ. Từ đây rút kinh nghiệm: mọi helper mới thêm cho luồng đồng bộ Content nên khai báo bằng `function` (hoisted, an toàn bất kể vị trí trong file) thay vì `const`/`let` — áp dụng ngay cho các hàm thêm sau này trong buổi (`_linkRowsHTML`, `_notifyZaloContentOrder`, `_looksMojibake`...).
+
+**Xác nhận:** reload lại trang nhiều lần với session có sẵn (đúng luồng lỗi xảy ra), console sạch hoàn toàn lỗi `ReferenceError`/"before initialization". Đồng thời rà soát tương tự cho `tracker.html`/`order.html` — không phát hiện thêm trường hợp nào.
+
+---
+
+### Task #104 — Hiển thị nhiều link trong "Link kết quả" + fix canh lệch giao diện
+
+**Câu hỏi:** "công việc đó kết quả có nhiều link thì hiển thị thế nào, nếu có link thì sao chép và mở link luôn, chứ nhiều link hơi thì hơi rối". Yêu cầu tiếp: nếu lẫn cả link web và đường dẫn ổ đĩa nội bộ (`Z:\...`) thì xử lý sao.
+
+**Thiết kế:** thêm `_splitLinkResult()`/`_linkRowsHTML()` (đồng bộ cả `admin.html` và `tracker.html`) — tách nội dung theo dòng/dấu phẩy/chấm phẩy, hoặc khoảng trắng đứng trước `http` (phòng dữ liệu cũ dán liền 1 dòng). Mỗi link tách thành 1 dòng riêng, có nút "📋 Sao chép" + "🔗 Mở link" riêng, đánh số "🔗 Kết quả 1/2/3..." khi có từ 2 link trở lên. Đường dẫn không phải `http(s)://` (VD ổ `Z:\...`) vẫn hiện được và copy được, nhưng **không có nút Mở link** — trình duyệt không thể tự mở đường dẫn ổ đĩa cục bộ vì lý do bảo mật.
+
+**Đổi ô nhập:** 5 ô nhập "Link kết quả" trong `admin.html` đổi từ `<input>` 1 dòng sang `<textarea>` 2 dòng — để giữ được xuống dòng thật khi dán nhiều link (input 1 dòng sẽ nuốt mất newline, dính 2 link liền nhau thành 1 chuỗi hỏng).
+
+**Fix kèm theo — canh lệch giao diện:** đổi ô Link kết quả sang textarea cao hơn khiến cả hàng `.admin-strip` (Phân công/Trạng thái/Link kết quả/Ghi chú admin/nút Lưu-Sửa-Xoá) bị lệch nhãn do đang canh theo đáy (`align-items:flex-end`). Đổi sang canh theo đỉnh (`flex-start`) — chỉ ảnh hưởng đúng hàng có ô cao thấp khác nhau, các hàng khác (cao đều) không đổi gì.
+
+---
+
+### Task #105 — Bắn Zalo cho Order từ trang Content (tab "Order")
+
+**Câu hỏi:** "nếu có order từ trang content thì có thông báo về group Zalo không" → xác nhận: KHÔNG, thông báo Zalo (Task #101) trước đây chỉ gắn vào luồng nộp qua `order.html`, cả trang Content lẫn `admin.html` không có đoạn code nào gọi Zalo cho việc đồng bộ từ Content.
+
+**Yêu cầu:** "anh muốn tất cả các order đều được bắn thông báo về Zalo" → sau trao đổi, thu hẹp phạm vi đúng ý: chỉ áp dụng cho **tab "Order"** bên trang Content (order Thiết kế/Video/Ads/Media/Chatbot/Khác — khái niệm "order" thật sự, ai đó yêu cầu việc), KHÔNG áp dụng cho lịch bài đăng thường (content calendar — nhóm Content tự viết, không phải ai "gửi" cho ai, bắn thông báo sẽ quá ồn) hay việc nội bộ tạo trực tiếp trong `admin.html`.
+
+**Fix:** thêm `_notifyZaloContentOrder()` trong `admin.html` (cùng cơ chế/token Smax.ai với `order.html`), gắn vào đúng điểm `_mirrorOrderToSheet()` xác nhận 1 order **mới lần đầu** (tái dùng cơ chế chống trùng có sẵn qua `_sheetOrderIds`, dùng chung mọi máy/trình duyệt — xem Task #80) — không cần dựng thêm cơ chế phát hiện "mới" riêng. Chỉ kích hoạt khi `order._fromContentOrder === true`.
+
+**Lưu ý:** tính năng chỉ chạy được khi đồng bộ Content thành công — phụ thuộc trực tiếp vào Task #106 bên dưới.
+
+---
+
+### Task #106 — Trang Content bị lỗi hiển thị, chuyển hạ tầng từ Supabase sang Cloudflare KV — cập nhật đồng bộ theo + vá lỗi font dữ liệu Khánh Huyền
+
+**Câu hỏi:** "Công việc từ trang content bị lỗi à" — tổng số công việc hiển thị tụt mạnh (còn 9, toàn dòng test cũ) dù đơn GAS vẫn bình thường.
+
+**Nguyên nhân gốc (giai đoạn 1):** kiểm tra network thấy toàn bộ request gọi Supabase (`*.supabase.co/rest/v1/plan_data`) trả về **HTTP 402 — Payment Required**, tức project Supabase miễn phí đã **vượt hạn mức** (nghi vấn chính: ảnh dán/tải lên lưu thẳng dạng base64 trong cùng khối JSON, bị `admin.html`/`tracker.html` tải lại TOÀN BỘ định kỳ mỗi 90-120 giây/tab suốt cả ngày — egress cộng dồn rất nhanh). Đã báo cáo, đề xuất hướng khắc phục miễn phí (giãn chu kỳ polling, dừng polling khi tab ẩn, chuyển ảnh sang Supabase Storage) nhưng CHƯA thực hiện vì chờ quyết định.
+
+**Chuyển hướng bất ngờ:** người dùng báo "trang content hoạt động rồi" — kiểm tra lại thấy Supabase **vẫn đang lỗi 402 y hệt**, nhưng trang Content (`content-marketing.pages.dev`) đã tải được bình thường. Soi network mới phát hiện: **trang Content đã tự chuyển hẳn hạ tầng dữ liệu sang Cloudflare Pages Functions** (`/api/kv?id=...`, `/api/img?id=...`, lưu ở Cloudflare KV) — không còn gọi Supabase nữa (0/93 request tới supabase.co). File nguồn `Content-Da-kenh-1-file.html` (đọc lại) xác nhận đúng: `API_BASE='https://content-marketing.pages.dev/api/kv'`, không còn `SUPABASE_URL`/`SUPABASE_ANON_KEY`.
+
+**Hệ quả với QLCV:** `admin.html`/`tracker.html` vẫn gọi thẳng Supabase cũ để lấy Lịch Content — nghĩa là dù Supabase có được mở lại hay không, **sẽ KHÔNG BAO GIỜ thấy dữ liệu Content mới nữa** vì trang Content không còn ghi vào đó.
+
+**Fix:** đổi toàn bộ nơi gọi Content (`_loadContentChannels`/`_loadContentTasks`/`_loadContentOrders`/`_writeBackContentOrder`/`_writeBackContentTask`, cả 2 file `admin.html` và `tracker.html`) từ Supabase REST (`*.supabase.co/rest/v1/plan_data?id=eq.X&select=value`, cần header `apikey`+`Authorization`) sang Cloudflare KV (`content-marketing.pages.dev/api/kv?id=X`, không cần khoá). Format response `{value:...}` và tên key (`content-plan-tasks-v2--<board>`...) giữ nguyên y hệt nên đổi gọn, đã xác nhận trực tiếp qua gọi API thật. Xoá luôn đoạn tự-test quyền ghi Supabase cũ (không còn ý nghĩa với backend mới).
+
+**Phát hiện thêm — lỗi font "double UTF-8":** dữ liệu board **Khánh Huyền** hiện chữ lỗi kiểu `ÄÃ£ ÄÄng` thay vì "Đã đăng" (board Kim Oanh không bị). Xác nhận qua browser thật (không phải do công cụ debug — PowerShell tự nó cũng có vấn đề encoding riêng gây nhiễu chẩn đoán ban đầu, phải loại trừ). Theo yêu cầu "xử lý tại trang của mình, không đụng vào trang content" — thêm `_looksMojibake()`/`_fixMojibakeText()`/`_parseContentJSON()` (đồng bộ cả 2 file) tự phát hiện + vá lỗi CHỈ khi hiển thị, không ghi ngược gì về Content. Dấu hiệu nhận biết: dải ký hiệu Latin-1 Supplement `U+00A1-U+00BF` (¡-¿) — đại diện continuation-byte UTF-8 bị đọc nhầm Latin-1, không bao giờ xuất hiện trong văn bản bình thường. **Không được dùng ký tự Ã/Â để dò** — tự kiểm chứng cách đó báo sai tràn lan vì Ã/Â là chữ cái tiếng Việt hợp lệ (ã, â), suýt vá nhầm cả dữ liệu Kim Oanh vốn đúng. Có thêm lớp an toàn `_parseContentJSON()`: nếu bản đã vá làm hỏng cấu trúc JSON (ký tự điều khiển lọt vào chuỗi — gặp thực tế ở `content-plan-orders-v1--khanh-huyen`) thì quay về bản gốc thay vì crash cả lượt tải.
+
+**Xác nhận bằng dữ liệu thật:** gọi trực tiếp cả 6 tổ hợp (channels/tasks/orders × 2 board) qua Node — Kim Oanh không bị đụng vào (giữ nguyên đúng), Khánh Huyền từ chuỗi lỗi font sửa thành tiếng Việt đọc được bình thường ("Đã đăng", nội dung bài viết mạch lạc). Tổng số công việc trên tracker.html tăng lại từ 9 lên 54, đúng dữ liệu Lịch Content thật.
+
+---
+
+### Task #107 — Lỗi đăng nhập do URL GAS cũ bị lưu đè trong localStorage
+
+**Triệu chứng:** màn đăng nhập báo `Lỗi kết nối: Unexpected token '<', "<!DOCTYPE "... is not valid JSON`.
+
+**Nguyên nhân:** `admin.html` có tính năng cho phép ghi đè URL GAS qua ô Cài đặt, lưu vào `localStorage` (`midu_mkt_gas_url`) — ưu tiên cao hơn hằng số `DEFAULT_GAS` trong code. Trong đợt debug Zalo trước đó (URL deployment đổi nhiều lần), giá trị này bị lưu đè bằng 1 URL deployment cũ nay đã chết, khiến request POST `loginUser` nhận về trang lỗi HTML của Google thay vì JSON — dù `DEFAULT_GAS` trong code hiện tại đã đúng và hoạt động tốt (xác nhận qua gọi thẳng bằng PowerShell, trả JSON hợp lệ).
+
+**Fix (không phải sửa code — sửa dữ liệu trình duyệt người dùng):** hướng dẫn xoá key `midu_mkt_gas_url` khỏi `localStorage` qua Console (F12) hoặc tab Application/Storage của DevTools, tải lại trang. Không cần đăng nhập trước để làm bước này (đây chính là lý do vô hiệu hoá luôn cả settings UI vốn dùng để tự sửa URL).
+
+**Xác nhận:** đăng nhập lại thành công sau khi xoá key.
+
+---
+
+### Task #108 — Tối ưu tốc độ tải trang + fix phiên đăng nhập không dùng lại được khi bấm link từ Zalo
+
+**Yêu cầu:** "Xem lại tốc độ load trang" + "bấm từ link xem chi tiết ở Zalo k vào được luôn đầu việc, bắt đăng nhập admin dù trình duyệt đang đăng nhập sẵn rồi".
+
+**Tốc độ tải — 2 điểm sửa (đồng bộ cả `admin.html`/`tracker.html`):**
+1. `_loadLichTT()`/`loadLichTT()` (qua GAS, chậm — giống `getOrders`) trước đây bị gộp chung `Promise.all` với các lời gọi Content (Cloudflare KV, nhanh) — khiến lần hiển thị đầu tiên bị kẹt chờ GAS xong mới hiện, dù comment code sẵn có đã ghi rõ ý định để GAS chạy nền không chặn render. Tách riêng, chạy song song với `getOrders`/`getFormSchema`, gộp kết quả ở bước chờ GAS phía sau.
+2. `render()` gọi hàm sắp xếp (`sorted()`/`sortedList()`) 2 lần liên tiếp trên cùng 1 tập dữ liệu — lần đầu chỉ để kiểm tra rỗng hay không rồi bị sắp xếp lại ngay lần 2 (`allMixed`, quyết định thứ tự hiển thị cuối). Bỏ lần sort đầu (không ảnh hưởng kết quả hiển thị, giảm 1 nửa chi phí `_isRealProject()` vốn chạy O(n) cho từng phần tử).
+
+**Bấm link Zalo bắt đăng nhập lại — nguyên nhân thật:** phiên đăng nhập lưu ở `sessionStorage` — chỉ sống trong **đúng 1 tab trình duyệt**, không chia sẻ được sang tab mới dù cùng trình duyệt, cùng máy, cùng đang đăng nhập ở tab khác. Bấm link "Xem chi tiết" từ tin nhắn Zalo luôn mở 1 tab mới → tab đó luôn coi như chưa đăng nhập. Mâu thuẫn trực tiếp với thiết kế phiên có hạn 7 ngày phía server (Sessions sheet, Task #2-3) — `sessionStorage` còn tự mất khi đóng hẳn trình duyệt, phá luôn ý nghĩa "7 ngày" đó.
+
+**Fix:** đổi toàn bộ `sessionStorage` → `localStorage` cho việc lưu phiên đăng nhập (`_saveSession()`, `restoreSession()`, `doLogout()`). Tiện thể sửa 1 lỗi liên quan phát hiện được: chỗ tự sửa hồ sơ cá nhân (User Management) đang lưu session sai định dạng (thiếu bọc `{user, token}`), sẽ làm hỏng phiên ở lần tải trang kế tiếp — đổi sang gọi đúng `_saveSession()`.
+
+**Lưu ý vận hành:** đổi loại bộ nhớ lưu trữ nên mọi người cần đăng nhập lại 1 lần cuối sau khi bản này lên — từ đó phiên tự chia sẻ đúng giữa mọi tab, bấm link Zalo vào thẳng không cần đăng nhập lại (trong hạn 7 ngày).
+
+---
+
+### Task #109 — Dọn dữ liệu test (chưa hoàn tất — cần admin tự xoá)
+
+**Yêu cầu:** "xóa hết công việc test cho anh nhé", đi kèm câu hỏi trước đó về tốc độ tải trang.
+
+**Đã làm:** dò qua `getOrders` (GAS), lọc theo người gửi `Claude Test N` — tìm đúng 9 dòng test còn sót từ đợt debug Zalo (Task #101), toàn bộ đã tự gắn nhãn "[TEST]"/"có thể xoá" ngay từ lúc tạo:
+
+| ID | Loại | Tên |
+|---|---|---|
+| KH-260806-153032 | Khác | [TEST] Kiểm tra thông báo Zalo |
+| KH-260806-155254 | Khác | [TEST 2] Kiem tra lai thong bao Zalo |
+| KH-260806-155547 | Khác | [TEST 2] Kiem tra lai thong bao Zalo (trùng) |
+| KH-260806-164851 | Khác | [TEST 3] Test tren deployment moi |
+| CT-260806-170215 | Content | [TEST 5] Kiem tra lai sau khi sua thongtinlead |
+| MD-260806-171553 | Media | [TEST 6] Kiem tra URL dang live |
+| KH-260806-172139 | Khác | [TEST 7] Debug Zalo |
+| AD-260806-172438 | Chạy Ads | [TEST 8] Sau khi chay _testAuthExternalRequest |
+| KH-260806-173630 | Khác | [TEST 10] Test lai URL that |
+
+**Vì sao chưa xoá được:** action `deleteOrder` (GAS) bắt buộc có session token hợp lệ + quyền `canDelete` (chỉ admin) — theo đúng nguyên tắc đã thống nhất từ đầu buổi, không tự nhập mật khẩu/đăng nhập thay người dùng, nên không tự tạo được token để gọi API xoá. Người dùng tự xoá qua giao diện: gõ "TEST" vào ô tìm kiếm tab Danh sách → lọc đúng 9 dòng trên → bấm 🗑️ Xoá từng dòng.
+
+---
+
 ## 14. Liên kết nhanh
 
 | Tên | URL |
@@ -1550,6 +1654,6 @@ Mỗi field id chỉ cần trùng với field id ĐÃ CÓ ở bất kỳ loại 
 | GitHub repo | https://github.com/tuananhleo/midu-qlcv |
 | GAS editor | https://script.google.com/home |
 | GAS backend URL | https://script.google.com/macros/s/AKfycbyYgHkB8bngq9SQ23TACimx9svMpl1ZPZw8Yo3PC0YRYMoER5indo9ULZlAgldIKLMH/exec |
-| Supabase dashboard | https://supabase.com/dashboard/project/loqcqtuouagzaqwdmhji |
-| Lịch Content (link chung, đổi board bằng dropdown "BẢNG CỦA" hoặc `#ws=<id>`) | https://content-marketing.pages.dev/ |
+| Lịch Content — dữ liệu qua Cloudflare KV (`/api/kv`, `/api/img`), KHÔNG còn dùng Supabase từ 2026-08-11 (xem Task #106) | https://content-marketing.pages.dev/ |
 | Lịch Content — board Khánh Huyền | https://content-marketing.pages.dev/#ws=khanh-huyen |
+| Supabase dashboard (project cũ, đã ngừng dùng cho Lịch Content — có thể còn dữ liệu lịch sử) | https://supabase.com/dashboard/project/loqcqtuouagzaqwdmhji |
