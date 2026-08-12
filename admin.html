@@ -1440,8 +1440,13 @@ function parseCompleted(val) {
 }
 
 // ── Auth ───────────────────────────────────────────────────────
+// Dùng localStorage (chia sẻ được giữa mọi tab/cửa sổ cùng trình duyệt), KHÔNG dùng
+// sessionStorage (chỉ sống trong đúng 1 tab) — trước đây dùng sessionStorage khiến bấm
+// link từ Zalo (mở tab mới) luôn bắt đăng nhập lại dù tab khác đang đăng nhập sẵn, mâu
+// thuẫn với phiên đăng nhập có hạn 7 ngày phía server (Sessions sheet) — phát hiện
+// 2026-08-12, sessionStorage còn tự mất khi đóng hẳn trình duyệt, phá luôn ý đồ 7 ngày đó.
 function _saveSession() {
-  sessionStorage.setItem('midu_mkt_session', JSON.stringify({ user: currentUser, token: authToken }));
+  localStorage.setItem('midu_mkt_session', JSON.stringify({ user: currentUser, token: authToken }));
 }
 
 async function doLogin() {
@@ -1529,7 +1534,7 @@ function doLogout() {
     fetch(getGasUrl(), { method:'POST', body:JSON.stringify({ action:'logout', token:authToken }) }).catch(()=>{});
   }
   currentUser = null; allUsers = []; authToken = null;
-  sessionStorage.removeItem('midu_mkt_session');
+  localStorage.removeItem('midu_mkt_session');
   document.getElementById('login-screen').classList.add('show');
   document.getElementById('l-username').value = '';
   document.getElementById('l-password').value = '';
@@ -3608,7 +3613,7 @@ document.addEventListener('keydown',e=>{
 // ── SESSION RESTORE ────────────────────────────────────────────
 (function restoreSession() {
   try {
-    const saved = JSON.parse(sessionStorage.getItem('midu_mkt_session') || 'null');
+    const saved = JSON.parse(localStorage.getItem('midu_mkt_session') || 'null');
     if (saved && saved.user && saved.user.role) {
       currentUser = saved.user;
       authToken = saved.token || null;
@@ -3895,7 +3900,9 @@ async function saveUserForm() {
     // liền, không cần đăng xuất/đăng nhập lại.
     if (currentUser && _editingUserId === currentUser.id) {
       currentUser = { ...currentUser, displayName, role, permOverrides, allowedTypes };
-      sessionStorage.setItem('midu_mkt_session', JSON.stringify(currentUser));
+      // Trước đây lưu thẳng currentUser (thiếu bọc {user,token}) — sai định dạng so với
+      // _saveSession()/restoreSession() đang chờ, làm hỏng phiên ở lần tải trang kế tiếp.
+      _saveSession();
       applyRoleUI();
     }
     closeUserForm();
