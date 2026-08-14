@@ -1644,6 +1644,22 @@ Mỗi field id chỉ cần trùng với field id ĐÃ CÓ ở bất kỳ loại 
 
 ---
 
+### Task #110 — Go-live: dọn backend GAS vào git, đổi group Zalo, rà công việc trễ, viết hướng dẫn dùng
+
+**Ghi lại `MIDU_MKT_Script.gs` vào git:** file này có 304 dòng thay đổi (session token + phân quyền theo vai trò qua sheet Sessions/Roles, xem Task #1-6 và fix hiển thị giờ Task #102) đã áp dụng thật trên GAS live từ trước nhưng chưa từng commit — không có lịch sử/backup qua git cho phần backend. Đã commit nguyên trạng, không đổi gì đang chạy.
+
+**Đổi group Zalo nhận thông báo:** theo yêu cầu, đổi `ZALO_NOTIFY_CUSTOMER_ID` (Smax.ai) sang customer id mới `zlw1390913189117079730` — áp dụng cho cả `order.html` (order nộp qua form công khai) và `admin.html` (order tab "Order" trang Content, Task #105).
+
+**Rà công việc đang trễ hạn — không phải bug:** kiểm tra qua API thật (loại trừ đúng các dòng "Sao lưu" mirror trong sheet Orders — dò ẩu ban đầu ra 134 dòng "trễ" toàn là trùng lặp mirror, sau khi lọc đúng còn **0 đơn GAS trễ, 0 bài Lịch Content trễ, 5 order tab "Order" (đều board Kim Oanh) trễ thật**. Kiểm tra chi tiết từng dòng (không chỉ trạng thái, cả `deliverableLink`) xác nhận cả 5 đều **chưa có kết quả nộp** — không phải lỗi đồng bộ hay hiển thị sai, mà là công việc thật sự đang đọng bên phía người phụ trách (Lê Ngọc Huy, Bùi Thành An, Đỗ Thùy Linh), cần nhắc trực tiếp.
+
+**Thêm "Người phụ trách" vào tin Zalo cho Order Content:** order từ tab "Order" trang Content thường đã chọn sẵn người phụ trách ngay lúc tạo (field `person` bên Content, khác với order.html — chưa có ai lúc mới gửi). Thêm dòng `Người phụ trách: ...` vào `_notifyZaloContentOrder()` (đọc từ `order.assignedTo`), các dòng khác trong tin giữ nguyên không đổi.
+
+**Viết thông báo + hướng dẫn sử dụng cho toàn team** (gửi thẳng qua chat, không lưu file riêng) — gồm 3 link chính (order.html/tracker.html/admin.html), cách gửi yêu cầu, cách xem tiến độ, cách đăng nhập admin cập nhật kết quả, và lưu ý vận hành lúc mới go-live (hard refresh 1 lần, đăng nhập lại 1 lần do đổi sessionStorage→localStorage, mở bằng trình duyệt ngoài nếu bấm link Zalo mà bị bắt đăng nhập lại).
+
+**Quy tắc tài khoản (nhắc lại cho rõ, không phải thay đổi mới):** mật khẩu mặc định `Midu123!` khi tạo tài khoản mới (Task #82), tên đăng nhập theo mẫu *tên gọi thường ngày + họ*, viết thường không dấu không khoảng trắng (VD Lê Ngọc Huy → `huyle`). Danh sách đầy đủ ai username gì xem trực tiếp ở admin.html → Cài đặt → Quản lý người dùng (không lưu trong tài liệu này).
+
+---
+
 ## 14. Liên kết nhanh
 
 | Tên | URL |
