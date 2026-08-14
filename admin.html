@@ -4142,6 +4142,9 @@ function _notifyZaloContentOrder(order){
     const lines=[
       typeLabel+' — '+(order.projectName||order.title||'(chưa đặt tên)'),
       'Người gửi: '+(order.requester||'–')+' · '+(order.department||'–'),
+      // Order từ trang Content thường đã chọn sẵn người phụ trách ngay lúc tạo (field
+      // "person" bên Content) — khác với order.html (chưa có ai phụ trách lúc mới gửi).
+      'Người phụ trách: '+(order.assignedTo||'–'),
       'Deadline: '+(dlStr||'chưa có'),
       'Nguồn: Lịch Content',
       'Xem chi tiết: '+ADMIN_SELF_URL+'?id='+encodeURIComponent(order.id),
