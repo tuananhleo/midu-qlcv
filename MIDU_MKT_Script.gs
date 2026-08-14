@@ -270,12 +270,20 @@ function syncColumns(sheet, meta) {
 function doGet(e) {
   try {
     const action = (e.parameter || {}).action;
+    // Đọc công khai (order.html/tracker.html không cần đăng nhập)
     if (action === 'getOrders')    return respond(getOrdersData());
     if (action === 'getSchema')    return respond({ schema: loadSchema() });
     if (action === 'getFormSchema') return respond({ schema: loadFormSchema() });
-    if (action === 'getUsers')     return respond(getUsersData());
     if (action === 'getLichTT')    return respond(getLichTTData());
     if (action === 'ping')         return respond({ ok: true, time: new Date().toISOString() });
+
+    // Cần đăng nhập — lộ thông tin nội bộ (username, role, vai trò/quyền)
+    if (action === 'getUsers' || action === 'getRoles') {
+      const auth = requireAuth((e.parameter || {}).token);
+      if (auth.error) return respond(auth);
+      if (action === 'getUsers') return respond(getUsersData());
+      if (action === 'getRoles') return respond(getRolesData());
+    }
     return respond({ error: 'Unknown action: ' + action });
   } catch (ex) { return respond({ error: ex.toString() }); }
 }
@@ -285,17 +293,63 @@ function doPost(e) {
   try {
     const data = JSON.parse(e.postData.contents);
     const action = data.action;
-    if (action === 'submitOrders')  return respond(submitOrdersData(data.orders));
+
+    // Không cần đăng nhập — form order.html là public, ai trong công ty có link
+    // cũng gửi yêu cầu được, không bắt buộc có tài khoản QLCV.
+    if (action === 'loginUser')    return respond(loginUserData(data.username, data.password));
+    if (action === 'submitOrders') return respond(submitOrdersData(data.orders));
+
+    // Mọi action còn lại (thao tác quản trị trong admin.html) đều bắt buộc có session token hợp lệ
+    const auth = requireAuth(data.token);
+    if (auth.error) return respond(auth);
+    const authUser = auth.user;
+
+    if (action === 'logout') { deleteSession(data.token); return respond({ success: true }); }
+
     if (action === 'addOrder')      return respond(addOrderData(data.order));
     if (action === 'updateOrder')   return respond(updateOrderData(data.id, data.updates));
-    if (action === 'deleteOrder')   return respond(deleteOrderData(data.id));
     if (action === 'updateLichTT')  return respond(updateLichTTEntryData(data.id, data.updates));
-    if (action === 'saveFormSchema') return respond(saveFormSchemaData(data.schema));
-    if (action === 'loginUser')     return respond(loginUserData(data.username, data.password));
-    if (action === 'createUser')    return respond(createUserData(data.user));
-    if (action === 'updateUser')    return respond(updateUserData(data.id, data.updates));
-    if (action === 'deleteUser')    return respond(deleteUserData(data.id));
     if (action === 'splitProjectAI') return respond(splitProjectAI(data.description));
+
+    // Chỉ admin (canDelete)
+    if (action === 'deleteOrder') {
+      if (!hasPerm(authUser, 'canDelete')) return respond({ error: 'Không có quyền xoá đơn hàng' });
+      return respond(deleteOrderData(data.id));
+    }
+    // Chỉ admin (canFormBuilder)
+    if (action === 'saveFormSchema') {
+      if (!hasPerm(authUser, 'canFormBuilder')) return respond({ error: 'Không có quyền chỉnh sửa form' });
+      return respond(saveFormSchemaData(data.schema));
+    }
+    // Chỉ admin (canUserMgmt) — trừ tự đổi mật khẩu của chính mình
+    if (action === 'createUser') {
+      if (!hasPerm(authUser, 'canUserMgmt')) return respond({ error: 'Không có quyền quản lý người dùng' });
+      return respond(createUserData(data.user));
+    }
+    if (action === 'updateUser') {
+      const isSelf = String(data.id) === String(authUser.id);
+      const keys = Object.keys(data.updates || {});
+      const onlyOwnPassword = isSelf && keys.length > 0 && keys.every(k => k === 'password');
+      if (!hasPerm(authUser, 'canUserMgmt') && !onlyOwnPassword) return respond({ error: 'Không có quyền' });
+      return respond(updateUserData(data.id, data.updates));
+    }
+    if (action === 'deleteUser') {
+      if (!hasPerm(authUser, 'canUserMgmt')) return respond({ error: 'Không có quyền quản lý người dùng' });
+      return respond(deleteUserData(data.id));
+    }
+    if (action === 'createRole') {
+      if (!hasPerm(authUser, 'canUserMgmt')) return respond({ error: 'Không có quyền quản lý vai trò' });
+      return respond(createRoleData(data.role));
+    }
+    if (action === 'updateRole') {
+      if (!hasPerm(authUser, 'canUserMgmt')) return respond({ error: 'Không có quyền quản lý vai trò' });
+      return respond(updateRoleData(data.id, data.updates));
+    }
+    if (action === 'deleteRole') {
+      if (!hasPerm(authUser, 'canUserMgmt')) return respond({ error: 'Không có quyền quản lý vai trò' });
+      return respond(deleteRoleData(data.id));
+    }
+
     return respond({ error: 'Unknown action: ' + action });
   } catch (ex) { return respond({ error: ex.toString() }); }
 }
@@ -399,11 +453,19 @@ function getOrdersData() {
   const values = sheet.getRange(2, 1, lastRow - 1, numCols).getValues();
   const idIdx = headerMap['ID'];
 
-  // Hàm chuyển giá trị ô Sheets thành string: Date → YYYY-MM-DD, khác → String()
+  // Hàm chuyển giá trị ô Sheets thành string: Date → YYYY-MM-DD (kèm giờ:phút:giây nếu có,
+  // VD submittedAt/completedAt/resultAt), khác → String(). Sheets tự động chuyển chuỗi
+  // "dd/mm/yyyy HH:MM:SS" client gửi lên thành ô Date thật — nếu chỉ lấy phần ngày (như
+  // trước đây) sẽ mất giờ, và khi client parse lại "YYYY-MM-DD" trơn thành Date, JS hiểu
+  // là nửa đêm UTC, quy đổi sang giờ VN (UTC+7) ra sai lệch 7 tiếng. Giữ nguyên giờ khi
+  // khác nửa đêm; field date-only thật (deadline) luôn có giờ = 00:00:00 nên vẫn hiện
+  // đúng dạng chỉ-ngày như cũ.
   const fmtCell = val => {
     if (val instanceof Date && !isNaN(val)) {
       const p = n => String(n).padStart(2,'0');
-      return `${val.getFullYear()}-${p(val.getMonth()+1)}-${p(val.getDate())}`;
+      const dateStr = `${val.getFullYear()}-${p(val.getMonth()+1)}-${p(val.getDate())}`;
+      const hasTime = val.getHours() !== 0 || val.getMinutes() !== 0 || val.getSeconds() !== 0;
+      return hasTime ? `${dateStr} ${p(val.getHours())}:${p(val.getMinutes())}:${p(val.getSeconds())}` : dateStr;
     }
     return String(val ?? '');
   };
@@ -667,8 +729,10 @@ function loginUserData(username, password) {
       row[6].toString() === 'true'
     );
     if (!r) return { error: 'Sai tên đăng nhập hoặc mật khẩu' };
-    return { user: {
-      id:String(r[0]), username:String(r[1]), role:String(r[3]), displayName:String(r[4]), dept:String(r[5]),
+    const userId = String(r[0]);
+    const token = createSession(userId);
+    return { token, user: {
+      id:userId, username:String(r[1]), role:String(r[3]), displayName:String(r[4]), dept:String(r[5]),
       permOverrides: _parsePermOverrides(r[8]),
       allowedTypes: String(r[9]||'').split(',').map(s=>s.trim()).filter(Boolean),
     } };
@@ -745,6 +809,234 @@ function deleteUserData(id) {
     sh.deleteRow(idx + 2);
     return { success:true };
   } catch(e) { return { error: e.toString() }; }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PHIÊN ĐĂNG NHẬP (Sessions sheet) — bắt buộc mọi action ghi/xoá
+// phải kèm token hợp lệ, thay vì chỉ kiểm tra ở màn hình đăng nhập
+// phía client (trước đây API mở hoàn toàn, ai biết URL cũng gọi
+// thẳng được mà không cần đăng nhập).
+// ═══════════════════════════════════════════════════════════════
+const SHEET_SESSIONS = 'Sessions';
+const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 ngày
+
+function getOrCreateSessionsSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = ss.getSheetByName(SHEET_SESSIONS);
+  if (!sh) {
+    sh = ss.insertSheet(SHEET_SESSIONS);
+    sh.getRange(1,1,1,4).setValues([['Token','UserId','Đăng nhập lúc','Hết hạn lúc']]);
+    sh.getRange(1,1,1,4).setBackground('#fef3c7').setFontWeight('bold').setFontColor('#92400e');
+    sh.setFrozenRows(1);
+    sh.setColumnWidth(1, 300);
+  }
+  return sh;
+}
+
+// Dọn các phiên đã hết hạn — gọi khi đăng nhập mới, để sheet không phình to dần.
+function _cleanExpiredSessions(sh) {
+  const last = sh.getLastRow();
+  if (last <= 1) return;
+  const rows = sh.getRange(2,1,last-1,4).getValues();
+  const now = Date.now();
+  const staleRows = [];
+  rows.forEach((r,i) => {
+    const exp = new Date(r[3]);
+    if (isNaN(exp) || exp.getTime() < now) staleRows.push(i+2);
+  });
+  staleRows.sort((a,b)=>b-a).forEach(r => sh.deleteRow(r));
+}
+
+function createSession(userId) {
+  const sh = getOrCreateSessionsSheet();
+  _cleanExpiredSessions(sh);
+  const token = Utilities.getUuid();
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + SESSION_TTL_MS);
+  sh.appendRow([token, String(userId), now.toISOString(), expiresAt.toISOString()]);
+  return token;
+}
+
+function deleteSession(token) {
+  if (!token) return;
+  const sh = getOrCreateSessionsSheet();
+  const last = sh.getLastRow();
+  if (last <= 1) return;
+  const tokens = sh.getRange(2,1,last-1,1).getValues().flat();
+  const idx = tokens.indexOf(token);
+  if (idx >= 0) sh.deleteRow(idx + 2);
+}
+
+// Trả { user: {...} } nếu token hợp lệ + tài khoản còn active, hoặc { error }.
+function validateToken(token) {
+  if (!token) return { error: 'Chưa đăng nhập' };
+  const sh = getOrCreateSessionsSheet();
+  const last = sh.getLastRow();
+  if (last <= 1) return { error: 'Phiên đăng nhập không hợp lệ, vui lòng đăng nhập lại' };
+  const rows = sh.getRange(2,1,last-1,4).getValues();
+  const idx = rows.findIndex(r => r[0] === token);
+  if (idx < 0) return { error: 'Phiên đăng nhập không hợp lệ, vui lòng đăng nhập lại' };
+  const expiresAt = new Date(rows[idx][3]);
+  if (isNaN(expiresAt) || expiresAt.getTime() < Date.now()) {
+    sh.deleteRow(idx + 2);
+    return { error: 'Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại' };
+  }
+  const userId = String(rows[idx][1]);
+  const userSh = getOrCreateUsersSheet();
+  const uLast = userSh.getLastRow();
+  if (uLast <= 1) return { error: 'Không tìm thấy tài khoản' };
+  const uRows = userSh.getRange(2,1,uLast-1,USERS_NUM_COLS).getValues();
+  const uRow = uRows.find(r => String(r[0]) === userId);
+  if (!uRow) return { error: 'Tài khoản không tồn tại' };
+  if (uRow[6].toString() !== 'true') return { error: 'Tài khoản đã bị khoá' };
+  return { user: {
+    id: String(uRow[0]), username: String(uRow[1]), role: String(uRow[3]),
+    displayName: String(uRow[4]), dept: String(uRow[5]),
+    permOverrides: _parsePermOverrides(uRow[8]),
+    allowedTypes: String(uRow[9]||'').split(',').map(s=>s.trim()).filter(Boolean),
+  } };
+}
+
+function requireAuth(token) {
+  const result = validateToken(token);
+  if (result.error) return { error: result.error };
+  return { user: result.user };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// VAI TRÒ (Roles sheet) — trước đây BUILTIN_ROLES/PERM_LEVELS và vai
+// trò tuỳ chỉnh chỉ định nghĩa/lưu ở client (localStorage), server
+// không biết role nào có quyền gì nên không tự chặn được. Nay chuyển
+// toàn bộ vai trò (gốc + tuỳ chỉnh) sang lưu ở đây, admin.html đọc
+// qua action getRoles thay vì hard-code, đồng bộ mọi máy.
+// ═══════════════════════════════════════════════════════════════
+const SHEET_ROLES = 'Roles';
+
+// 3 mức quyền cơ bản — khớp PERM_LEVELS phía admin.html.
+const PERM_LEVELS_GAS = {
+  admin:    { canDelete:true,  canSettings:true,  canFormBuilder:true,  canUserMgmt:true,  canReport:true  },
+  leader:   { canDelete:false, canSettings:false, canFormBuilder:false, canUserMgmt:false, canReport:true  },
+  employee: { canDelete:false, canSettings:false, canFormBuilder:false, canUserMgmt:false, canReport:false },
+};
+
+// Vai trò gốc — seed lần đầu khi sheet Roles chưa có dữ liệu (copy từ
+// BUILTIN_ROLES cũ trong admin.html, giữ nguyên id/label/icon/permLevel).
+const BUILTIN_ROLES_GAS = [
+  { id:'admin',           label:'Quản trị viên',          icon:'🔑', permLevel:'admin'    },
+  { id:'leader_thiet_ke', label:'Trưởng nhóm Thiết Kế',   icon:'👑', permLevel:'leader'   },
+  { id:'leader_media',    label:'Trưởng nhóm Media',      icon:'👑', permLevel:'leader'   },
+
+  { id:'ts_thiet_ke',     label:'Thực tập sinh Thiết Kế', icon:'🌱', permLevel:'employee' },
+  { id:'tapsu_thiet_ke',  label:'Tập sự Thiết Kế',        icon:'🎨', permLevel:'employee' },
+  { id:'nv_thiet_ke',     label:'Nhân viên Thiết Kế',     icon:'🎨', permLevel:'employee' },
+
+  { id:'ts_media',        label:'Thực tập sinh Media',    icon:'🌱', permLevel:'employee' },
+  { id:'tapsu_media',     label:'Tập sự Media',           icon:'📸', permLevel:'employee' },
+  { id:'nv_media',        label:'Nhân viên Media',        icon:'📸', permLevel:'employee' },
+
+  { id:'ts_cskh',         label:'Thực tập sinh CSKH',     icon:'🌱', permLevel:'employee' },
+  { id:'tapsu_cskh',      label:'Tập sự CSKH',            icon:'🎧', permLevel:'employee' },
+  { id:'nv_cskh',         label:'Nhân viên CSKH',         icon:'🎧', permLevel:'employee' },
+
+  { id:'ts_ai',           label:'Thực tập sinh AI',       icon:'🌱', permLevel:'employee' },
+  { id:'tapsu_ai',        label:'Tập sự AI',              icon:'🤖', permLevel:'employee' },
+  { id:'nv_ai',           label:'Nhân viên AI',           icon:'🤖', permLevel:'employee' },
+
+  { id:'ts_phanmem',      label:'Thực tập sinh Phần mềm', icon:'🌱', permLevel:'employee' },
+  { id:'tapsu_phanmem',   label:'Tập sự Phần mềm',        icon:'💻', permLevel:'employee' },
+  { id:'nv_phanmem',      label:'Nhân viên Phần mềm',     icon:'💻', permLevel:'employee' },
+
+  { id:'ts_xaykenh',      label:'Thực tập sinh Xây kênh', icon:'🌱', permLevel:'employee' },
+  { id:'tapsu_xaykenh',   label:'Tập sự Xây kênh',        icon:'📡', permLevel:'employee' },
+  { id:'nv_xaykenh',      label:'Nhân viên Xây kênh',     icon:'📡', permLevel:'employee' },
+];
+
+function getOrCreateRolesSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = ss.getSheetByName(SHEET_ROLES);
+  if (!sh) {
+    sh = ss.insertSheet(SHEET_ROLES);
+    sh.getRange(1,1,1,5).setValues([['ID','Tên hiển thị','Icon','Mức quyền (admin/leader/employee)','Vai trò gốc']]);
+    sh.getRange(1,1,1,5).setBackground('#ede9fe').setFontWeight('bold').setFontColor('#5b21b6');
+    sh.setFrozenRows(1);
+  }
+  if (sh.getLastRow() <= 1) {
+    const rows = BUILTIN_ROLES_GAS.map(r => [r.id, r.label, r.icon, r.permLevel, 'true']);
+    sh.getRange(2, 1, rows.length, 5).setValues(rows);
+  }
+  return sh;
+}
+
+function getRolesData() {
+  try {
+    const sh = getOrCreateRolesSheet();
+    const last = sh.getLastRow();
+    if (last <= 1) return { roles: [] };
+    const rows = sh.getRange(2,1,last-1,5).getValues();
+    const roles = rows.filter(r=>r[0]).map(r => ({
+      id: String(r[0]), label: String(r[1]), icon: String(r[2]),
+      permLevel: String(r[3]) || 'employee', builtin: String(r[4]) === 'true',
+    }));
+    return { roles };
+  } catch(e) { return { error: e.toString() }; }
+}
+
+function createRoleData(role) {
+  try {
+    if (!role || !role.label) return { error: 'Thiếu tên vai trò' };
+    const sh = getOrCreateRolesSheet();
+    const last = sh.getLastRow();
+    const ids = last > 1 ? sh.getRange(2,1,last-1,1).getValues().flat().map(String) : [];
+    const id = role.id && !ids.includes(role.id) ? role.id : 'role_' + Date.now().toString(36);
+    if (ids.includes(id)) return { error: 'ID vai trò đã tồn tại' };
+    const permLevel = ['admin','leader','employee'].includes(role.permLevel) ? role.permLevel : 'employee';
+    sh.appendRow([id, role.label, role.icon || '⭐', permLevel, 'false']);
+    return { success:true, id };
+  } catch(e) { return { error: e.toString() }; }
+}
+
+function updateRoleData(id, updates) {
+  try {
+    const sh = getOrCreateRolesSheet();
+    const last = sh.getLastRow();
+    if (last <= 1) return { error: 'Không tìm thấy' };
+    const ids = sh.getRange(2,1,last-1,1).getValues().flat().map(String);
+    const idx = ids.indexOf(String(id));
+    if (idx < 0) return { error: 'Không tìm thấy vai trò: ' + id };
+    const row = idx + 2;
+    if (updates.label     !== undefined) sh.getRange(row,2).setValue(updates.label);
+    if (updates.icon      !== undefined) sh.getRange(row,3).setValue(updates.icon);
+    if (updates.permLevel !== undefined && ['admin','leader','employee'].includes(updates.permLevel)) {
+      sh.getRange(row,4).setValue(updates.permLevel);
+    }
+    return { success:true };
+  } catch(e) { return { error: e.toString() }; }
+}
+
+function deleteRoleData(id) {
+  try {
+    const sh = getOrCreateRolesSheet();
+    const last = sh.getLastRow();
+    if (last <= 1) return { error: 'Không tìm thấy' };
+    const rows = sh.getRange(2,1,last-1,5).getValues();
+    const idx = rows.findIndex(r => String(r[0]) === String(id));
+    if (idx < 0) return { error: 'Không tìm thấy vai trò: ' + id };
+    if (String(rows[idx][4]) === 'true') return { error: 'Không thể xoá vai trò gốc' };
+    sh.deleteRow(idx + 2);
+    return { success:true };
+  } catch(e) { return { error: e.toString() }; }
+}
+
+// Tính quyền hiệu lực của user (theo permLevel của role + permOverrides riêng)
+// rồi kiểm tra 1 quyền cụ thể — dùng để chặn action nhạy cảm trong doPost.
+function hasPerm(user, key) {
+  const rolesData = getRolesData();
+  const roleDef = (rolesData.roles || []).find(r => r.id === user.role);
+  const level = roleDef ? roleDef.permLevel : 'employee';
+  const base = PERM_LEVELS_GAS[level] || PERM_LEVELS_GAS.employee;
+  const overrides = user.permOverrides || {};
+  const eff = Object.assign({}, base, overrides);
+  return !!eff[key];
 }
 
 // ═══════════════════════════════════════════════════════════════
