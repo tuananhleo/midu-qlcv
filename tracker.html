@@ -268,9 +268,21 @@
       <input id="f-kw" type="text" placeholder="🔍 Tìm theo mã đơn, tên dự án, người gửi..." class="cinp" style="flex:1;min-width:240px;font-size:.85rem;padding:9px 14px" oninput="updateStats();render()">
       <button type="button" onclick="toggleFilterDetail()" id="filter-detail-toggle" class="btn btn-ghost">🔍 Bộ lọc chi tiết ▾</button>
     </div>
-    <!-- Gợi ý tự tìm — thêm sau khi gộp Phòng ban vào "Bộ lọc chi tiết" đóng mặc định, sợ người
-    lần đầu vào (đặc biệt phòng ban khác) không biết còn lọc được theo phòng mình (2026-08-18). -->
-    <p class="text-xs" style="color:var(--ttext3)">💡 Muốn xem riêng công việc phòng mình: gõ <b>tên bạn</b> vào ô tìm kiếm ở trên, hoặc bấm "Bộ lọc chi tiết" → chọn đúng <b>Phòng ban</b>.</p>
+    <!-- Lấy link riêng theo phòng ban — luôn hiện sẵn ngay đây, KHÔNG cần mở "Bộ lọc chi tiết"
+    rồi bấm đúng 1 chip mới thấy như bản trước. Phản hồi 2026-08-18: "Vào tracker vẫn chưa biết
+    lấy link riêng của phòng ở đâu" — link/nút copy vẫn hoạt động đúng (đã kiểm chứng qua curl
+    trên bản deploy), chỉ là giấu quá kỹ trong panel đóng mặc định nên không ai tìm ra. Dropdown
+    này dùng chung biến deptFilter với chip "Phòng ban" trong Bộ lọc chi tiết (xem
+    onDeptLinkSelect()/buildDeptChips()) nên chọn ở đâu cũng đồng bộ 2 chiều, vừa lọc luôn danh
+    sách vừa cho link. -->
+    <div class="flex flex-wrap items-center gap-2 text-xs rounded-lg px-3 py-2" style="background:rgba(99,102,241,.1);border:1px solid rgba(99,102,241,.3)">
+      <span style="color:var(--ttext2);font-weight:600">🔗 Lấy link riêng cho phòng ban:</span>
+      <select id="dept-link-select" class="cinp" style="width:auto;padding:5px 10px;font-size:.75rem" onchange="onDeptLinkSelect(this.value)">
+        <option value="">-- Chọn phòng ban của bạn --</option>
+      </select>
+      <span id="dept-link-out" class="flex flex-wrap items-center gap-1.5" style="color:var(--ttext3)"></span>
+    </div>
+    <p class="text-xs" style="color:var(--ttext3)">💡 Muốn xem riêng công việc phòng mình đang tra cứu: gõ <b>tên bạn</b> vào ô tìm kiếm ở trên.</p>
     <!-- Kỳ thời gian — giữ hiện mặc định, hay dùng nhất -->
     <div class="flex flex-wrap items-center gap-1.5">
       <span class="text-xs w-16 flex-shrink-0" style="color:var(--ttext3)">Kỳ:</span>
@@ -291,10 +303,6 @@
         <span class="text-xs w-16 flex-shrink-0" style="color:var(--ttext3)">Phòng ban:</span>
         <div id="dept-chips" class="flex flex-wrap gap-1.5"></div>
       </div>
-      <!-- Chọn 1 phòng ban cụ thể (không phải "Tất cả") thì hiện link riêng ngay tại đây, bấm
-      copy là lấy được — để gửi cho phòng đó bookmark, khỏi phải quay lại hỏi admin mỗi lần
-      (2026-08-18, xem giải thích ở updateDeptLinkHint()). -->
-      <div id="dept-link-hint" class="hidden text-xs flex flex-wrap items-center gap-1.5 ml-16" style="color:var(--ttext3)"></div>
       <!-- Loại (dynamic) -->
       <div class="flex flex-wrap items-center gap-1.5">
         <span class="text-xs w-16 flex-shrink-0" style="color:var(--ttext3)">Loại:</span>
@@ -957,7 +965,21 @@ function buildDeptChips() {
     c.appendChild(b);
   };
   mk('','Tất cả'); depts.forEach(d=>mk(d,d));
+  buildDeptLinkSelect(depts);
   updateDeptLinkHint();
+}
+// Dropdown "Lấy link riêng cho phòng ban" — luôn hiện sẵn ở đầu trang (2026-08-18), tách khỏi
+// chip lọc trong "Bộ lọc chi tiết" để không ai phải mở panel mới thấy được. Dùng chung
+// depts/deptFilter với buildDeptChips() nên 2 nơi luôn khớp nhau.
+function buildDeptLinkSelect(depts) {
+  const sel=document.getElementById('dept-link-select'); if(!sel) return;
+  const cur=sel.value;
+  sel.innerHTML='<option value="">-- Chọn phòng ban của bạn --</option>'
+    + depts.map(d=>`<option value="${d.replace(/"/g,'&quot;')}">${d}</option>`).join('');
+  sel.value=cur;
+}
+function onDeptLinkSelect(val) {
+  deptFilter=val; buildDeptChips(); updateStats(); render();
 }
 // Slug không dấu cho URL ?dept=... — CÙNG quy tắc chuẩn hoá với normDept() (bỏ tiền tố
 // Phòng/Ban, bỏ dấu, thay khoảng trắng bằng gạch ngang) để link tạo ra luôn khớp được khi đọc
@@ -970,12 +992,13 @@ function _deptSlug(dept){
 // ngay tại chỗ — để phòng ban tự lấy link của mình bookmark, không phải nhờ admin làm hộ mỗi
 // lần cần (2026-08-18, phản hồi "gợi ý link riêng của phòng ban trong trang tracker").
 function updateDeptLinkHint(){
-  const el=document.getElementById('dept-link-hint'); if(!el) return;
   const activeDept=urlDept||deptFilter;
-  if(!activeDept){ el.classList.add('hidden'); el.innerHTML=''; return; }
+  const sel=document.getElementById('dept-link-select');
+  if(sel) sel.value=activeDept||'';
+  const out=document.getElementById('dept-link-out'); if(!out) return;
+  if(!activeDept){ out.innerHTML=''; return; }
   const url=location.origin+location.pathname+'?dept='+_deptSlug(activeDept);
-  el.innerHTML=`🔗 Link riêng cho <b>${activeDept}</b>: <span class="font-mono" style="word-break:break-all">${url}</span> <button type="button" onclick="copyDeptLink('${url}',this)" class="btn btn-ghost" style="padding:2px 8px;font-size:.7rem">📋 Copy</button>`;
-  el.classList.remove('hidden');
+  out.innerHTML=`<span class="font-mono" style="word-break:break-all">${url}</span> <button type="button" onclick="copyDeptLink('${url}',this)" class="btn btn-ghost" style="padding:2px 8px;font-size:.7rem">📋 Copy</button>`;
 }
 function copyDeptLink(url,btn){
   const done=()=>{ const t=btn.textContent; btn.textContent='✓ Đã copy'; setTimeout(()=>btn.textContent=t,2000); };
