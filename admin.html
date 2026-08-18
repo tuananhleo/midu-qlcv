@@ -1958,7 +1958,18 @@ function _renderSentCard(o){
   const isOv=diff!==null&&diff<0&&o.status!=='hoan-thanh';
   const dlTimeStr=o.deadlineTime?` · ${o.deadlineTime}`:'';
   const dlBadge=isOv?' 🔴 TRỄ':'';
-  const notStarted=o.status==='chua-lam';
+  // "Chưa có người phân công" = assignedTo trống — kiểm tra thẳng field này thay vì suy qua
+  // status (thường đi cùng nhau nhưng không chắc luôn đồng bộ) để đúng nghĩa đen yêu cầu
+  // (2026-08-18, phản hồi thật "chưa thấy nút sửa khi chưa có người phân công").
+  const notAssigned=!(o.assignedTo||'').trim();
+  // Nội dung chi tiết brief (mô tả/kích thước/kịch bản/link tham khảo...) — dùng LẠI đúng cách
+  // renderCard() xây detHTML, để "Order đã gửi" không chỉ hiện tóm tắt mà xem lại được nguyên
+  // nội dung đã gửi (2026-08-18, phản hồi thật "cho xem lại nội dung order đi em").
+  const allFieldKeys=new Set([...Object.keys(FIELD_LABELS),...Object.keys(dynamicSchema)]);
+  const skipFields=new Set(['clientNote','adminNote','assignedTo','linkResult','completedAt','status','id','type','submittedAt','requester','department','projectName','projectCode','deadline','priority','note']);
+  const detEntries=[...allFieldKeys].filter(k=>o[k]&&!skipFields.has(k)).map(k=>[k,o[k]]);
+  const isUrl=v=>/^https?:\/\//i.test(String(v));
+  const detHTML=detEntries.map(([k,v])=>`<div><span style="color:var(--atext3)">${dynamicSchema[k]||FIELD_LABELS[k]||k}:</span> <span class="break-words" style="color:var(--atext2);white-space:pre-line">${isUrl(v)?`<a href="${v}" target="_blank" rel="noopener" class="text-indigo-400 underline">${escapeHtml(v)}</a>`:escapeHtml(v)}</span></div>`).join('');
   return `<div class="ocard${isOv?' ov':''}">
     <div class="p-4">
       <div class="flex flex-wrap items-center gap-2 mb-1">
@@ -1972,8 +1983,10 @@ function _renderSentCard(o){
         <div><span style="color:var(--atext3)">Deadline: </span><span class="${isOv?'dl-ov':''}" ${!isOv?'style="color:var(--atext2)"':''}>${dlStr}${dlTimeStr}${dlBadge}</span></div>
         <div><span style="color:var(--atext3)">Phụ trách: </span><span style="color:var(--atext2)">${o.assignedTo||'(chưa có ai nhận)'}</span></div>
       </div>
+      ${o.note?`<div class="text-xs italic mb-2" style="color:var(--atext3)">📋 ${escapeHtml(o.note)}</div>`:''}
+      ${detHTML?`<div class="mt-2 pt-2 border-t grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-1 text-xs" style="border-color:var(--acborder)">${detHTML}</div>`:''}
       ${o.linkResult?`<div class="mt-2 pt-2 border-t" style="border-color:var(--acborder)">${_linkRowsHTML(o.linkResult,'--atext3','--atext2')}</div>`:''}
-      ${notStarted
+      ${notAssigned
         ?`<button type="button" onclick="openSentEdit('${o.id}')" class="btn btn-ghost mt-2" style="font-size:.72rem;padding:4px 10px">✏️ Sửa yêu cầu</button>`
         :`<div class="text-xs mt-2 italic" style="color:var(--atext3)">Đã có người nhận xử lý${o.assignedTo?' ('+o.assignedTo+')':''} — liên hệ trực tiếp nếu cần đổi thông tin.</div>`}
     </div>
