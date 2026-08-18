@@ -847,9 +847,15 @@ trường đó thuộc về người xử lý, không phải người gửi. Xem
         nên lọc thêm theo người phụ trách sẽ vô nghĩa/gây rối, ẩn hẳn thay vì hiện disabled
         (2026-08-18, theo yêu cầu "riêng trong admin có bộ lọc theo người phụ trách với những
         vai trò xem được tất cả công việc"). -->
-        <div class="mb-2" data-viewall-only>
-          <span class="text-xs" style="color:var(--atext3)">Phụ trách:</span>
-          <div id="assignee-chips" class="flex flex-wrap gap-1.5 mt-1.5"></div>
+        <!-- assignee-chips dùng display:contents (không phải div flex lồng bên trong như trước) —
+        để mỗi chip là 1 flex-item NGANG HÀNG trực tiếp với nhãn trong CÙNG 1 dòng flex-wrap của
+        cha, giống hệt cơ chế Phòng ban/Loại/Trạng thái. Trước đó lồng 1 div flex-wrap con bên
+        trong khiến khi đủ nhiều chip (14 tên) trình duyệt đẩy hẳn div con xuống dòng dưới thay vì
+        cho từng chip tự xuống dòng ở cuối — nhãn bị tách lẻ loi lên trên (phản hồi 2026-08-18:
+        "xuống dòng ở đầu", cần "xuống dòng ở cuối" như các hàng khác). -->
+        <div class="flex flex-wrap gap-1.5 mb-2 items-center" data-viewall-only>
+          <span class="text-xs w-16 flex-shrink-0" style="color:var(--atext3)">Phụ trách:</span>
+          <div id="assignee-chips" style="display:contents"></div>
         </div>
         <!-- Row 5: Tìm kiếm -->
         <div class="flex flex-wrap gap-2 items-center">
