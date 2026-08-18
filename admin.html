@@ -1949,11 +1949,16 @@ function getFilteredRows(){
   });
 
   // Internal tasks: lọc kỳ theo deadline + loại (map LC rawType→GAS type)
-  // Nhân viên chỉ thấy Internal Task phân công cho mình (giống đơn GAS) — KHÔNG áp cho
-  // contentOrders/contentTasks, xem giải thích ở _isAssignedToMe().
+  // Nhân viên chỉ thấy Internal Task phân công cho mình (giống đơn GAS).
   const baseInternal = internalTasks.filter(t=>!t._fromContentOrder && (perm().viewAll || _isAssignedToMe(t.assignedTo)));
+  // Content Order/Content Task: TRƯỚC ĐÂY cố ý cho cả team nhìn thấy hết, không lọc theo người
+  // phụ trách (nhóm Content tự quản lý bên trang của họ). Đổi theo yêu cầu thực tế (2026-08-18):
+  // nhân viên đăng nhập admin.html chỉ nên thấy đúng việc phân công cho mình, GIỐNG HỆT logic
+  // đơn thường — dùng chung _isAssignedToMe() để nhất quán. Admin/leader (viewAll) không đổi gì.
+  const baseContentOrders = perm().viewAll ? contentOrders : contentOrders.filter(o => _isAssignedToMe(o.assignedTo));
+  const baseContentTasks  = perm().viewAll ? contentTasks  : contentTasks.filter(t => _isAssignedToMe(t.assignedTo));
   const _intPeriodRange = (currentPeriod && currentPeriod!=='all') ? (currentPeriod==='custom'?customRange:getDateRange(currentPeriod)) : null;
-  const intRows = [...contentOrders,...contentTasks,...lichTTOrders,...baseInternal].filter(t=>{
+  const intRows = [...baseContentOrders,...baseContentTasks,...lichTTOrders,...baseInternal].filter(t=>{
     // Luôn hiện việc chưa làm/đang làm/trễ hạn dù ngoài kỳ đang chọn — khớp đúng quy tắc
     // filterByPeriod() đang áp cho đơn GAS thường (xem hàm đó), để tab Đơn hàng và tab
     // Báo cáo không bị lệch số khi có việc Lịch Content/Nội bộ trễ hạn từ kỳ trước.
