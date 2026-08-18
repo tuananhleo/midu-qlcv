@@ -1726,6 +1726,20 @@ Mỗi field id chỉ cần trùng với field id ĐÃ CÓ ở bất kỳ loại 
 
 ---
 
+### Task #116 — Link tracker.html riêng cho từng phòng ban, gợi ý tự tìm, tạo skill lưu tài liệu
+
+**Câu hỏi:** phòng ban khác có cần tạo tài khoản để xem tracker không → xác nhận KHÔNG cần: tracker.html vốn không cần đăng nhập, ô tìm kiếm đã hỗ trợ sẵn tra theo tên người gửi/phòng ban/mã đơn.
+
+**Yêu cầu:** "làm sẵn link tự lọc theo phòng ban nhé, mỗi phòng ban sẽ có 1 link riêng còn tracker kia vẫn là chung". Lấy đúng danh sách 7 phòng ban thật qua GAS `getFormSchema` (không đoán từ ảnh chụp cũ): Phòng CSKH, Phòng Kế toán, Phòng HCNS, Phòng Vận hành, Phòng Marketing – Truyền thông, Ban Đào tạo, Ban Chuyên môn. Dùng cơ chế `?dept=...` có sẵn từ trước để tạo 7 link riêng.
+
+**"Có thể lưu theo tên không dấu không, trông xấu quá"** — link ban đầu bị URL-encode ra chuỗi `%C3%B2ng...` dài xấu khó gửi tay. Nâng cấp `normDept()` (đồng bộ cả `tracker.html`/`admin.html`): bỏ thêm tiền tố "Ban " (trước chỉ bỏ "Phòng "), coi gạch ngang (`-`, en-dash, em-dash) như khoảng trắng, áp `normVN()` (bỏ dấu, về thường) trước khi so khớp. Nhờ vậy dùng được link gọn kiểu `?dept=cskh`, `?dept=ke-toan`, `?dept=marketing-truyen-thong`... — đã viết script đối chiếu cả 7 phòng ban thật, khớp đúng 100% trước khi push.
+
+**"Cần có gợi ý gì ở màn tracker cho các phòng ban tự tìm được không"** — sau khi gộp Phòng ban vào khối "Bộ lọc chi tiết" đóng mặc định (Task #115), lo người lần đầu vào (đặc biệt phòng ban khác) không biết còn lọc được theo phòng mình. Thêm 1 dòng gợi ý ngắn ngay dưới ô tìm kiếm: gõ tên mình để tìm nhanh, hoặc bấm "Bộ lọc chi tiết" chọn đúng Phòng ban.
+
+**"Làm cái skill lưu tài liệu cho anh nhé"** — tạo skill project-scoped `.claude/skills/luu-tai-lieu/SKILL.md`, mô tả đúng quy trình đã lặp lại thủ công suốt cả phiên: đọc tài liệu tìm số Task lớn nhất, viết entry mới theo đúng format (Yêu cầu/Nguyên nhân/Fix/Xác nhận, trích nguyên văn yêu cầu người dùng khi có thể), chèn trước "Liên kết nhanh", commit bằng PowerShell heredoc `@'...'@` (tránh lỗi dấu ngoặc kép trong `-m "..."` từng làm hỏng lệnh git nhiều lần trong phiên này), rồi push. Skill mới tạo cần phiên làm việc mới mới được nạp — lần này vẫn làm thủ công đúng theo các bước đó.
+
+---
+
 ## 14. Liên kết nhanh
 
 | Tên | URL |
