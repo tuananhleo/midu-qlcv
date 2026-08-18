@@ -1710,6 +1710,22 @@ Mỗi field id chỉ cần trùng với field id ĐÃ CÓ ở bất kỳ loại 
 
 ---
 
+### Task #115 — Gọn bộ lọc tracker.html + tab "Order đã gửi" trong admin.html (xem + sửa giới hạn)
+
+**Câu hỏi mở đầu:** trao đổi về việc order do chính nhân sự trong phòng tự gửi thì có hiện trong admin.html của người gửi không — xác nhận: chỉ hiện ở tracker.html (public, tra theo mã/từ khoá), KHÔNG hiện ở admin.html của người gửi (trừ khi họ cũng là người phụ trách) — vì sau Task #112, admin.html là "việc tôi cần làm", không phải "việc tôi đã yêu cầu". Tư vấn: đây là thiết kế hợp lý nên giữ, đề xuất thêm 1 tab riêng nếu muốn xem "đơn tôi đã gửi" ngay trong admin.html.
+
+**Nhân tiện — phản hồi tracker.html "khó tìm, hơi loạn":** chẩn đoán đúng nguyên nhân: 4 hàng bộ lọc (Kỳ/Phòng ban/Loại/Trạng thái, ~30+ nút/chip) hiện HẾT cùng lúc, ngợp mắt trước cả khi thấy công việc nào.
+
+**Fix tracker.html:** đưa ô Tìm kiếm lên đầu, nổi bật (đa số người vào tracker để tra 1 đơn cụ thể qua mã/link Zalo, không phải duyệt hết). Gộp Phòng ban/Loại/Trạng thái/"Ẩn hoàn thành" vào khối `#filter-detail` đóng mặc định, bấm nút "🔍 Bộ lọc chi tiết" mới bung ra (`toggleFilterDetail()`). Riêng Kỳ giữ hiện sẵn vì hay dùng nhất. Tự bung `filter-detail` nếu đang có bộ lọc phòng ban áp sẵn từ URL (`?dept=...`) để không giấu mất đang lọc theo gì.
+
+**Thêm tab "📤 Order đã gửi" (admin.html), hiện cho MỌI vai trò:** liệt kê đơn (order.html) có "Người gửi" khớp tên tài khoản đang đăng nhập (`_isMyRequest()`, so khớp trực tiếp với `currentUser.displayName` — có cùng hạn chế lệch tên như `_isAssignedToMe()`/Task #112 vì "Người gửi" là ô nhập tự do, order.html không bắt buộc đăng nhập), bất kể ai đang phụ trách xử lý. Mỗi thẻ hiện mã đơn/loại/trạng thái/ngày gửi/deadline/người phụ trách/link kết quả — **chỉ xem**, không có nút đổi Trạng thái/Phân công/Link kết quả (không phải việc của người gửi).
+
+**Cho sửa lại khi CHƯA có ai nhận:** đơn còn trạng thái "Chưa làm" mới có nút "✏️ Sửa yêu cầu", mở modal riêng gọn (`sent-edit-modal`, tách hẳn khỏi modal Sửa Order đầy đủ để không lỡ lộ trường Trạng thái/Phân công) — chỉ sửa được tên dự án/deadline/giờ deadline/độ ưu tiên/mô tả. Quyết định theo trao đổi: khoá sửa ngay khi có người nhận, tránh sửa "sau lưng" người đang xử lý gây lệch thông tin; đơn đã có người nhận hiện gợi ý liên hệ trực tiếp thay vì cho sửa ngầm.
+
+**Lưu ý bảo mật đã nói rõ với người dùng:** giới hạn "chỉ sửa được khi chưa có ai nhận, chỉ vài trường" là **rào chắn phía giao diện**, chưa phải chặn ở server — action `updateOrder` (GAS) hiện không tách quyền theo từng người gọi, về mặt kỹ thuật ai có token hợp lệ cũng gọi thẳng API sửa đơn khác được. Chấp nhận rủi ro này giống các tính năng nội bộ khác trong hệ thống, chưa làm chặt hơn trừ khi được yêu cầu.
+
+---
+
 ## 14. Liên kết nhanh
 
 | Tên | URL |
