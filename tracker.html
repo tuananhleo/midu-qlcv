@@ -1269,7 +1269,7 @@ function renderIntCard(t) {
         </div>
         <div class="mt-2 flex gap-1.5 flex-wrap">
           <button onclick="openLcoDetail('${t.id}')" class="btn btn-ghost" style="font-size:.72rem;padding:3px 10px">👁 Xem chi tiết brief / order</button>
-          ${t._sourceUrl?`<a href="${t._sourceUrl}" target="_blank" rel="noopener" class="btn btn-ghost" style="font-size:.72rem;padding:3px 10px">↗ Mở bài gốc</a>`:''}
+          ${t._sourceUrl?`<a href="${t._sourceUrl}" target="_blank" rel="noopener" class="btn btn-ghost" style="font-size:.72rem;padding:3px 10px">↗ Mở bài gốc trên Lịch Content</a>`:''}
         </div>
       </div>
     ${t.linkResult?`<div class="info-strip space-y-2">
@@ -1329,11 +1329,13 @@ function renderIntCard(t) {
         ${t.linkResult?`<div class="mt-2 pt-2 border-t" style="border-color:var(--tborder)">
           ${_linkRowsHTML(t.linkResult,'--ttext3','--ttext2')}
         </div>`:''}
-        <div class="mt-2"><button onclick="openContentTaskDetail('${t.id}')" class="btn btn-ghost" style="font-size:.72rem;padding:3px 10px">👁 Xem chi tiết nội dung</button></div>
-      </div>
-      <div class="info-strip" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-        <span class="text-xs italic" style="color:var(--ttext3)">🔄 Tự đồng bộ từ Lịch Content ${t._sourceName||'Content'}</span>
-        <a href="${t._sourceUrl||'#'}" target="_blank" rel="noopener" class="btn btn-ghost" style="font-size:.72rem;padding:3px 10px">↗ Mở bài này (${t._sourceName||''})</a>
+        <!-- Đồng bộ vị trí nút "Mở bài gốc" với card Content Order + admin.html (gộp chung hàng
+        nút, không tách thanh riêng ở đáy) — thông tin nguồn đã hiện sẵn ở "Người thực hiện" phía
+        trên, không cần nhắc lại (2026-08-18, phản hồi thật: 2 loại card có nút khác vị trí). -->
+        <div class="mt-2 flex gap-1.5 flex-wrap">
+          <button onclick="openContentTaskDetail('${t.id}')" class="btn btn-ghost" style="font-size:.72rem;padding:3px 10px">👁 Xem chi tiết nội dung</button>
+          ${t._sourceUrl?`<a href="${t._sourceUrl}" target="_blank" rel="noopener" class="btn btn-ghost" style="font-size:.72rem;padding:3px 10px">↗ Mở bài gốc trên Lịch Content</a>`:''}
+        </div>
       </div>
     </div>`;
   }

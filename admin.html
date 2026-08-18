@@ -2614,11 +2614,14 @@ function renderIntCard(t){
       ${t.linkResult?`<div class="mt-2 pt-2 border-t" style="border-color:var(--acborder)">
         ${_linkRowsHTML(t.linkResult,'--atext3','--atext2')}
       </div>`:''}
+      <!-- Đồng bộ vị trí nút "Mở bài gốc" với card Content Order (gộp chung hàng nút, không
+      tách thanh riêng ở đáy như trước) — thông tin nguồn đã hiện sẵn ở "Tạo bởi" phía trên
+      (VD "Lịch Content · Khánh Huyền"), không cần nhắc lại lần nữa (2026-08-18, phản hồi thật:
+      "nút dẫn sang trang content của 2 công việc lại khác nhau"). -->
+      ${t._sourceUrl?`<div class="mt-2 flex gap-1.5 flex-wrap">
+        <a href="${t._sourceUrl}" target="_blank" rel="noopener" class="btn btn-ghost" style="font-size:.72rem;padding:3px 10px">↗ Mở bài gốc trên Lịch Content</a>
+      </div>`:''}
     </div>
-    ${t._sourceUrl?`<div style="background:rgba(99,102,241,.06);border-top:1px solid rgba(99,102,241,.12);padding:10px 14px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-      <span class="text-xs italic" style="color:var(--atext3)">🔄 Tự đồng bộ từ Lịch Content${t.requester?' · '+t.requester:''}</span>
-      <a href="${t._sourceUrl}" target="_blank" rel="noopener" class="btn btn-ghost" style="font-size:.72rem;padding:3px 10px">↗ Mở bài này${t.requester?' ('+t.requester+')':''}</a>
-    </div>`:''}
     <div class="admin-strip">
       <div style="min-width:150px"><label>Trạng thái (ghi ngược về Content)</label>
         <select id="${lcTaskId}_stat" class="cinp" onchange="_saveLcTaskStatus('${t.id}', this)">${lcStatusOpts}</select>
