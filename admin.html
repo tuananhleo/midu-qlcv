@@ -853,7 +853,7 @@ trường đó thuộc về người xử lý, không phải người gửi. Xem
         </div>
         <!-- Row 5: Tìm kiếm -->
         <div class="flex flex-wrap gap-2 items-center">
-          <input id="f-kw" type="text" placeholder="🔍 Tìm kiếm..." class="cinp" style="width:100%;max-width:320px" oninput="updateStats();render()">
+          <input id="f-kw" type="text" placeholder="🔍 Tìm theo mã đơn, tên dự án, người gửi..." class="cinp" style="flex:1;min-width:240px;font-size:.85rem;padding:9px 14px" oninput="updateStats();render()">
           <div class="flex items-center gap-2 ml-auto">
             <span title="Tự động cập nhật mỗi 2 phút" style="display:inline-flex;align-items:center;gap:4px;font-size:.72rem;color:var(--atext3)">
               <span id="realtime-dot" style="width:7px;height:7px;border-radius:50%;background:#f97316;display:inline-block;transition:.3s"></span>Live
@@ -2251,7 +2251,10 @@ function buildAssigneeChips() {
     c.appendChild(b);
   };
   mk('', 'Tất cả');
-  getAssignableUsers().forEach(name => mk(name, name));
+  // Sắp xếp theo tên (bảng chữ cái VN) — trước đó theo đúng thứ tự tạo tài khoản nên các chip
+  // dài/ngắn xen kẽ ngẫu nhiên, dòng chip bị so le xấu (phản hồi 2026-08-18: "hiển thị xấu,
+  // chưa đều đẹp"). Sắp theo alphabet giúp dễ dò tên hơn, dù độ dài chip vẫn khác nhau tự nhiên.
+  getAssignableUsers().slice().sort((a,b)=>a.localeCompare(b,'vi')).forEach(name => mk(name, name));
 }
 
 function updateListPeriodLabel() {
