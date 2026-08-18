@@ -786,11 +786,14 @@ trường đó thuộc về người xử lý, không phải người gửi. Xem
         <button type="button" onclick="openSettings()" class="btn btn-ghost" data-admin-only>⚙</button>
         <!-- Trước đây nút đăng xuất chỉ có trong màn Cài đặt (data-admin-only, chỉ admin thấy) —
         leader/employee không có cách nào đăng xuất qua giao diện. Đặt riêng ở đây, hiện cho MỌI
-        vai trò, không gắn data-admin-only (phát hiện qua phản hồi thật, 2026-08-18). Tách hẳn ra
-        cuối hàng + có viền ngăn cách + tô màu đỏ nhạt — placement cũ (ngay cạnh nút đổi mật khẩu,
-        cùng màu btn-ghost như mọi nút khác) dễ bấm nhầm vì lẫn vào luồng thao tác chính. -->
+        vai trò, không gắn data-admin-only (phát hiện qua phản hồi thật, 2026-08-18). Tô đỏ nhạt
+        để không lẫn vào luồng thao tác chính — placement cũ (ngay cạnh nút đổi mật khẩu, cùng màu
+        btn-ghost như mọi nút khác) dễ bấm nhầm. Bỏ đường viền ngăn cách bên trái (border-left) đã
+        dùng trước đó: nó giả định luôn có 1 cụm nút admin dài đứng trước để "tách ra" — với
+        leader/employee (nhiều nút data-admin-only bị ẩn) thì đường viền đó đứng lẻ loi ngay sau
+        "↻ Làm mới", trông như bị đứt gãy (phản hồi "icon đăng xuất xấu", 2026-08-18). -->
         <button type="button" onclick="doLogout()" class="btn" title="Đăng xuất"
-          style="margin-left:6px;padding-left:14px;border-left:1px solid var(--aborder);color:#f87171;background:rgba(248,113,113,.08)">🚪 Đăng xuất</button>
+          style="margin-left:6px;color:#f87171;background:rgba(248,113,113,.08);border-color:rgba(248,113,113,.25)">🚪 Đăng xuất</button>
       </div>
     </div>
   </header>
@@ -1577,8 +1580,10 @@ async function afterLogin() {
   // Cần allUsers cho bộ lọc "Phụ trách" (data-viewall-only) — không chỉ admin (canUserMgmt) mới
   // cần, leader cũng xem được bộ lọc này (viewAll:true) nên phải tải cho cả 2, không thì
   // getAssignableUsers() rơi về cache localStorage cụt (2026-08-18, phản hồi leader chỉ thấy
-  // đúng 1-2 tên thay vì đủ danh sách).
-  if (perm().viewAll) loadAllUsers();
+  // đúng 1-2 tên thay vì đủ danh sách). Vẽ lại chip NGAY khi tải xong — trước đó loadAllUsers()
+  // chạy nền không ai đợi, chip build ở loadAll() có thể chạy trước/sau nó tuỳ mạng nhanh chậm,
+  // nên lúc hiện đủ tên lúc không (phản hồi "load hơi chậm, lần 2 không hiện").
+  if (perm().viewAll) loadAllUsers().then(buildAssigneeChips);
   setTimeout(_autoSyncContent, 5000); // đợi loadAll xong
   if(!_contentSyncInterval) _contentSyncInterval=setInterval(_periodicContentSync, 90000);
 }
