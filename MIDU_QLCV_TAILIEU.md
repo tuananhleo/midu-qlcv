@@ -1740,6 +1740,24 @@ Mỗi field id chỉ cần trùng với field id ĐÃ CÓ ở bất kỳ loại 
 
 ---
 
+### Task #117 — Đồng bộ nút "Mở bài gốc", hoàn thiện tab "Order đã gửi", fix lặp tin Zalo
+
+**"Sao nút dẫn sang trang content của 2 công việc lại khác nhau, đồng bộ lại 1 nơi cho anh"** — phát hiện đúng: card Content Order đặt nút trong hàng nút chung (cạnh "Xem chi tiết"), card Content Task (Lịch Content) lại tách riêng thành 1 thanh ở đáy card kèm dòng "🔄 Tự đồng bộ từ..." — thông tin đó thật ra đã trùng với "Tạo bởi"/"Người thực hiện" hiện sẵn phía trên. Gộp về 1 kiểu: nằm trong hàng nút chung, nhãn thống nhất "↗ Mở bài gốc trên Lịch Content", bỏ dòng trùng lặp — áp dụng cả admin.html và tracker.html.
+
+**"Chưa thấy nút sửa khi chưa có người phân công" + "cho xem lại nội dung order đi em" (tab Order đã gửi):** 2 vấn đề riêng biệt được sửa cùng lúc:
+- Card trước chỉ hiện tóm tắt (loại/trạng thái/deadline/phụ trách/link kết quả), thiếu nội dung brief thật (mô tả/kích thước/kịch bản/link tham khảo...) — dùng lại đúng logic `detHTML` của `renderCard()` để hiện đầy đủ, giống tracker.html đã làm cho đơn thường từ trước.
+- Điều kiện hiện nút "✏️ Sửa yêu cầu" trước kiểm tra `status==='chua-lam'`, đổi sang kiểm tra thẳng `assignedTo` có rỗng không — đúng nghĩa đen "chưa có người phân công", không phụ thuộc suy diễn qua trạng thái.
+
+**"Tất cả nội dung nhập từ order khi xem lại và sửa thì đều lưu và hiện hết ra, trong admin cũng thế"** — modal "Sửa yêu cầu" trước chỉ có 5 trường cố định (tên dự án/deadline/giờ deadline/độ ưu tiên/mô tả), thiếu hẳn các trường riêng theo loại việc. Thêm khu vực sinh động `#se-dynamic` dùng đúng `formSchema[type]`, cùng cơ chế với modal Sửa Order chính (`#e-dynamic`) — giờ sửa được đầy đủ mọi trường đã nhập lúc gửi. Đã kiểm tra: `clientNote` là field cũ order.html không còn dùng (bỏ qua), `projectCode` là field ẩn không phải người gửi tự nhập (không thêm vào).
+
+**"Bị lặp tin thông báo này" (2 tin Zalo giống hệt, cách nhau 1 giây, cùng mã đơn):** nguyên nhân gốc — `addOrderData()` (GAS) không kiểm tra ID đã tồn tại trước khi `appendRow`, nên 2 trình duyệt cùng đồng bộ 1 order Content mới gần như đồng thời (VD 2 tab admin.html) đều "tưởng" order đó chưa từng ghi, cả 2 cùng ghi thành công (có thể ra 2 dòng trùng ID trong sheet) và cùng bắn thông báo. Fix 2 lớp:
+- **GAS:** thêm `LockService` khoá tạm lúc kiểm tra+ghi, kiểm tra ID đã có dòng chưa trước khi `appendRow` — đã có thì trả `isNew:false` thay vì ghi thêm dòng (idempotent, chặn luôn cả lỗi ghi trùng dòng trong sheet).
+- **admin.html:** `_mirrorOrderToSheet()` chỉ gọi `_notifyZaloContentOrder()` khi `data.isNew!==false` — tương thích ngược, GAS bản cũ (chưa deploy lại) không trả `isNew` vẫn coi là mới như trước, chỉ hết lỗi hẳn sau khi deploy lại GAS.
+
+**Lưu ý vận hành:** phần fix GAS (chặn ghi trùng dòng + `isNew`) cần deploy lại Apps Script thủ công mới có hiệu lực đầy đủ — trước khi deploy, khả năng thấp vẫn có thể lặp tin nếu đúng lúc 2 tab cùng đua nhau.
+
+---
+
 ## 14. Liên kết nhanh
 
 | Tên | URL |
