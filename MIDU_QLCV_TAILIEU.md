@@ -1698,6 +1698,18 @@ Mỗi field id chỉ cần trùng với field id ĐÃ CÓ ở bất kỳ loại 
 
 ---
 
+### Task #114 — Đồng bộ bộ lọc Kỳ ở Báo cáo, thêm % vào các bảng, thêm bộ lọc Người phụ trách
+
+**Yêu cầu:** "Trong màn báo cáo bộ lọc cũng thế nhé, và trong báo cáo tất cả cần có số lượng công việc và tỉ lệ % đi kèm, riêng trong admin có bộ lọc theo người phụ trách với những vai trò xem được tất cả công việc."
+
+**Bộ lọc Kỳ ở tab Báo cáo:** hoá ra đã đồng bộ sẵn từ Task #113 (bộ lọc Kỳ ở tab Báo cáo dùng chung khối HTML với tab Danh sách đã sửa) — ảnh chụp anh gửi là do trang chưa tải lại bản mới (cache cũ), không phải chưa sửa. Không cần code thêm, chỉ cần hard refresh.
+
+**Thêm % vào báo cáo:** 3/4 bảng trong "Phân tích chi tiết" (Theo loại order, Theo phòng ban, Theo người phụ trách) trước đây chỉ có số lượng, không có % — chỉ riêng "Theo trạng thái" có sẵn cột %. Thêm cột % cho cả 3 bảng còn lại, tính chung 1 mẫu số `reportOrders.length` cho toàn bộ 4 bảng để nhất quán.
+
+**Bộ lọc "Phụ trách":** thêm hàng lọc mới (dạng chip, cùng kiểu với Phòng ban/Loại/Trạng thái) vào tab Danh sách — nhưng **chỉ hiện cho vai trò xem được tất cả** (admin/leader, `perm().viewAll`), ẩn hoàn toàn với nhân viên qua thuộc tính mới `data-viewall-only` + `applyRoleUI()` — nhân viên đã tự động chỉ thấy đúng việc của mình từ Task #112, lọc thêm theo người phụ trách sẽ vô nghĩa/gây rối cho họ. Danh sách tên lấy từ `getAssignableUsers()` (đã có sẵn, dùng chung với ô Phân công khi tạo/sửa việc). Lọc qua hàm mới `_hasAssignee()`, dùng chung `_normAssignee()` (bảng alias tên viết tắt bên Content Task, đã có sẵn cho báo cáo từ trước) để khớp đúng tên tài khoản đầy đủ dù dữ liệu gốc ghi tắt.
+
+---
+
 ## 14. Liên kết nhanh
 
 | Tên | URL |
