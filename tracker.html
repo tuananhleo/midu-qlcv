@@ -268,6 +268,9 @@
       <input id="f-kw" type="text" placeholder="🔍 Tìm theo mã đơn, tên dự án, người gửi..." class="cinp" style="flex:1;min-width:240px;font-size:.85rem;padding:9px 14px" oninput="updateStats();render()">
       <button type="button" onclick="toggleFilterDetail()" id="filter-detail-toggle" class="btn btn-ghost">🔍 Bộ lọc chi tiết ▾</button>
     </div>
+    <!-- Gợi ý tự tìm — thêm sau khi gộp Phòng ban vào "Bộ lọc chi tiết" đóng mặc định, sợ người
+    lần đầu vào (đặc biệt phòng ban khác) không biết còn lọc được theo phòng mình (2026-08-18). -->
+    <p class="text-xs" style="color:var(--ttext3)">💡 Muốn xem riêng công việc phòng mình: gõ <b>tên bạn</b> vào ô tìm kiếm ở trên, hoặc bấm "Bộ lọc chi tiết" → chọn đúng <b>Phòng ban</b>.</p>
     <!-- Kỳ thời gian — giữ hiện mặc định, hay dùng nhất -->
     <div class="flex flex-wrap items-center gap-1.5">
       <span class="text-xs w-16 flex-shrink-0" style="color:var(--ttext3)">Kỳ:</span>
