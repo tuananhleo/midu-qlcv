@@ -1770,6 +1770,18 @@ Mỗi field id chỉ cần trùng với field id ĐÃ CÓ ở bất kỳ loại 
 
 ---
 
+### Task #119 — Fix tiếp Task #118: link riêng theo phòng ban ở tracker.html vẫn không ai tìm ra
+
+**Yêu cầu:** "Ok làm đi em" (đồng ý làm tiếp phần link phòng ban còn tồn đọng từ Task #118).
+
+**Nguyên nhân/Phát hiện:** Cơ chế cũ (Task #116) đặt link+nút copy (`#dept-link-hint`) nằm lồng bên trong khối "Bộ lọc chi tiết" — vốn đóng mặc định — và chỉ hiện lên sau khi bấm đúng 1 chip Phòng ban cụ thể. Người lần đầu vào tracker không có lý do gì để thực hiện đủ 2 bước đó trước, nên tính năng tồn tại đúng nhưng gần như không ai thấy.
+
+**Fix:** Thêm hẳn 1 khối luôn hiện sẵn ngay dưới ô tìm kiếm (không nằm trong "Bộ lọc chi tiết", không cần mở panel): dropdown `#dept-link-select` liệt kê các phòng ban, chọn xong hiện ngay link + nút "📋 Copy" tại `#dept-link-out`. Dropdown dùng chung biến `deptFilter` với chip lọc cũ trong panel (hàm `onDeptLinkSelect()` gọi lại đúng `buildDeptChips()`), nên chọn ở dropdown hay ở chip đều đồng bộ 2 chiều — vừa lọc danh sách vừa cho link, không tạo 2 nguồn sự thật riêng biệt. Bỏ hẳn `#dept-link-hint` cũ (đã lồng trong panel, nay dư thừa).
+
+**Xác nhận/Lưu ý:** Đã test trực tiếp trên trình duyệt (server tĩnh local) trước khi push: chọn phòng ban ở dropdown → link+nút copy hiện đúng định dạng `?dept=<slug>`, đồng thời chip "Phòng ban" trong Bộ lọc chi tiết cũng tự chuyển sang active đúng phòng vừa chọn — xác nhận đồng bộ 2 chiều hoạt động thật, không chỉ đọc code.
+
+---
+
 ## 14. Liên kết nhanh
 
 | Tên | URL |
