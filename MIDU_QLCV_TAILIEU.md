@@ -1758,6 +1758,18 @@ Mỗi field id chỉ cần trùng với field id ĐÃ CÓ ở bất kỳ loại 
 
 ---
 
+### Task #118 — Fix giao diện chip "Phụ trách" + mở rộng ô tìm kiếm ở admin.html; nhắc quên push code
+
+**Yêu cầu:** "Trong admin xem lại giao diện chỗ này, người phụ trách hiển thị xấu, chưa đều đẹp, ô tìm kiếm cần to rọng như tracker" (kèm ảnh chụp khu vực bộ lọc "Phụ trách" + ô tìm kiếm).
+
+**Nguyên nhân/Phát hiện:** `buildAssigneeChips()` (admin.html) tạo chip theo đúng thứ tự trong `getAssignableUsers()` — tức thứ tự tạo tài khoản, không sắp xếp — nên chip tên dài/ngắn xen kẽ ngẫu nhiên, dòng chip so le trông lộn xộn. Ô tìm kiếm `#f-kw` (Row 5, tab Danh sách) đang bị giới hạn cứng `max-width:320px`, hẹp hơn hẳn ô tìm kiếm cùng vị trí bên tracker.html.
+
+**Fix:** `buildAssigneeChips()` sắp tên theo abc tiếng Việt (`.sort((a,b)=>a.localeCompare(b,'vi'))`) trước khi tạo chip. Đổi style `#f-kw` từ `width:100%;max-width:320px` sang `flex:1;min-width:240px;font-size:.85rem;padding:9px 14px` — khớp đúng style ô tìm kiếm tracker.html.
+
+**Xác nhận/Lưu ý:** Sau khi sửa xong, người dùng test thấy "Admin chưa được, tracker thì được" — hoá ra do quên `git commit`/`push` sau khi sửa file, bản online (GitHub Pages) vẫn là code cũ. Đã commit + push riêng (`e289a10`). Việc "link riêng theo phòng ban" ở tracker.html (Task #116) người dùng phản ánh vẫn khó tìm ("Vào tracker vẫn chưa biết lấy link riêng của phòng ở đâu") — đã xác nhận code hint/copy-link đã lên bản live đúng (kiểm qua `curl` trực tiếp trang deploy), nhưng flow hiện tại yêu cầu mở "Bộ lọc chi tiết" rồi chọn đúng 1 phòng mới hiện link — quá ẩn với người lần đầu vào, **chưa fix xong**, cần làm 1 UI dễ thấy hơn (không phụ thuộc mở bộ lọc/chọn chip) ở phiên sau.
+
+---
+
 ## 14. Liên kết nhanh
 
 | Tên | URL |
