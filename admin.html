@@ -786,14 +786,13 @@ trường đó thuộc về người xử lý, không phải người gửi. Xem
         <button type="button" onclick="openSettings()" class="btn btn-ghost" data-admin-only>⚙</button>
         <!-- Trước đây nút đăng xuất chỉ có trong màn Cài đặt (data-admin-only, chỉ admin thấy) —
         leader/employee không có cách nào đăng xuất qua giao diện. Đặt riêng ở đây, hiện cho MỌI
-        vai trò, không gắn data-admin-only (phát hiện qua phản hồi thật, 2026-08-18). Tô đỏ nhạt
-        để không lẫn vào luồng thao tác chính — placement cũ (ngay cạnh nút đổi mật khẩu, cùng màu
-        btn-ghost như mọi nút khác) dễ bấm nhầm. Bỏ đường viền ngăn cách bên trái (border-left) đã
-        dùng trước đó: nó giả định luôn có 1 cụm nút admin dài đứng trước để "tách ra" — với
-        leader/employee (nhiều nút data-admin-only bị ẩn) thì đường viền đó đứng lẻ loi ngay sau
-        "↻ Làm mới", trông như bị đứt gãy (phản hồi "icon đăng xuất xấu", 2026-08-18). -->
-        <button type="button" onclick="doLogout()" class="btn" title="Đăng xuất"
-          style="margin-left:6px;color:#f87171;background:rgba(248,113,113,.08);border-color:rgba(248,113,113,.25)">🚪 Đăng xuất</button>
+        vai trò, không gắn data-admin-only (phát hiện qua phản hồi thật, 2026-08-18). Từng thử dạng
+        nút chữ có viền ngăn cách bên trái — xấu khi ít nút admin hiện ra (leader/employee). Đổi
+        hẳn sang dạng icon tròn gọn "nút nguồn" ⏻, giống cách trình bày nút 🔒/⚙ bên cạnh, chỉ tô
+        đỏ để phân biệt là hành động khác nhóm (phản hồi "icon đăng xuất là dạng nút nguồn đi em",
+        2026-08-18). -->
+        <button type="button" onclick="doLogout()" class="btn btn-ghost" title="Đăng xuất"
+          style="margin-left:6px;color:#f87171">⏻</button>
       </div>
     </div>
   </header>
