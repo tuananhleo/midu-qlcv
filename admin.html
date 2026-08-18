@@ -1788,7 +1788,7 @@ function showCached() {
   } catch(e) {}
   // Render nếu có bất kỳ dữ liệu nào
   if (allOrders.length || contentOrders.length || contentTasks.length || lichTTOrders.length || internalTasks.length) {
-    try { updateStats(); buildDeptChips(); buildTypeChips(); renderStatusChips(); updateListPeriodLabel(); render(); } catch(e) {}
+    try { updateStats(); buildDeptChips(); buildTypeChips(); renderStatusChips(); updateListPeriodLabel(); render(); } catch(e) { console.error('[showCached] render error:', e); }
     document.getElementById('loading-state').classList.add('hidden');
     document.getElementById('list').classList.remove('hidden');
   }
@@ -1853,7 +1853,7 @@ async function loadAll(notify=false) {
     if (!allOrders.length) showToast('Lỗi tải dữ liệu: '+e.message,'error');
   }
   _dataReady = true; // cả đơn GAS lẫn Content đã cùng ở bản mới nhất — an toàn để hiện số tổng
-  try { updateStats(); buildDeptChips(); buildTypeChips(); renderStatusChips(); render(); } catch(e) {}
+  try { updateStats(); buildDeptChips(); buildTypeChips(); renderStatusChips(); render(); } catch(e) { console.error('[loadAll] final render error:', e); }
   _autoCompleteFeedback24h();
   if (document.getElementById('tab-report').classList.contains('hidden') === false) {
     loadChartJs(renderReport);
@@ -1929,10 +1929,9 @@ function filterByStat(type) {
 }
 // Dùng chung bởi render() và updateStats() — để ô thống kê (Tổng/Trễ/Đang làm/Hoàn thành)
 // luôn khớp đúng tập dữ liệu đang hiển thị bên dưới, thay vì đếm toàn bộ không lọc.
-// Nhân viên (employee) chỉ được xem việc phân công cho mình — dùng chung cho đơn GAS
-// và Internal Task. KHÔNG áp cho Content Order/Content Task (đồng bộ từ Lịch Content):
-// nhóm content tự cập nhật bên trang Content của họ, admin.html chỉ hiển thị để phòng
-// theo dõi chung, nên cố ý để cả team nhìn thấy hết, không giới hạn theo người.
+// Nhân viên (employee) chỉ được xem việc phân công cho mình — áp dụng cho đơn GAS, Internal
+// Task, VÀ Content Order/Content Task (đổi 2026-08-18, xem giải thích ở getFilteredRows()
+// — trước đây Content Order/Task cố ý cho cả team nhìn thấy hết, nay đổi theo yêu cầu thực tế).
 function _isAssignedToMe(assignedToStr){
   const assigned=(assignedToStr||'').split(',').map(s=>s.trim());
   return assigned.includes(currentUser?.displayName||'__none__');
