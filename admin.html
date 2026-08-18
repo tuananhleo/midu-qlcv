@@ -460,6 +460,11 @@ trường đó thuộc về người xử lý, không phải người gửi. Xem
       </div>
       <div><label>Độ ưu tiên</label><select id="se-priority" class="inp"></select></div>
       <div><label>Mô tả / ghi chú</label><textarea id="se-note" rows="4" class="inp" style="resize:vertical"></textarea></div>
+      <!-- Trường riêng theo từng loại việc (mô tả/kích thước/kịch bản/link tham khảo...) — sinh
+      động theo formSchema[type], CÙNG CƠ CHẾ với modal Sửa Order chính (#e-dynamic) — trước đây
+      modal này chỉ có 5 trường cố định, thiếu hẳn nội dung brief thực sự đã nhập lúc gửi
+      (2026-08-18, phản hồi thật: "tất cả nội dung nhập từ order... đều lưu và hiện hết ra"). -->
+      <div id="se-dynamic" class="grid grid-cols-1 gap-3"></div>
     </div>
     <div class="flex gap-2 mt-5">
       <button type="button" id="se-savebtn" onclick="saveSentEdit()" class="btn btn-primary flex-1">💾 Lưu thay đổi</button>
@@ -2002,6 +2007,20 @@ function openSentEdit(id){
   document.getElementById('se-deadlinetime').value=o.deadlineTime||'';
   document.getElementById('se-priority').innerHTML=_priorityOptions(o.priority);
   document.getElementById('se-note').value=o.note||'';
+  // Trường riêng theo loại việc — CÙNG cách openEdit() sinh #e-dynamic, dùng đúng
+  // formSchema[o.type] để không thiếu/lệch so với form gốc lúc gửi (order.html).
+  const container=document.getElementById('se-dynamic');
+  container.innerHTML='';
+  const defs=(formSchema[o.type]||DEFAULT_FORM_SCHEMA[o.type]||[]);
+  defs.forEach(f=>{
+    const div=document.createElement('div');
+    const lbl=document.createElement('label'); lbl.textContent=f.label; div.appendChild(lbl);
+    let inp;
+    if(f.type==='textarea'){inp=document.createElement('textarea');inp.rows=f.rows||3;inp.style.resize='vertical';}
+    else{inp=document.createElement('input');inp.type=f.type;}
+    inp.id='se-dyn-'+f.id; inp.value=o[f.id]||''; inp.placeholder=f.placeholder||''; inp.className='inp';
+    div.appendChild(inp); container.appendChild(div);
+  });
   document.getElementById('sent-edit-modal').classList.remove('hidden');
 }
 function closeSentEdit(){
@@ -2018,6 +2037,8 @@ async function saveSentEdit(){
     priority:document.getElementById('se-priority').value,
     note:document.getElementById('se-note').value,
   };
+  const defs=(formSchema[o.type]||DEFAULT_FORM_SCHEMA[o.type]||[]);
+  defs.forEach(f=>{ const el=document.getElementById('se-dyn-'+f.id); if(el) updates[f.id]=el.value; });
   const btn=document.getElementById('se-savebtn');
   btn.disabled=true; btn.textContent='...';
   try{
