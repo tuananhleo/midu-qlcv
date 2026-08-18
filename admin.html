@@ -742,10 +742,6 @@
       <div class="flex gap-2 flex-wrap ml-auto items-center">
         <span id="role-badge" class="text-xs font-bold px-2 py-1 rounded-full" style="background:rgba(99,102,241,.15);color:#a5b4fc">🔑 Admin</span>
         <button type="button" onclick="openChangePassword()" class="btn btn-ghost" title="Đổi mật khẩu">🔒</button>
-        <!-- Trước đây nút đăng xuất chỉ có trong màn Cài đặt (data-admin-only, chỉ admin thấy) —
-        leader/employee không có cách nào đăng xuất qua giao diện. Đặt riêng ở đây, hiện cho MỌI
-        vai trò, không gắn data-admin-only (phát hiện qua phản hồi thật, 2026-08-18). -->
-        <button type="button" onclick="doLogout()" class="btn btn-ghost" title="Đăng xuất">🚪</button>
         <a href="order.html" class="btn btn-ghost">+ Order</a>
         <a href="tracker.html" class="btn btn-ghost">📊 Tracker</a>
         <button type="button" onclick="loadAll(true)" class="btn btn-ghost">↻ Làm mới</button>
@@ -754,6 +750,13 @@
         <button type="button" onclick="openFormBuilder()" class="btn btn-ghost" data-admin-only>📝 Form</button>
         <button type="button" onclick="openUserMgmt()" class="btn btn-ghost" data-admin-only>👥 Người dùng</button>
         <button type="button" onclick="openSettings()" class="btn btn-ghost" data-admin-only>⚙</button>
+        <!-- Trước đây nút đăng xuất chỉ có trong màn Cài đặt (data-admin-only, chỉ admin thấy) —
+        leader/employee không có cách nào đăng xuất qua giao diện. Đặt riêng ở đây, hiện cho MỌI
+        vai trò, không gắn data-admin-only (phát hiện qua phản hồi thật, 2026-08-18). Tách hẳn ra
+        cuối hàng + có viền ngăn cách + tô màu đỏ nhạt — placement cũ (ngay cạnh nút đổi mật khẩu,
+        cùng màu btn-ghost như mọi nút khác) dễ bấm nhầm vì lẫn vào luồng thao tác chính. -->
+        <button type="button" onclick="doLogout()" class="btn" title="Đăng xuất"
+          style="margin-left:6px;padding-left:14px;border-left:1px solid var(--aborder);color:#f87171;background:rgba(248,113,113,.08)">🚪 Đăng xuất</button>
       </div>
     </div>
   </header>
