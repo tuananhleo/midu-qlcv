@@ -4406,7 +4406,11 @@ async function _mirrorOrderToSheet(order){
     const data=await resp.json();
     if(data && !data.error){
       _addMirroredId(order.id); _sheetOrderIds.add(order.id);
-      if(order._fromContentOrder) _notifyZaloContentOrder(order);
+      // isNew:false = GAS tự phát hiện ID này đã có dòng rồi (chặn ghi trùng phía server, xem
+      // addOrderData() trong MIDU_MKT_Script.gs) — không phải lần ghi đầu, KHÔNG bắn lại Zalo.
+      // isNew undefined (GAS bản cũ chưa deploy lại) vẫn coi là mới, giữ hành vi cũ cho tới khi
+      // deploy bản GAS mới (2026-08-18, phản hồi thật "Bị lặp tin thông báo này").
+      if(order._fromContentOrder && data.isNew!==false) _notifyZaloContentOrder(order);
     }
   }catch(e){ console.warn('[Mirror→Sheet] lỗi ghi mới:', e.message); }
 }

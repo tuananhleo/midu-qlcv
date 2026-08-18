@@ -490,38 +490,59 @@ function getOrdersData() {
 }
 
 function addOrderData(order) {
-  const sheet = getOrCreateSheet();
-  const meta = order._meta || {};
-  delete order._meta;
-  syncColumns(sheet, meta);
+  // Khoá tạm trong lúc kiểm tra ID trùng + ghi dòng — nếu không có khoá này, 2 trình duyệt
+  // cùng đồng bộ 1 order Content mới gần như cùng lúc (VD 2 tab admin.html) đều "tưởng" order
+  // đó chưa từng ghi, cả 2 cùng appendRow (ra 2 dòng trùng ID trong sheet) VÀ cả 2 cùng bắn
+  // trùng thông báo Zalo — phát hiện qua phản hồi thật 2026-08-18 ("Bị lặp tin thông báo này").
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const sheet = getOrCreateSheet();
+    const meta = order._meta || {};
+    delete order._meta;
+    syncColumns(sheet, meta);
 
-  // Auto ID nếu chưa có
-  if (!order.id) order.id = generateId(order.type || 'khac');
+    // Auto ID nếu chưa có
+    if (!order.id) order.id = generateId(order.type || 'khac');
 
-  const schema = loadSchema();
-  const headerMap = getHeaderMap(sheet);
-  const numCols = sheet.getLastColumn();
-  const row = new Array(numCols).fill('');
+    const schema = loadSchema();
+    const headerMap = getHeaderMap(sheet);
 
-  COLS.forEach((col, i) => {
-    const header = schema[col] || HEADERS[i];
-    const colIdx = headerMap[header];
-    if (colIdx !== undefined) {
-      const val = order[col];
-      row[colIdx] = (val !== undefined && val !== null) ? String(val) : '';
+    // Đã có dòng với đúng ID này rồi thì coi như ghi xong (idempotent) — KHÔNG appendRow lần
+    // nữa. isNew:false báo cho client biết đây không phải lần ghi đầu, để không bắn lại thông
+    // báo Zalo (xem _mirrorOrderToSheet() trong admin.html).
+    const idColIdx = headerMap['ID'];
+    const lastRow = sheet.getLastRow();
+    if (idColIdx !== undefined && lastRow > 1) {
+      const idValues = sheet.getRange(2, idColIdx + 1, lastRow - 1, 1).getValues().flat();
+      if (idValues.indexOf(order.id) >= 0) return { success: true, id: order.id, isNew: false };
     }
-  });
-  Object.keys(order).forEach(key => {
-    if (COLS.includes(key)) return;
-    const label = meta[key] || schema[key];
-    if (!label) return;
-    const colIdx = headerMap[label];
-    if (colIdx !== undefined) row[colIdx] = String(order[key] || '');
-  });
 
-  sheet.appendRow(row);
-  sheet.autoResizeColumns(1, numCols);
-  return { success: true, id: order.id };
+    const numCols = sheet.getLastColumn();
+    const row = new Array(numCols).fill('');
+
+    COLS.forEach((col, i) => {
+      const header = schema[col] || HEADERS[i];
+      const colIdx = headerMap[header];
+      if (colIdx !== undefined) {
+        const val = order[col];
+        row[colIdx] = (val !== undefined && val !== null) ? String(val) : '';
+      }
+    });
+    Object.keys(order).forEach(key => {
+      if (COLS.includes(key)) return;
+      const label = meta[key] || schema[key];
+      if (!label) return;
+      const colIdx = headerMap[label];
+      if (colIdx !== undefined) row[colIdx] = String(order[key] || '');
+    });
+
+    sheet.appendRow(row);
+    sheet.autoResizeColumns(1, numCols);
+    return { success: true, id: order.id, isNew: true };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function updateOrderData(id, updates) {
