@@ -1660,6 +1660,44 @@ Mỗi field id chỉ cần trùng với field id ĐÃ CÓ ở bất kỳ loại 
 
 ---
 
+### Task #111 — Nhân viên không đăng xuất được: thêm nút Đăng xuất cho mọi vai trò
+
+**Phản hồi thực tế sau go-live:** "cần thêm nút đăng xuất vào admin".
+
+**Nguyên nhân:** nút Đăng xuất trước đây chỉ nằm trong màn Cài đặt, mà Cài đặt gắn `data-admin-only` — chỉ hiện khi `canSettings=true`, mà theo `PERM_LEVELS` chỉ **admin** có quyền này (`leader`/`employee` đều `canSettings:false`). Leader/employee vì vậy không có cách nào đăng xuất qua giao diện suốt từ lúc hệ thống có tính năng đăng nhập.
+
+**Fix:** thêm nút 🚪 riêng ngay trong header, không gắn `data-admin-only`, hiện cho mọi vai trò.
+
+**Chỉnh lại theo phản hồi tiếp theo — "chưa đẹp, vị trí chưa hợp lý":** ban đầu đặt ngay cạnh nút đổi mật khẩu (giữa luồng thao tác chính, dễ bấm nhầm). Chuyển ra **cuối hàng header**, thêm viền ngăn cách + tô màu đỏ nhạt + hiện chữ "Đăng xuất" thay vì chỉ icon, để tách biệt rõ khỏi các nút thao tác thường dùng.
+
+---
+
+### Task #112 — Nhân viên đăng nhập được nhưng không thấy việc: đổi logic hiển thị Content Order/Task theo người phụ trách
+
+**Phản hồi thực tế:** tài khoản nhân viên (Đặng Ngọc Huy) báo "không vào được" (lỗi *Sai tên đăng nhập hoặc mật khẩu*) — rà code (client `doLogin()` + server `loginUserData()`/`hashPw()`) không thấy lỗi logic nào, kết luận là vấn đề dữ liệu tài khoản (username/mật khẩu lưu không khớp, hoặc tài khoản chưa kích hoạt) chứ không phải bug — **người dùng tự vào Quản lý người dùng sửa tay là xong**, xác nhận đúng giả thuyết.
+
+**Vào được thì báo "chưa có công việc"** dù admin thấy có: kiểm tra dữ liệu thật phát hiện đơn GAS thường chỉ có đúng 1 dòng có gán người phụ trách trong toàn hệ thống — phần lớn khối lượng việc thật nằm ở Content Order/Content Task, mà 2 loại này **trước đây cố ý cho cả team nhìn thấy hết**, không lọc theo người phụ trách (nhóm Content tự quản lý riêng).
+
+**Quyết định đổi hành vi:** "xử lý công việc từ trang content theo logic từ trang order nhé, người phụ trách là ai công việc sẽ hiển thị vào trang admin của nhân viên đó" — đổi `getFilteredRows()`: `contentOrders`/`contentTasks` giờ cũng lọc qua `_isAssignedToMe()` cho nhân viên (`viewAll:false`), giống hệt đơn GAS/Internal Task. Admin/leader (`viewAll:true`) không đổi gì, vẫn xem toàn bộ.
+
+**Lưu ý chất lượng dữ liệu phát hiện kèm theo:** Content Order dùng field `person` (tên đầy đủ, VD "Bùi Thành An") khớp tốt với tên tài khoản. Content Task dùng field `coord` — khảo sát thực tế thấy nhiều giá trị viết tắt/không chuẩn (VD "A Huy thiết kế", "Huy AI") **không khớp chính xác** tên tài khoản đầy đủ — nhân viên có thể vẫn thiếu 1 số bài Lịch Content dù đã được phân công thật, cần chuẩn hoá lại cách ghi tên phụ trách bên trang Content mới khớp hoàn toàn (ngoài phạm vi sửa được ở QLCV).
+
+**Xác nhận bằng dữ liệu thật:** order VA-260818-002 (Content Order, board Khánh Huyền) có `person:"Đặng Ngọc Huy"` khớp chính xác 13 ký tự, không khoảng trắng thừa — xác nhận sẽ hiển thị đúng sau khi fix có hiệu lực.
+
+---
+
+### Task #113 — Tối ưu tốc độ tải trang lần 2 + vá lỗ hổng nuốt lỗi im lặng
+
+**Phản hồi:** "Cải thiện tốc độ load trang nhé", sau đó "Hơi chậm", rồi "Vẫn đứng hình mất khoảng 5s khi load lại trang" kèm ảnh chụp trang trắng hoàn toàn (chip lọc rỗng, số liệu "–", không cả spinner "Đang tải...").
+
+**Nghi vấn ban đầu (không xác nhận được — trình duyệt tự động lỗi, không live-debug được):** trạng thái trong ảnh trùng khớp với kịch bản 1 lỗi JS bị nuốt âm thầm bởi `catch(e){}` rỗng — rà code phát hiện đúng 2 chỗ như vậy trong `showCached()` và lần render cuối của `loadAll()` (chỉ 1/3 chỗ tương tự có sẵn `console.error`). Thêm log lỗi vào cả 2 cho nhất quán, dù chưa xác nhận được đây có phải nguyên nhân thật hay không.
+
+**Fix tốc độ thật sự (không liên quan lỗi nuốt log ở trên):** `_loadContentChannels()`/`_loadContentTasks()`/`_loadContentOrders()` (Cloudflare KV) trước đây chờ Channels tải xong HẲN mới bắt đầu Tasks/Orders — dù Tasks/Orders chỉ cần dữ liệu Channels ở đúng 1 bước cuối (map tên kênh), không phải toàn bộ quá trình fetch. Đổi sang chạy cả 3 song song ngay từ đầu, Tasks (và Content Orders bên tracker.html) tự `await` promise Channels **chỉ ngay trước dòng cần dùng**, không delay fetch của chính nó. Áp dụng ở `loadAll()`/`_autoSyncContent()`/`_periodicContentSync()` (admin.html) và `loadOrders()` (tracker.html).
+
+**Kết quả xác nhận qua ảnh chụp thật + console (F12):** trang tải nhanh hơn, sau ~5 giây vào dữ liệu bình thường (78 đơn, đúng số liệu), console sạch — chỉ có đúng cảnh báo Tailwind CDN đã biết từ trước, không có lỗi đỏ nào. Kết luận ~5 giây đó là thời gian tải dữ liệu thật (Cloudflare KV + GAS) chứ không phải bug/treo.
+
+---
+
 ## 14. Liên kết nhanh
 
 | Tên | URL |
