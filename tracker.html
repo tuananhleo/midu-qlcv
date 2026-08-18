@@ -927,7 +927,14 @@ function updateStats() {
   }
 }
 
-function normDept(s){ return (s||'').trim().replace(/^Ph[oòó]ng\s+/i,''); }
+// Chuẩn hoá tên phòng ban để so khớp — bỏ tiền tố Phòng/Ban, bỏ dấu tiếng Việt, bỏ hoa/thường,
+// coi gạch ngang (-, –, —) như khoảng trắng. Nhờ vậy link ?dept=... dùng được dạng gọn không
+// dấu (VD "cskh", "ke-toan", "marketing-truyen-thong") thay vì chuỗi %C3%B2ng... xấu, dài, khó
+// đọc/dễ gõ nhầm khi gửi tay cho từng phòng ban (2026-08-18).
+function normDept(s){
+  let t=(s||'').trim().replace(/^(Ph[oòó]ng|Ban)\s+/i,'');
+  return normVN(t).replace(/[-–—]/g,' ').replace(/\s+/g,' ').trim();
+}
 function buildDeptChips() {
   const _DEFAULT_DEPTS=['Kinh doanh','Kế toán – Tài chính','Nhân sự','Vận hành','Ban Giám đốc','Marketing – Truyền thông','Kho – Logistics','Khác'];
   let fromConfig=_DEFAULT_DEPTS;

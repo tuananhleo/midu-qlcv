@@ -2170,7 +2170,11 @@ function _updateAiPendingBanner(){
   document.getElementById('ai-pending-count').textContent=pending.length;
   banner.classList.toggle('hidden', pending.length===0);
 }
-function normDept(s){ return (s||'').trim().replace(/^Ph[oòó]ng\s+/i,''); }
+// Đồng bộ với tracker.html — xem giải thích đầy đủ ở đó (link ?dept=... dạng gọn không dấu).
+function normDept(s){
+  let t=(s||'').trim().replace(/^(Ph[oòó]ng|Ban)\s+/i,'');
+  return normVN(t).replace(/[-–—]/g,' ').replace(/\s+/g,' ').trim();
+}
 function buildDeptChips() {
   // Chỉ dùng dept từ admin config (không gộp từ orders cũ)
   const depts = getDepts().slice().sort();
