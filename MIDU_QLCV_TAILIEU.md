@@ -1753,3 +1753,20 @@ Mỗi field id chỉ cần trùng với field id ĐÃ CÓ ở bất kỳ loại 
 | Lịch Content — dữ liệu qua Cloudflare KV (`/api/kv`, `/api/img`), KHÔNG còn dùng Supabase từ 2026-08-11 (xem Task #106) | https://content-marketing.pages.dev/ |
 | Lịch Content — board Khánh Huyền | https://content-marketing.pages.dev/#ws=khanh-huyen |
 | Supabase dashboard (project cũ, đã ngừng dùng cho Lịch Content — có thể còn dữ liệu lịch sử) | https://supabase.com/dashboard/project/loqcqtuouagzaqwdmhji |
+
+### Tracker — link riêng theo phòng ban (Task #116)
+
+Gửi đúng link tương ứng cho từng phòng để họ bookmark, vào là tự lọc sẵn đúng việc của phòng — không cần đăng nhập, không cần chọn gì thêm.
+
+| Phòng ban | Link |
+|-----------|------|
+| Phòng CSKH | https://tuananhleo.github.io/midu-qlcv/tracker.html?dept=cskh |
+| Phòng Kế toán | https://tuananhleo.github.io/midu-qlcv/tracker.html?dept=ke-toan |
+| Phòng HCNS | https://tuananhleo.github.io/midu-qlcv/tracker.html?dept=hcns |
+| Phòng Vận hành | https://tuananhleo.github.io/midu-qlcv/tracker.html?dept=van-hanh |
+| Phòng Marketing – Truyền thông | https://tuananhleo.github.io/midu-qlcv/tracker.html?dept=marketing-truyen-thong |
+| Ban Đào tạo | https://tuananhleo.github.io/midu-qlcv/tracker.html?dept=dao-tao |
+| Ban Chuyên môn | https://tuananhleo.github.io/midu-qlcv/tracker.html?dept=chuyen-mon |
+| Xem tất cả (không lọc) | https://tuananhleo.github.io/midu-qlcv/tracker.html |
+
+Nếu sau này đổi/thêm tên phòng ban (Cài đặt → Phòng ban trong admin.html), phải tạo lại slug tương ứng cho phòng đó — xem cách `normDept()` chuẩn hoá tên ở Task #116 để suy ra đúng slug (bỏ tiền tố Phòng/Ban, bỏ dấu, thay khoảng trắng bằng gạch ngang).
