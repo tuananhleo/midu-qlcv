@@ -808,6 +808,15 @@
           <span class="text-xs w-16 flex-shrink-0" style="color:var(--atext3)">Trạng thái:</span>
           <div id="status-chips" class="flex flex-wrap gap-1.5"></div>
         </div>
+        <!-- Row: Người phụ trách — CHỈ hiện cho vai trò xem được tất cả (admin/leader, perm().viewAll).
+        Nhân viên (viewAll:false) đã tự động chỉ thấy đúng việc của mình (xem getFilteredRows()),
+        nên lọc thêm theo người phụ trách sẽ vô nghĩa/gây rối, ẩn hẳn thay vì hiện disabled
+        (2026-08-18, theo yêu cầu "riêng trong admin có bộ lọc theo người phụ trách với những
+        vai trò xem được tất cả công việc"). -->
+        <div class="flex flex-wrap gap-2 mb-2 items-center" data-viewall-only>
+          <span class="text-xs w-16 flex-shrink-0" style="color:var(--atext3)">Phụ trách:</span>
+          <div id="assignee-chips" class="flex flex-wrap gap-1.5"></div>
+        </div>
         <!-- Row 5: Tìm kiếm -->
         <div class="flex flex-wrap gap-2 items-center">
           <input id="f-kw" type="text" placeholder="🔍 Tìm kiếm..." class="cinp" style="width:100%;max-width:320px" oninput="updateStats();render()">
@@ -926,11 +935,11 @@
       <div id="report-table-view" class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6 hidden">
         <div class="chart-box" style="cursor:default">
           <p class="text-xs font-bold uppercase tracking-widest mb-3" style="color:var(--atext3)">📊 Theo loại order</p>
-          <table class="report-tbl"><thead><tr><th>Loại</th><th style="text-align:right">Số lượng</th></tr></thead><tbody id="tbl-type"></tbody></table>
+          <table class="report-tbl"><thead><tr><th>Loại</th><th style="text-align:right">Số lượng</th><th style="text-align:right">%</th></tr></thead><tbody id="tbl-type"></tbody></table>
         </div>
         <div class="chart-box" style="cursor:default">
           <p class="text-xs font-bold uppercase tracking-widest mb-3" style="color:var(--atext3)">🏢 Theo phòng ban</p>
-          <table class="report-tbl"><thead><tr><th>Phòng ban</th><th style="text-align:right">Số lượng</th></tr></thead><tbody id="tbl-dept"></tbody></table>
+          <table class="report-tbl"><thead><tr><th>Phòng ban</th><th style="text-align:right">Số lượng</th><th style="text-align:right">%</th></tr></thead><tbody id="tbl-dept"></tbody></table>
         </div>
         <div class="chart-box" style="cursor:default">
           <p class="text-xs font-bold uppercase tracking-widest mb-3" style="color:var(--atext3)">🔄 Theo trạng thái</p>
@@ -938,7 +947,7 @@
         </div>
         <div class="chart-box" style="cursor:default">
           <p class="text-xs font-bold uppercase tracking-widest mb-3" style="color:var(--atext3)">👤 Theo người phụ trách</p>
-          <table class="report-tbl"><thead><tr><th>Người phụ trách</th><th style="text-align:right">Số lượng</th></tr></thead><tbody id="tbl-assignee"></tbody></table>
+          <table class="report-tbl"><thead><tr><th>Người phụ trách</th><th style="text-align:right">Số lượng</th><th style="text-align:right">%</th></tr></thead><tbody id="tbl-assignee"></tbody></table>
         </div>
       </div>
 
@@ -1395,7 +1404,7 @@ async function _refreshSheetOrderIds(){
     _sheetOrderIds=new Set(raw.map(o=>o.id));
   }catch(e){ console.warn('[refreshSheetOrderIds]',e.message); }
 }
-let filters       = {dept:'', type:'', status:''};
+let filters       = {dept:'', type:'', status:'', assignee:''};
 let _overdueFilter = false;
 let currentPeriod = 'month';
 let customRange   = null; // {from: Date, to: Date}
@@ -1521,6 +1530,10 @@ function applyRoleUI() {
   // Ẩn/hiện nút theo quyền
   document.querySelectorAll('[data-admin-only]').forEach(el => {
     el.style.display = p.canSettings ? '' : 'none';
+  });
+  // Bộ lọc "Phụ trách" — chỉ vai trò xem được tất cả (admin/leader) mới cần, xem giải thích ở HTML.
+  document.querySelectorAll('[data-viewall-only]').forEach(el => {
+    el.style.display = p.viewAll ? '' : 'none';
   });
   // Tab Report
   const reportTab = document.getElementById('tab-btn-report');
@@ -1786,7 +1799,7 @@ function showCached() {
   } catch(e) {}
   // Render nếu có bất kỳ dữ liệu nào
   if (allOrders.length || contentOrders.length || contentTasks.length || lichTTOrders.length || internalTasks.length) {
-    try { updateStats(); buildDeptChips(); buildTypeChips(); renderStatusChips(); updateListPeriodLabel(); render(); } catch(e) { console.error('[showCached] render error:', e); }
+    try { updateStats(); buildDeptChips(); buildTypeChips(); renderStatusChips(); buildAssigneeChips(); updateListPeriodLabel(); render(); } catch(e) { console.error('[showCached] render error:', e); }
     document.getElementById('loading-state').classList.add('hidden');
     document.getElementById('list').classList.remove('hidden');
   }
@@ -1807,7 +1820,7 @@ async function loadAll(notify=false) {
   // kênh, không chặn fetch của chính nó (2026-08-18, xem giải thích ở _loadContentTasks()).
   const channelsPromise = _loadContentChannels();
   try { await Promise.all([channelsPromise, _loadContentTasks(channelsPromise), _loadContentOrders()]); } catch(e) { console.warn('[loadAll] content:', e.message); }
-  try { updateStats(); buildDeptChips(); buildTypeChips(); renderStatusChips(); render(); } catch(e) { console.error('[render] error:', e); }
+  try { updateStats(); buildDeptChips(); buildTypeChips(); renderStatusChips(); buildAssigneeChips(); render(); } catch(e) { console.error('[render] error:', e); }
   document.getElementById('loading-state').classList.add('hidden');
   document.getElementById('list').classList.remove('hidden');
   // Wait for GAS (orders/schema/LichTT) then re-render with full data
@@ -1851,7 +1864,7 @@ async function loadAll(notify=false) {
     if (!allOrders.length) showToast('Lỗi tải dữ liệu: '+e.message,'error');
   }
   _dataReady = true; // cả đơn GAS lẫn Content đã cùng ở bản mới nhất — an toàn để hiện số tổng
-  try { updateStats(); buildDeptChips(); buildTypeChips(); renderStatusChips(); render(); } catch(e) { console.error('[loadAll] final render error:', e); }
+  try { updateStats(); buildDeptChips(); buildTypeChips(); renderStatusChips(); buildAssigneeChips(); render(); } catch(e) { console.error('[loadAll] final render error:', e); }
   _autoCompleteFeedback24h();
   if (document.getElementById('tab-report').classList.contains('hidden') === false) {
     loadChartJs(renderReport);
@@ -1934,6 +1947,13 @@ function _isAssignedToMe(assignedToStr){
   const assigned=(assignedToStr||'').split(',').map(s=>s.trim());
   return assigned.includes(currentUser?.displayName||'__none__');
 }
+// Bộ lọc "Phụ trách" (chỉ admin/leader dùng, xem data-viewall-only) — chuẩn hoá tên qua
+// _normAssignee() giống hệt bảng "Theo người phụ trách" ở Báo cáo, để khớp được cả tên viết
+// tắt bên Content Task (coord) với tên tài khoản đầy đủ trong danh sách chọn.
+function _hasAssignee(assignedToStr, name){
+  if(!name) return true;
+  return (assignedToStr||'').split(',').map(s=>_normAssignee(s)).includes(name);
+}
 function getFilteredRows(){
   const kw=normVN(document.getElementById('f-kw').value);
   // Hạng mục công việc được phép xem — cấu hình riêng theo từng người dùng (Cài đặt >
@@ -1947,6 +1967,7 @@ function getFilteredRows(){
     if(filters.dept   && normDept(o.department)!==normDept(filters.dept)) return false;
     if(filters.type   && o.type!==filters.type)       return false;
     if(filters.status && o.status!==filters.status)   return false;
+    if(filters.assignee && !_hasAssignee(o.assignedTo, filters.assignee)) return false;
     if(kw && !normVN(`${o.projectName}${o.requester}${o.department}${o.id}${o.projectCode||''}`).includes(kw)) return false;
     return true;
   });
@@ -1982,6 +2003,7 @@ function getFilteredRows(){
     if(_overdueFilter){ const _idl=parseDl({deadline:t.deadline||t.plannedDate||''}); if(!_idl||_idl>=today) return false; }
     if(filters.dept&&normDept(t.department)!==normDept(filters.dept)) return false;
     if(filters.status&&t.status!==filters.status) return false;
+    if(filters.assignee && !_hasAssignee(t.assignedTo, filters.assignee)) return false;
     if(kw&&!normVN(`${t.title||''}${t.projectName||''}${t.requester||''}${t.assignedTo||''}${t.adminNote||''}${t.department||''}${t.d_channel||''}${t._channel||''}`).includes(kw)) return false;
     return true;
   });
@@ -2045,6 +2067,22 @@ function buildTypeChips() {
   mk('', 'Tất cả');
   // Lấy từ TYPE_MAP — tự động cập nhật khi có loại mới
   Object.entries(TYPE_MAP).forEach(([id, label]) => mk(id, label));
+}
+
+// Chỉ dành cho vai trò xem được tất cả (admin/leader) — nhân viên đã tự động chỉ thấy việc của
+// mình nên không cần lọc thêm (xem data-viewall-only ở HTML + applyRoleUI()).
+function buildAssigneeChips() {
+  const c = document.getElementById('assignee-chips'); if (!c || !perm().viewAll) return;
+  c.innerHTML = '';
+  const mk = (val, label) => {
+    const b = document.createElement('button'); b.type = 'button';
+    b.className = 'chip' + (filters.assignee === val ? ' active' : '');
+    b.textContent = label;
+    b.onclick = () => { filters.assignee = filters.assignee === val ? '' : val; buildAssigneeChips(); updateStats(); render(); };
+    c.appendChild(b);
+  };
+  mk('', 'Tất cả');
+  getAssignableUsers().forEach(name => mk(name, name));
 }
 
 function updateListPeriodLabel() {
@@ -2167,7 +2205,7 @@ function openProjectOverview(projectCode){
     const s=STATUS_MAP[o.status]||STATUS_MAP['chua-lam'];
     const icon=o.status==='hoan-thanh'?'✓':(o.status==='dang-xu-ly'||o.status==='feedback')?'◐':'○';
     const iconColor=o.status==='hoan-thanh'?'#4ade80':(o.status==='dang-xu-ly'||o.status==='feedback')?'#60a5fa':'#64748b';
-    return `<div onclick="closeProjectOverview();switchTab('orders');filters={dept:'',type:'',status:''};document.getElementById('f-kw').value='${o.id}';updateStats();render();" style="cursor:pointer;display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;background:var(--abg3);border:1px solid var(--aborder)">
+    return `<div onclick="closeProjectOverview();switchTab('orders');filters={dept:'',type:'',status:'',assignee:''};document.getElementById('f-kw').value='${o.id}';updateStats();render();" style="cursor:pointer;display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;background:var(--abg3);border:1px solid var(--aborder)">
       <span style="color:${iconColor};font-size:16px;flex-shrink:0">${icon}</span>
       <span style="flex:1;min-width:0;font-size:.8rem;color:var(--atext)" class="truncate">${o.projectName||o.id}</span>
       <span class="meta-tag flex-shrink-0" style="font-size:.68rem">${TYPE_MAP[o.type]||o.type}</span>
@@ -2892,28 +2930,32 @@ function toggleReportTable(){
 // Bảng dữ liệu thay thế cho 3 biểu đồ phân tích — cùng nguồn đếm với buildChartType/Dept/Status,
 // để người dùng đọc/copy số liệu chính xác (biểu đồ khó đọc số lẻ khi nhiều nhóm).
 function buildReportTables(){
+  // n dùng chung cho cả 4 bảng — tất cả đều tính % trên cùng 1 mẫu số (reportOrders.length),
+  // theo yêu cầu "trong báo cáo tất cả cần có số lượng công việc và tỉ lệ % đi kèm" (2026-08-18).
+  const n=reportOrders.length;
+  const pct=v=>n?Math.round(v/n*100):0;
+
   const typeCounts={}; reportOrders.forEach(o=>{typeCounts[o.type]=(typeCounts[o.type]||0)+1;});
   document.getElementById('tbl-type').innerHTML=Object.entries(typeCounts).map(([k,v])=>
-    `<tr><td><span class="report-dot" style="background:${getTypeColor(k)}"></span>${TYPE_MAP[k]||k}</td><td style="text-align:right">${v}</td></tr>`
-  ).join('')||`<tr><td colspan="2" style="color:var(--atext3)">Không có dữ liệu</td></tr>`;
+    `<tr><td><span class="report-dot" style="background:${getTypeColor(k)}"></span>${TYPE_MAP[k]||k}</td><td style="text-align:right">${v}</td><td style="text-align:right">${pct(v)}%</td></tr>`
+  ).join('')||`<tr><td colspan="3" style="color:var(--atext3)">Không có dữ liệu</td></tr>`;
 
   const deptCounts={}; reportOrders.forEach(o=>{if(o.department) deptCounts[o.department]=(deptCounts[o.department]||0)+1;});
   const deptSorted=Object.entries(deptCounts).sort((a,b)=>b[1]-a[1]);
   document.getElementById('tbl-dept').innerHTML=deptSorted.map(([k,v])=>
-    `<tr><td>${k}</td><td style="text-align:right">${v}</td></tr>`
-  ).join('')||`<tr><td colspan="2" style="color:var(--atext3)">Không có dữ liệu</td></tr>`;
+    `<tr><td>${k}</td><td style="text-align:right">${v}</td><td style="text-align:right">${pct(v)}%</td></tr>`
+  ).join('')||`<tr><td colspan="3" style="color:var(--atext3)">Không có dữ liệu</td></tr>`;
 
-  const n=reportOrders.length;
   document.getElementById('tbl-status').innerHTML=statusConfig.map(sc=>{
     const c=reportOrders.filter(o=>o.status===sc.id).length;
-    return `<tr><td><span class="report-dot" style="background:${sc.color||'#64748b'}"></span>${sc.icon||''} ${sc.label}</td><td style="text-align:right">${c}</td><td style="text-align:right">${n?Math.round(c/n*100):0}%</td></tr>`;
+    return `<tr><td><span class="report-dot" style="background:${sc.color||'#64748b'}"></span>${sc.icon||''} ${sc.label}</td><td style="text-align:right">${c}</td><td style="text-align:right">${pct(c)}%</td></tr>`;
   }).join('');
 
   const asgCounts={}; reportOrders.forEach(o=>{ _splitAssignees(o).forEach(name=>{ asgCounts[name]=(asgCounts[name]||0)+1; }); });
   const asgSorted=Object.entries(asgCounts).sort((a,b)=>b[1]-a[1]);
   document.getElementById('tbl-assignee').innerHTML=asgSorted.map(([k,v])=>
-    `<tr><td>👤 ${k}</td><td style="text-align:right">${v}</td></tr>`
-  ).join('')||`<tr><td colspan="2" style="color:var(--atext3)">Không có dữ liệu</td></tr>`;
+    `<tr><td>👤 ${k}</td><td style="text-align:right">${v}</td><td style="text-align:right">${pct(v)}%</td></tr>`
+  ).join('')||`<tr><td colspan="3" style="color:var(--atext3)">Không có dữ liệu</td></tr>`;
 }
 function destroyCharts(){
   Object.values(reportCharts).forEach(c=>c.destroy());
@@ -3142,7 +3184,7 @@ function _renderDrillList(matched,title){
           </div>
           <span class="text-xs px-2 py-0.5 rounded-full flex-shrink-0" style="background:${s.bg};color:${s.color}">${s.label}</span>
           <span class="text-xs flex-shrink-0 ${isOv?'text-red-400':''}" style="${!isOv?'color:var(--atext3)':''}">${dlStr}${isOv?' 🔴':''}</span>
-          <button type="button" onclick="closeDrill();switchTab('orders');filters={dept:'',type:'',status:''};document.getElementById('f-kw').value='${o.id}';updateStats();render();" class="btn btn-ghost flex-shrink-0" style="padding:3px 7px;font-size:.7rem">↗</button>
+          <button type="button" onclick="closeDrill();switchTab('orders');filters={dept:'',type:'',status:'',assignee:''};document.getElementById('f-kw').value='${o.id}';updateStats();render();" class="btn btn-ghost flex-shrink-0" style="padding:3px 7px;font-size:.7rem">↗</button>
         </div>`;
       }).join('')
     : '<p class="text-white/30 text-sm text-center py-6">Không có order nào</p>';
