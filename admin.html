@@ -1574,8 +1574,11 @@ async function afterLogin() {
   if(_ls) _ls.classList.add('hidden');
   if(_li) _li.classList.remove('hidden');
   loadAll();
-  // Admin: preload users list để dùng cho assignee dropdown
-  if (perm().canUserMgmt) loadAllUsers();
+  // Cần allUsers cho bộ lọc "Phụ trách" (data-viewall-only) — không chỉ admin (canUserMgmt) mới
+  // cần, leader cũng xem được bộ lọc này (viewAll:true) nên phải tải cho cả 2, không thì
+  // getAssignableUsers() rơi về cache localStorage cụt (2026-08-18, phản hồi leader chỉ thấy
+  // đúng 1-2 tên thay vì đủ danh sách).
+  if (perm().viewAll) loadAllUsers();
   setTimeout(_autoSyncContent, 5000); // đợi loadAll xong
   if(!_contentSyncInterval) _contentSyncInterval=setInterval(_periodicContentSync, 90000);
 }
