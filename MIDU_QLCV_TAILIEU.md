@@ -1782,6 +1782,34 @@ Mỗi field id chỉ cần trùng với field id ĐÃ CÓ ở bất kỳ loại 
 
 ---
 
+### Task #120 — Fix tiếp Task #118: nhãn "Phụ trách" vẫn lệch dòng + phát hiện bug leader không thấy đủ tên
+
+**Yêu cầu:** "Vẫn thế mà, cho thẳng hàng với các bộ lọc khác đi em, dài quá thì xuống dòng ở cuối, k xuống dòng ở đầu như thế" — sau đó thêm ảnh chụp cho thấy hàng "Phụ trách" chỉ có "Tất cả" và "Lê Ngọc Huy" ("Bị mất luôn rồi"), rồi "Load phần phụ trách hơi chậm và lần 2 thì k hiện".
+
+**Nguyên nhân/Phát hiện:** 3 lỗi riêng biệt, phát hiện lần lượt:
+- Bản sửa trước (mb-2/label-trên-chip-dưới, coi như 1 fix tạm ở Task #118) khiến nhãn LUÔN nằm 1 dòng riêng bất kể có tràn hay không — không giống các hàng lọc khác (label + chip đầu cùng dòng, chỉ chip tràn mới xuống). Nguyên nhân gốc: `#assignee-chips` là 1 `<div class="flex flex-wrap">` LỒNG bên trong flex-wrap của hàng cha — khi đủ nhiều chip (14 tên), trình duyệt đẩy hẳn cái div con xuống dòng dưới thay vì để từng chip tự tràn dòng ở cấp cha.
+- Bug thật (không liên quan CSS): tài khoản **leader** chỉ thấy 1-2 tên vì `allUsers` (danh sách nhân sự) chỉ được tải khi `perm().canUserMgmt` — chỉ đúng với admin. Leader có `viewAll:true` (thấy được bộ lọc này) nhưng `canUserMgmt:false` nên `allUsers` không bao giờ được tải, `getAssignableUsers()` rơi về cache `getAssignees()` (localStorage cụt, chỉ vài tên từng thấy).
+- Sau khi sửa bug trên, phát sinh race condition: `loadAllUsers()` chạy nền không `await`, còn `buildAssigneeChips()` build ở nhiều mốc trong `loadAll()` — ai xong trước ai là ngẫu nhiên theo tốc độ mạng, nên có lúc hiện đủ có lúc không.
+
+**Fix:**
+- Đổi `#assignee-chips` sang `style="display:contents"` — bỏ nó khỏi cây flexbox, để từng nút chip trở thành flex-item NGANG HÀNG trực tiếp với nhãn trong CÙNG 1 flex-wrap của cha, giống hệt cơ chế Phòng ban/Loại/Trạng thái (JS `buildAssigneeChips()` không đổi, vẫn `appendChild` vào đúng div đó).
+- `afterLogin()`: đổi điều kiện tải `allUsers` từ `perm().canUserMgmt` sang `perm().viewAll` (bao cả leader).
+- Gọi `loadAllUsers().then(buildAssigneeChips)` — vẽ lại chip ngay khi tải xong, không phụ thuộc thứ tự với các lần build khác.
+
+**Xác nhận/Lưu ý:** Đã test trên trình duyệt: label + chip đầu cùng 1 dòng (chênh lệch top vài px do line-height, chip tràn xuống đúng 1 dòng dưới). Bug leader không tải đủ tên là lỗi có từ Task #114 (lúc thêm bộ lọc này), không phải do các lần sửa layout gần đây gây ra — chỉ mới lộ ra vì người dùng test kỹ bằng tài khoản leader.
+
+---
+
+### Task #121 — Đổi nút "Đăng xuất" sang dạng icon tròn (nút nguồn)
+
+**Yêu cầu:** "icon đăng xuất đang đẹp lại thay xấu thế" (khi test bằng leader, nhiều nút admin-only bị ẩn khiến đường viền ngăn cách bên trái nút Đăng xuất đứng lẻ loi) → "icon Đăng xuất là dạng nút nguồn đi em".
+
+**Fix:** Bỏ hẳn kiểu nút chữ có viền ngăn cách (`border-left`) từng dùng ở Task #118 — thay bằng nút icon tròn gọn, cùng kiểu trình bày với 2 nút 🔒 (đổi mật khẩu)/⚙ (cài đặt) bên cạnh, chỉ icon "⏻" (ký hiệu nguồn), tô màu đỏ nhạt để phân biệt là hành động khác nhóm.
+
+**Xác nhận/Lưu ý:** Ngay sau khi push, người dùng báo "Vẫn thế mà" kèm ảnh vẫn thấy nút chữ cũ — kiểm tra qua `curl` trực tiếp bản deploy thì xác nhận đây chỉ là **CDN GitHub Pages cập nhật trễ vài chục giây tới vài phút**, không phải lỗi code — kiểm tra lại ngay sau đó qua `curl` đã thấy đúng bản icon mới. Nhắc để lần sau gặp báo "vẫn như cũ" ngay sau khi vừa push, ưu tiên kiểm tra bằng `curl` bản deploy trước khi nghi code sai.
+
+---
+
 ## 14. Liên kết nhanh
 
 | Tên | URL |
