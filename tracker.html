@@ -647,7 +647,9 @@ async function _loadContentChannels(){
   perId.forEach(channels=>channels.forEach(ch=>{ if(ch.id&&ch.name) _contentChannelMap[ch.id]=ch.name; }));
 }
 
-async function loadContentTasks() {
+// channelsReady: promise của _loadContentChannels() chạy song song (xem loadOrders()) — chỉ
+// đợi ngay trước bước cần _contentChannelMap, không delay fetch của chính hàm này (2026-08-18).
+async function loadContentTasks(channelsReady) {
   const hidden = _getHiddenIds();
   const results = await Promise.all(CONTENT_SOURCES.map(async src=>{
     try{
@@ -656,6 +658,7 @@ async function loadContentTasks() {
       const data = _parseContentJSON(await resp.text());
       const raw = data?.[0]?.value;
       const tasks = typeof raw==='string' ? JSON.parse(raw) : (Array.isArray(raw)?raw:[]);
+      await channelsReady;
       return tasks
         .filter(t=>!hidden.has(src.idPrefix+t.id))
         .map(ct=>({
@@ -780,12 +783,15 @@ async function loadOrders(notify=false) {
   const lichTTPromise=loadLichTT().catch(e=>console.warn('[LichTT]',e.message));
 
   // ── B4: Chờ Content (Cloudflare KV, nhanh) ───────────────────────
-  // Channels PHẢI xong trước Tasks (map tên kênh ngay lúc load, không phải lazy) —
-  // chạy chung Promise.all sẽ bị race, card hiện ID kênh thô thay vì tên.
-  await _loadContentChannels().catch(e=>console.warn('[Channels]',e.message));
+  // Channels/Tasks/Orders chạy SONG SONG hoàn toàn (trước đây chờ channels xong hẳn mới bắt
+  // đầu tasks/orders, tốn thêm 1 lượt round-trip không cần thiết) — loadContentTasks()/
+  // loadContentOrders() tự đợi channelsPromise ngay trước bước cần tên kênh, không chặn fetch
+  // của chính chúng (2026-08-18, xem giải thích ở admin.html — cùng lý do).
+  const channelsPromise = _loadContentChannels().catch(e=>console.warn('[Channels]',e.message));
   await Promise.all([
-    loadContentTasks().catch(e=>console.warn('[ContentTasks]',e.message)),
-    loadContentOrders().catch(e=>console.warn('[ContentOrders]',e.message)),
+    channelsPromise,
+    loadContentTasks(channelsPromise).catch(e=>console.warn('[ContentTasks]',e.message)),
+    loadContentOrders(channelsPromise).catch(e=>console.warn('[ContentOrders]',e.message)),
   ]);
   if(_hasData()){
     try { updateStats(); buildDeptChips(); buildTypeChips(); buildStatusChips(); updatePeriodLabel(); render(); } catch(e){}
@@ -1433,7 +1439,7 @@ function closeContentTaskDetail(){
 // ───────────────────────────────────────────────────────────────
 
 
-async function loadContentOrders(){
+async function loadContentOrders(channelsReady){
   try{
     const hidden=_getHiddenIds();
     // Mỗi board có try/catch riêng: 1 board lỗi không được kéo sập order của board còn lại.
@@ -1444,6 +1450,7 @@ async function loadContentOrders(){
       const data=_parseContentJSON(await resp.text());
       const raw=data?.[0]?.value;
       const orders=typeof raw==='string'?JSON.parse(raw):(Array.isArray(raw)?raw:[]);
+      await channelsReady;
       return orders
       .filter(o=>!hidden.has('lco-'+o.id))
       .map(o=>{

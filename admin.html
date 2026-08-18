@@ -1803,9 +1803,12 @@ async function loadAll(notify=false) {
   const gasOrders = fetch(`${getGasUrl()}?action=getOrders`, {signal:AbortSignal.timeout(15000)}).then(r=>r.json()).catch(()=>null);
   const gasSchema = fetch(`${getGasUrl()}?action=getFormSchema&_=${Date.now()}`, {signal:AbortSignal.timeout(15000)}).then(r=>r.json()).catch(()=>null);
   const lichTT = _loadLichTT().catch(e=>console.warn('[loadAll] LichTT:', e.message));
-  // Load Content (Cloudflare KV, nhanh) và render ngay. Channels trước để tasks map ra tên kênh
-  // thay vì ID thô (contentTasks đọc _contentChannelMap ngay lúc map, không phải lazy).
-  try { await _loadContentChannels(); await Promise.all([_loadContentTasks(), _loadContentOrders()]); } catch(e) { console.warn('[loadAll] content:', e.message); }
+  // Load Content (Cloudflare KV, nhanh) và render ngay. Channels/Tasks/Orders chạy SONG SONG
+  // hoàn toàn (trước đây chờ channels xong hẳn mới bắt đầu tasks/orders, tốn thêm 1 lượt round-
+  // trip không cần thiết) — _loadContentTasks() tự đợi channelsPromise ngay trước bước cần tên
+  // kênh, không chặn fetch của chính nó (2026-08-18, xem giải thích ở _loadContentTasks()).
+  const channelsPromise = _loadContentChannels();
+  try { await Promise.all([channelsPromise, _loadContentTasks(channelsPromise), _loadContentOrders()]); } catch(e) { console.warn('[loadAll] content:', e.message); }
   try { updateStats(); buildDeptChips(); buildTypeChips(); renderStatusChips(); render(); } catch(e) { console.error('[render] error:', e); }
   document.getElementById('loading-state').classList.add('hidden');
   document.getElementById('list').classList.remove('hidden');
@@ -4263,7 +4266,12 @@ async function _loadContentChannels(){
   perId.forEach(channels=>channels.forEach(ch=>{ if(ch.id&&ch.name) _contentChannelMap[ch.id]=ch.name; }));
 }
 
-async function _loadContentTasks(){
+// channelsReady: promise của _loadContentChannels() đang chạy song song (không await trước
+// khi gọi hàm này nữa — xem loadAll()) — chỉ đợi NGAY TRƯỚC bước cần map tên kênh, để việc
+// gọi fetch() của chính hàm này không bị delay chờ channels xong mới bắt đầu (tối ưu tốc độ
+// tải trang, 2026-08-18). _loadContentOrders() không dùng _contentChannelMap nên không cần
+// tham số này, chạy độc lập hoàn toàn.
+async function _loadContentTasks(channelsReady){
   const hidden=_getHiddenIds();
   // Mỗi board có try/catch riêng: 1 board lỗi (mạng chập chờn, đang ghi dở dữ liệu...)
   // không được kéo sập dữ liệu của board còn lại.
@@ -4274,6 +4282,7 @@ async function _loadContentTasks(){
     const data=_parseContentJSON(await resp.text());
     const raw=data?.[0]?.value;
     const tasks=typeof raw==='string'?JSON.parse(raw):(Array.isArray(raw)?raw:[]);
+    await channelsReady; // đợi đúng lúc cần _contentChannelMap, không đợi sớm hơn
     return tasks
       .filter(t=>!hidden.has('cont-'+t.id))
       .map(ct=>{
@@ -4512,8 +4521,8 @@ async function _autoSyncContent(){
   const btn=document.getElementById('sync-content-btn');
   if(btn){btn.disabled=true;btn.textContent='⏳ Đang tải...';}
   try{
-    await _loadContentChannels();
-    await Promise.all([_loadContentTasks(), _loadContentOrders(), _loadLichTT()]);
+    const channelsPromise = _loadContentChannels();
+    await Promise.all([channelsPromise, _loadContentTasks(channelsPromise), _loadContentOrders(), _loadLichTT()]);
     updateStats(); render();
     // Refresh _sheetOrderIds trước khi mirror (Task #80) — đảm bảo chống trùng dựa trên
     // dữ liệu sheet mới nhất, không chỉ localStorage của riêng máy này.
@@ -4536,8 +4545,8 @@ function _hasActiveInput(){
 }
 async function _periodicContentSync(){
   try{
-    await _loadContentChannels();
-    await Promise.all([_loadContentTasks(), _loadContentOrders(), _loadLichTT()]);
+    const channelsPromise = _loadContentChannels();
+    await Promise.all([channelsPromise, _loadContentTasks(channelsPromise), _loadContentOrders(), _loadLichTT()]);
     updateStats();
     // Không render khi đang có ô đang gõ dở (form sửa nội bộ, ô phân công trên card...)
     // để tránh render() ghi đè mất nội dung chưa lưu.
