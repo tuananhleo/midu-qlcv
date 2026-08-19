@@ -4388,16 +4388,19 @@ const ZALO_NOTIFY_PAGE_ID='zlw852060909005878828';
 const ADMIN_SELF_URL='https://tuananhleo.github.io/midu-qlcv/admin.html';
 // ── Nhóm Zalo riêng theo phòng ban (khung chờ điền — 2026-08-18) ─────────────────
 // Kế hoạch: "lập các nhóm riêng với các phòng ban, check phòng nào gửi order thì bắn tin về
-// nhóm với phòng đó". CHƯA CÓ dữ liệu thật (chưa tạo nhóm/lấy ID bên Smax.ai) — key đúng bằng
-// tên phòng ban (khớp field "department", xem getDepts()). Mỗi phòng có thể chỉ override
-// customerId/pageId (nếu Smax cho thêm liên hệ mới vào CÙNG 1 trigger hiện tại) hoặc override
-// cả triggerUrl/token (nếu Smax bắt tạo trigger riêng cho mỗi tự động hoá/nhóm) — thiếu trường
-// nào thì dùng lại giá trị mặc định phía trên. Phòng NÀO CHƯA có trong map này thì tự rơi về
-// đúng nhóm chung hiện tại — an toàn để deploy ngay, không đổi hành vi hiện tại cho tới khi điền
-// dữ liệu thật vào đây, chỉ cần điền, KHÔNG cần sửa code ở nơi khác.
+// nhóm với phòng đó". Đã chốt cấu trúc bên Smax.ai: MỖI PHÒNG 1 AUTOMATION/TRIGGER RIÊNG (copy
+// nguyên khối "Set Attributes" + "ZaloUser Message" đang có cho từng phòng, đổi đích Zalo group)
+// — nên mỗi entry cần đủ cả 4 trường (không chỉ đổi customerId/pageId trên 1 trigger chung).
+// CHƯA CÓ dữ liệu thật (chưa tạo xong các trigger) — key đúng bằng tên phòng ban (khớp field
+// "department", xem getDepts()). Phòng NÀO CHƯA có trong map này thì tự rơi về đúng nhóm chung
+// hiện tại (SMAX_TRIGGER_URL/TOKEN/CUSTOMER/PAGE phía trên) — an toàn để deploy ngay, không đổi
+// hành vi hiện tại cho tới khi điền dữ liệu thật vào đây, chỉ cần điền, KHÔNG cần sửa code nơi
+// khác. Lưu ý: khối "ZaloUser Message" bên Smax hiện có dòng chữ tĩnh "🧑 CÓ ORDER MỚI ANH EM
+// ƠI" — cần XOÁ dòng đó khi copy sang trigger riêng từng phòng, chỉ giữ lại {thongtinlead}, vì
+// tiêu đề giờ đã chuyển vào code (xem _notifyZaloContentOrder()/_notifyZaloStatusChange() dưới
+// đây), tự đổi theo đúng loại sự kiện (order mới/feedback/hoàn thành) — nếu để cả 2 sẽ bị lặp.
 const ZALO_DEPT_GROUPS = {
-  // 'Phòng CSKH': { customerId:'zlw...', pageId:'zlw...' },
-  // 'Phòng Marketing – Truyền thông': { triggerUrl:'https://api.smax.ai/...', token:'...', customerId:'zlw...', pageId:'zlw...' },
+  // 'Phòng CSKH': { triggerUrl:'https://api.smax.ai/public/bizs/.../triggers/...', token:'...', customerId:'zlw...', pageId:'zlw...' },
 };
 function _zaloDestFor(department){
   const ov = ZALO_DEPT_GROUPS[(department||'').trim()] || {};
@@ -4422,6 +4425,10 @@ function _notifyZaloContentOrder(order){
   const typeLabel=TYPE_MAP[order.type]||order.type||'Khác';
   const dlStr=(order.deadline||'')+(order.deadlineTime?' '+order.deadlineTime:'');
   const lines=[
+    // Tiêu đề trước đây gõ tĩnh trong khối "ZaloUser Message" bên Smax — chuyển vào đây để tự
+    // đổi theo loại sự kiện, nhớ xoá dòng tĩnh tương ứng bên Smax (xem giải thích ở
+    // ZALO_DEPT_GROUPS phía trên). Nội dung đã thống nhất 2026-08-18, còn có thể chỉnh lại sau.
+    '🆕 CÓ ORDER MỚI ANH EM ƠI',
     typeLabel+' — '+(order.projectName||order.title||'(chưa đặt tên)'),
     'Người gửi: '+(order.requester||'–')+' · '+(order.department||'–'),
     // Order từ trang Content thường đã chọn sẵn người phụ trách ngay lúc tạo (field
@@ -4445,9 +4452,10 @@ function _notifyZaloStatusChange(order, newStatus){
   if(!ZALO_NOTIFY_STATUS_CHANGE) return;
   if(!['feedback','hoan-thanh'].includes(newStatus)) return;
   const typeLabel=TYPE_MAP[order.type]||order.type||'Khác';
-  const statusLabel = newStatus==='hoan-thanh' ? '✅ Hoàn thành' : '💬 Chờ feedback/khách xác nhận';
+  const headline = newStatus==='hoan-thanh' ? '✅ ĐÃ HOÀN THÀNH' : '💬 ĐÃ CÓ KẾT QUẢ, CHỜ FEEDBACK';
   const lines=[
-    statusLabel+': '+typeLabel+' — '+(order.projectName||order.title||'(chưa đặt tên)'),
+    headline,
+    typeLabel+' — '+(order.projectName||order.title||'(chưa đặt tên)'),
     'Người gửi: '+(order.requester||'–')+' · '+(order.department||'–'),
     'Người phụ trách: '+(order.assignedTo||'–'),
     'Xem chi tiết: '+ADMIN_SELF_URL+'?id='+encodeURIComponent(order.id),
