@@ -236,6 +236,21 @@ const SMAX_TRIGGER_TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0cmlnZ2VyX2l
 const ZALO_NOTIFY_CUSTOMER_ID = 'zlw1390913189117079730';
 const ZALO_NOTIFY_PAGE_ID = 'zlw852060909005878828';
 const ADMIN_URL = 'https://tuananhleo.github.io/midu-qlcv/admin.html';
+// Nhóm Zalo riêng theo phòng ban — khung chờ điền, ĐỒNG BỘ với ZALO_DEPT_GROUPS bên admin.html
+// (2 file tách biệt, không có module dùng chung nên phải khai báo lặp lại — nhớ sửa cả 2 nơi
+// khi có dữ liệu thật). Xem giải thích đầy đủ ở admin.html cạnh const này.
+const ZALO_DEPT_GROUPS = {
+  // 'Phòng CSKH': { customerId:'zlw...', pageId:'zlw...' },
+};
+function _zaloDestFor(department) {
+  var ov = ZALO_DEPT_GROUPS[(department||'').trim()] || {};
+  return {
+    url: ov.triggerUrl || SMAX_TRIGGER_URL,
+    token: ov.token || SMAX_TRIGGER_TOKEN,
+    customerId: ov.customerId || ZALO_NOTIFY_CUSTOMER_ID,
+    pageId: ov.pageId || ZALO_NOTIFY_PAGE_ID,
+  };
+}
 function _notifyZaloNewOrder(order, id) {
   try {
     var typeLabel = TYPE_MAP[order.type] || order.type || 'Khác';
@@ -247,11 +262,12 @@ function _notifyZaloNewOrder(order, id) {
       'Deadline: ' + (dlStr || 'chưa có'),
       'Xem chi tiết: ' + ADMIN_URL + '?id=' + encodeURIComponent(id),
     ];
-    fetch(SMAX_TRIGGER_URL, {
+    var dest = _zaloDestFor(order.department);
+    fetch(dest.url, {
       method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + SMAX_TRIGGER_TOKEN, 'Content-Type': 'application/json' },
+      headers: { 'Authorization': 'Bearer ' + dest.token, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        customer: { id: ZALO_NOTIFY_CUSTOMER_ID, page_id: ZALO_NOTIFY_PAGE_ID },
+        customer: { id: dest.customerId, page_id: dest.pageId },
         attrs: [{ name: 'thongtinlead', value: lines.join('\n') }],
       })
     }).catch(function(){});

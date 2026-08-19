@@ -1333,12 +1333,14 @@ function _updateInternal(id,fields){
     // hoàn thành, không bị quy tắc mặc định ghi đè thành tên admin đang mở trình duyệt.
     if((fields.status||ov.status)==='hoan-thanh'&&!ov.completedBy&&!fields.completedBy) fields.completedBy=currentUser?.displayName||'Admin';
     if(fields.status&&fields.status!=='hoan-thanh') fields.completedBy='';
+    const oldCoStatus=co.status;
     Object.assign(ov,fields); Object.assign(co,fields); _saveInternal();
     // Ghi ngược trạng thái + kết quả về Lịch Content (Supabase)
     const lcStatus=({'chua-lam':'Chưa làm','dang-xu-ly':'Đang làm','feedback':'Chờ feedback','hoan-thanh':'Hoàn thành'})[co.status]||'Chưa làm';
     _writeBackContentOrder(co._contentOrderId, co.linkResult||'', lcStatus, co._ws);
     _mirrorOrderToSheet(co); // nếu chưa từng mirror thì ghi mới; nếu rồi thì no-op (đã có guard trong hàm)
     _mirrorUpdateSheet(co.id, fields);
+    if(fields.status && fields.status!==oldCoStatus) _notifyZaloStatusChange(co, fields.status);
     return;
   }
   const t=internalTasks.find(x=>x.id===id); if(!t) return;
@@ -1354,8 +1356,10 @@ function _updateInternal(id,fields){
   if(fields.status&&fields.status!=='feedback') fields._feedbackAt='';
   if(fields.status==='hoan-thanh'&&!t.completedBy&&!fields.completedBy) fields.completedBy=currentUser?.displayName||'Admin';
   if(fields.status&&fields.status!=='hoan-thanh') fields.completedBy='';
+  const oldTStatus=t.status;
   Object.assign(t,fields); _saveInternal();
   _mirrorUpdateSheet(t.id, fields);
+  if(fields.status && fields.status!==oldTStatus) _notifyZaloStatusChange(t, fields.status);
 }
 _loadInternal();
 
@@ -2835,12 +2839,14 @@ async function saveRow(id) {
   if(fields.status !== 'hoan-thanh') fields.completedBy = '';
   const btn=document.getElementById('savebtn-'+id);
   btn.disabled=true; btn.textContent='...';
+  const oldStatus=o.status;
   try {
     const r=await fetch(getGasUrl(),{method:'POST',body:JSON.stringify({action:'updateOrder',id,updates:fields})});
     const d=await r.json(); if(d.error) throw new Error(d.error);
     Object.assign(o,fields); render(); updateStats();
     showToast('✓ Đã lưu — '+(o.projectName||id));
     fbUpsertOrder(o); // mirror to Firebase (fire-and-forget)
+    if(fields.status && fields.status!==oldStatus) _notifyZaloStatusChange(o, fields.status);
   } catch(e) {
     showToast('Lỗi: '+e.message,'error');
     btn.disabled=false; btn.textContent='💾 Lưu';
@@ -2958,12 +2964,14 @@ async function saveEdit(){
   if(updates.status !== 'hoan-thanh') updates.completedBy = '';
   const btn=document.getElementById('e-savebtn');
   btn.disabled=true; btn.textContent='...';
+  const oldStatus=o.status;
   try {
     const r=await fetch(getGasUrl(),{method:'POST',body:JSON.stringify({action:'updateOrder',id:editId,updates})});
     const d=await r.json(); if(d.error) throw new Error(d.error);
     Object.assign(o,updates); closeEdit(); render(); updateStats();
     showToast('✓ Đã lưu — '+(o.projectName||editId));
     fbUpsertOrder(o); // mirror to Firebase (fire-and-forget)
+    if(updates.status && updates.status!==oldStatus) _notifyZaloStatusChange(o, updates.status);
   } catch(e){
     showToast('Lỗi: '+e.message,'error');
     btn.disabled=false; btn.textContent='💾 Lưu thay đổi';
@@ -4378,26 +4386,73 @@ const SMAX_TRIGGER_TOKEN='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0cmlnZ2VyX2lkI
 const ZALO_NOTIFY_CUSTOMER_ID='zlw1390913189117079730';
 const ZALO_NOTIFY_PAGE_ID='zlw852060909005878828';
 const ADMIN_SELF_URL='https://tuananhleo.github.io/midu-qlcv/admin.html';
-function _notifyZaloContentOrder(order){
+// ── Nhóm Zalo riêng theo phòng ban (khung chờ điền — 2026-08-18) ─────────────────
+// Kế hoạch: "lập các nhóm riêng với các phòng ban, check phòng nào gửi order thì bắn tin về
+// nhóm với phòng đó". CHƯA CÓ dữ liệu thật (chưa tạo nhóm/lấy ID bên Smax.ai) — key đúng bằng
+// tên phòng ban (khớp field "department", xem getDepts()). Mỗi phòng có thể chỉ override
+// customerId/pageId (nếu Smax cho thêm liên hệ mới vào CÙNG 1 trigger hiện tại) hoặc override
+// cả triggerUrl/token (nếu Smax bắt tạo trigger riêng cho mỗi tự động hoá/nhóm) — thiếu trường
+// nào thì dùng lại giá trị mặc định phía trên. Phòng NÀO CHƯA có trong map này thì tự rơi về
+// đúng nhóm chung hiện tại — an toàn để deploy ngay, không đổi hành vi hiện tại cho tới khi điền
+// dữ liệu thật vào đây, chỉ cần điền, KHÔNG cần sửa code ở nơi khác.
+const ZALO_DEPT_GROUPS = {
+  // 'Phòng CSKH': { customerId:'zlw...', pageId:'zlw...' },
+  // 'Phòng Marketing – Truyền thông': { triggerUrl:'https://api.smax.ai/...', token:'...', customerId:'zlw...', pageId:'zlw...' },
+};
+function _zaloDestFor(department){
+  const ov = ZALO_DEPT_GROUPS[(department||'').trim()] || {};
+  return {
+    url: ov.triggerUrl || SMAX_TRIGGER_URL,
+    token: ov.token || SMAX_TRIGGER_TOKEN,
+    customerId: ov.customerId || ZALO_NOTIFY_CUSTOMER_ID,
+    pageId: ov.pageId || ZALO_NOTIFY_PAGE_ID,
+  };
+}
+function _sendZaloMessage(department, lines){
   try{
-    const typeLabel=TYPE_MAP[order.type]||order.type||'Khác';
-    const dlStr=(order.deadline||'')+(order.deadlineTime?' '+order.deadlineTime:'');
-    const lines=[
-      typeLabel+' — '+(order.projectName||order.title||'(chưa đặt tên)'),
-      'Người gửi: '+(order.requester||'–')+' · '+(order.department||'–'),
-      // Order từ trang Content thường đã chọn sẵn người phụ trách ngay lúc tạo (field
-      // "person" bên Content) — khác với order.html (chưa có ai phụ trách lúc mới gửi).
-      'Người phụ trách: '+(order.assignedTo||'–'),
-      'Deadline: '+(dlStr||'chưa có'),
-      'Nguồn: Lịch Content',
-      'Xem chi tiết: '+ADMIN_SELF_URL+'?id='+encodeURIComponent(order.id),
-    ];
-    fetch(SMAX_TRIGGER_URL,{
+    const dest=_zaloDestFor(department);
+    fetch(dest.url,{
       method:'POST',
-      headers:{'Authorization':'Bearer '+SMAX_TRIGGER_TOKEN,'Content-Type':'application/json'},
-      body:JSON.stringify({customer:{id:ZALO_NOTIFY_CUSTOMER_ID,page_id:ZALO_NOTIFY_PAGE_ID},attrs:[{name:'thongtinlead',value:lines.join('\n')}]})
+      headers:{'Authorization':'Bearer '+dest.token,'Content-Type':'application/json'},
+      body:JSON.stringify({customer:{id:dest.customerId,page_id:dest.pageId},attrs:[{name:'thongtinlead',value:lines.join('\n')}]})
     }).catch(()=>{});
   }catch(e){}
+}
+function _notifyZaloContentOrder(order){
+  const typeLabel=TYPE_MAP[order.type]||order.type||'Khác';
+  const dlStr=(order.deadline||'')+(order.deadlineTime?' '+order.deadlineTime:'');
+  const lines=[
+    typeLabel+' — '+(order.projectName||order.title||'(chưa đặt tên)'),
+    'Người gửi: '+(order.requester||'–')+' · '+(order.department||'–'),
+    // Order từ trang Content thường đã chọn sẵn người phụ trách ngay lúc tạo (field
+    // "person" bên Content) — khác với order.html (chưa có ai phụ trách lúc mới gửi).
+    'Người phụ trách: '+(order.assignedTo||'–'),
+    'Deadline: '+(dlStr||'chưa có'),
+    'Nguồn: Lịch Content',
+    'Xem chi tiết: '+ADMIN_SELF_URL+'?id='+encodeURIComponent(order.id),
+  ];
+  _sendZaloMessage(order.department, lines);
+}
+// ── Thông báo Zalo khi ĐỔI TRẠNG THÁI — khung chờ bật (2026-08-18) ───────────────
+// Yêu cầu: "hiện chỉ thông báo về việc order, sau sẽ thông báo khi chuyển trạng thái nữa, khi
+// chuyển trạng thái feedback, hoàn thành cũng cần thông báo". Đã nối sẵn vào mọi nơi đổi trạng
+// thái (saveRow/saveEdit/_updateInternal/_autoCompleteFeedback24h) nhưng TẮT mặc định bằng cờ
+// dưới đây — bật lên (đổi thành true) khi đã có nhóm Zalo riêng từng phòng (ZALO_DEPT_GROUPS ở
+// trên), tránh bắn dồn vào đúng 1 nhóm chung hiện tại trước khi sẵn sàng. Chỉ bắn cho đúng 2
+// trạng thái theo yêu cầu, không bắn cho mọi lần đổi trạng thái khác (VD chua-lam→dang-xu-ly).
+const ZALO_NOTIFY_STATUS_CHANGE = false;
+function _notifyZaloStatusChange(order, newStatus){
+  if(!ZALO_NOTIFY_STATUS_CHANGE) return;
+  if(!['feedback','hoan-thanh'].includes(newStatus)) return;
+  const typeLabel=TYPE_MAP[order.type]||order.type||'Khác';
+  const statusLabel = newStatus==='hoan-thanh' ? '✅ Hoàn thành' : '💬 Chờ feedback/khách xác nhận';
+  const lines=[
+    statusLabel+': '+typeLabel+' — '+(order.projectName||order.title||'(chưa đặt tên)'),
+    'Người gửi: '+(order.requester||'–')+' · '+(order.department||'–'),
+    'Người phụ trách: '+(order.assignedTo||'–'),
+    'Xem chi tiết: '+ADMIN_SELF_URL+'?id='+encodeURIComponent(order.id),
+  ];
+  _sendZaloMessage(order.department, lines);
 }
 async function _mirrorOrderToSheet(order){
   if(!order?.id || order._fromLichTT) return;
@@ -4812,6 +4867,7 @@ async function _autoCompleteFeedback24h() {
           completedBy:'Hệ thống (24h)' }
       })});
       o.status = 'hoan-thanh';
+      _notifyZaloStatusChange(o, 'hoan-thanh');
     } catch(e) { console.warn('[auto24h]', e); }
   }
   // Task #97: mở rộng sang Content Order (LC, override lưu trong internalTasks) + việc nội bộ
