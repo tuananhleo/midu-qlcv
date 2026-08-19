@@ -4443,11 +4443,14 @@ function _notifyZaloContentOrder(order){
 // ── Thông báo Zalo khi ĐỔI TRẠNG THÁI — khung chờ bật (2026-08-18) ───────────────
 // Yêu cầu: "hiện chỉ thông báo về việc order, sau sẽ thông báo khi chuyển trạng thái nữa, khi
 // chuyển trạng thái feedback, hoàn thành cũng cần thông báo". Đã nối sẵn vào mọi nơi đổi trạng
-// thái (saveRow/saveEdit/_updateInternal/_autoCompleteFeedback24h) nhưng TẮT mặc định bằng cờ
-// dưới đây — bật lên (đổi thành true) khi đã có nhóm Zalo riêng từng phòng (ZALO_DEPT_GROUPS ở
-// trên), tránh bắn dồn vào đúng 1 nhóm chung hiện tại trước khi sẵn sàng. Chỉ bắn cho đúng 2
-// trạng thái theo yêu cầu, không bắn cho mọi lần đổi trạng thái khác (VD chua-lam→dang-xu-ly).
-const ZALO_NOTIFY_STATUS_CHANGE = false;
+// thái (saveRow/saveEdit/_updateInternal/_autoCompleteFeedback24h). BẬT từ 2026-08-18 theo yêu
+// cầu "Cho bắn hết về nhóm chung nhé, các feedback và hoàn thành cho đến khi tách nhóm riêng" —
+// tức là chưa chờ có nhóm Zalo riêng từng phòng nữa, cứ bắn hết về đúng 1 nhóm chung hiện tại
+// (ZALO_DEPT_GROUPS vẫn đang rỗng nên mọi phòng đều rơi về nhóm chung, xem _zaloDestFor()) cho
+// tới khi tách được nhóm riêng thì tự động chuyển đúng phòng mà không cần đổi cờ này nữa. Chỉ
+// bắn cho đúng 2 trạng thái theo yêu cầu, không bắn cho mọi lần đổi trạng thái khác (VD
+// chua-lam→dang-xu-ly).
+const ZALO_NOTIFY_STATUS_CHANGE = true;
 function _notifyZaloStatusChange(order, newStatus){
   if(!ZALO_NOTIFY_STATUS_CHANGE) return;
   if(!['feedback','hoan-thanh'].includes(newStatus)) return;
