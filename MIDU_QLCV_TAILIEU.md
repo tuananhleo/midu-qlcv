@@ -1810,6 +1810,29 @@ Mỗi field id chỉ cần trùng với field id ĐÃ CÓ ở bất kỳ loại 
 
 ---
 
+### Task #122 — Chuẩn bị khung nâng cấp thông báo Zalo: nhóm riêng theo phòng ban + thông báo đổi trạng thái
+
+**Yêu cầu:** "Có việc mới là sắp tới anh sẽ nâng cấp hệ thống thông báo về group Zalo: lập các nhóm riêng với các phòng ban, check phòng nào gửi order thì bắn tin về nhóm với phòng đó. Và hiện chỉ thông báo về việc order, sau sẽ thông báo khi chuyển trạng thái nữa, khi chuyển trạng thái feedback, hoàn thành cũng cần thông báo" — sau đó gửi ảnh chụp automation Smax.ai đang dùng (khối "Set Attributes" gán `tgdk`=timestamp, khối "ZaloUser Message" ghép `{tgdk}` + chữ tĩnh "🧑 CÓ ORDER MỚI ANH EM ƠI" + `{thongtinlead}`), kèm yêu cầu: "em có thể thay luôn đoạn text ở đầu không, thì sẽ dùng chung trigger luôn, mỗi nhóm dùng 1 trigger và tự bắn tin theo các trạng thái, đoạn text ở đầu thì trao đổi thêm với anh để chốt".
+
+**Bối cảnh kỹ thuật trước khi sửa:** Toàn bộ thông báo Zalo (order.html lúc gửi order mới, admin.html lúc mirror Content Order) đều gọi thẳng 1 trigger Smax.ai cố định (`SMAX_TRIGGER_URL/TOKEN` + `ZALO_NOTIFY_CUSTOMER_ID/PAGE_ID` hard-code), tức chỉ có đúng 1 đích Zalo duy nhất cho mọi phòng ban, và chưa có thông báo nào khi đổi trạng thái.
+
+**Quyết định thiết kế (đã hỏi và chốt với người dùng qua AskUserQuestion):**
+- Làm khung code trước, dùng data rỗng/placeholder — điền dữ liệu thật sau khi có nhóm Zalo, không cần sửa code lúc đó.
+- Cấu trúc Smax đã chốt qua ảnh chụp: **mỗi phòng ban 1 automation/trigger riêng** (copy nguyên khối đang có, đổi đích nhóm Zalo) — không phải 1 trigger chung đổi customer/page.
+- Tiêu đề tin nhắn (dòng "🧑 CÓ ORDER MỚI ANH EM ƠI") chuyển từ chữ tĩnh bên Smax vào code, để tự đổi theo loại sự kiện — đã thống nhất nội dung: "🆕 CÓ ORDER MỚI ANH EM ƠI" / "💬 ĐÃ CÓ KẾT QUẢ, CHỜ FEEDBACK" / "✅ ĐÃ HOÀN THÀNH".
+
+**Fix/Đã dựng:**
+- `ZALO_DEPT_GROUPS` (object, key = tên phòng ban) + `_zaloDestFor(department)` — thêm vào cả admin.html và order.html (2 file tách biệt, không có module dùng chung nên khai báo lặp lại). Phòng nào chưa có trong map thì tự rơi về đúng nhóm chung hiện tại (`SMAX_TRIGGER_URL`/`ZALO_NOTIFY_CUSTOMER_ID` mặc định) — **không đổi hành vi hiện tại cho tới khi điền dữ liệu thật**.
+- `_notifyZaloContentOrder()` (admin.html) và `_notifyZaloNewOrder()` (order.html): thêm dòng tiêu đề "🆕 CÓ ORDER MỚI ANH EM ƠI" làm dòng đầu tin nhắn, định tuyến qua `_zaloDestFor(order.department)` thay vì gọi thẳng const cũ.
+- `_notifyZaloStatusChange(order, newStatus)` (admin.html, mới) — chỉ bắn cho đúng 2 trạng thái `feedback`/`hoan-thanh`, khoá bằng cờ `ZALO_NOTIFY_STATUS_CHANGE = false` (tắt mặc định). Đã nối vào MỌI nơi đổi trạng thái: `saveRow()` (sửa nhanh trên card), `saveEdit()` (modal sửa), `_updateInternal()` (dùng chung cho Content Order/Content Task/việc nội bộ — 1 điểm chốt duy nhất), và `_autoCompleteFeedback24h()` (tự động hoàn thành sau 24h).
+
+**Xác nhận/Lưu ý:**
+- Đã test trên trình duyệt trước khi push: `_zaloDestFor()` trả đúng nhóm mặc định khi phòng chưa cấu hình, trả đúng override khi có cấu hình giả lập; gọi `_notifyZaloStatusChange()` khi cờ đang `false` xác nhận **không có request mạng nào được gửi** (chặn đúng, không sợ bắn nhầm khi test).
+- Người dùng xác nhận thêm: hiện tại `ZALO_DEPT_GROUPS` rỗng nên **mọi thông báo order mới vẫn bắn về đúng 1 nhóm chung hiện tại như cũ** — an toàn, chưa đổi gì thật.
+- Việc còn lại thuộc phía người dùng, không phải code: (1) xoá dòng chữ tĩnh "🧑 CÓ ORDER MỚI ANH EM ƠI" trong khối ZaloUser Message bên Smax (để không lặp tiêu đề với dòng code mới thêm) khi copy trigger cho từng phòng; (2) tạo xong trigger riêng từng phòng thì gửi `triggerUrl`/`token`/`customerId`/`pageId` để điền vào `ZALO_DEPT_GROUPS` (cả 2 file) và bật `ZALO_NOTIFY_STATUS_CHANGE = true`. Claude không có quyền đăng nhập/sửa trực tiếp giao diện Smax.ai.
+
+---
+
 ## 14. Liên kết nhanh
 
 | Tên | URL |
