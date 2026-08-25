@@ -720,6 +720,11 @@ const today = new Date(); today.setHours(0,0,0,0);
 const params = new URLSearchParams(location.search);
 const urlDept = params.get('dept') || '';
 const isNew   = params.get('new') === '1';
+// ?kw=&month=YYYY-MM — link "xem công việc theo tháng" (thử nghiệm cho nhu cầu KPI, 2026-08-25):
+// kw dùng lại đúng cơ chế tìm kiếm sẵn có (khớp tên dự án/kênh...), month ép về đúng 1 tháng cụ
+// thể (khác setPeriod() chỉ có "Tháng này"/"Tháng trước") — set trong DOMContentLoaded bên dưới.
+const urlKw    = params.get('kw') || '';
+const urlMonth = params.get('month') || '';
 
 function fmt(val, time=true) {
   if (!val) return '–'; const s=String(val);
@@ -1621,6 +1626,17 @@ document.addEventListener('DOMContentLoaded', ()=>{
     deptFilter=urlP.get('dept');
     // Đang có bộ lọc chi tiết áp sẵn từ URL — tự bung ra, không giấu mất việc đang lọc theo gì.
     toggleFilterDetail(true);
+  }
+  if(urlKw){
+    const kwEl=document.getElementById('f-kw');
+    if(kwEl) kwEl.value=urlKw;
+  }
+  if(/^\d{4}-\d{2}$/.test(urlMonth)){
+    const [y,m]=urlMonth.split('-').map(Number);
+    customRange={from:new Date(y,m-1,1), to:new Date(y,m,1)};
+    currentPeriod='custom';
+    document.querySelectorAll('.period-btn').forEach(b=>b.classList.remove('active'));
+    document.getElementById('period-btn-custom')?.classList.add('active');
   }
   loadOrders();
 });
