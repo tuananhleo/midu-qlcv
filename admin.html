@@ -3862,7 +3862,18 @@ document.addEventListener('keydown',e=>{
   try {
     const id = new URLSearchParams(location.search).get('id');
     const kw = document.getElementById('f-kw');
-    if (id && kw) kw.value = id;
+    if (id && kw) {
+      kw.value = id;
+      // Bỏ luôn bộ lọc Kỳ (mặc định "Tháng này") — nếu không, việc có deadline/ngày gửi ngoài
+      // tháng hiện tại vẫn bị lọc mất dù tìm đúng ID, hiện "Không có order nào" trông như lỗi
+      // (phát hiện qua case thật: bấm link từ thông báo Zalo feedback/hoàn thành, 2026-08-25).
+      // Chỉ đổi state + class nút ở đây, KHÔNG gọi render()/updateStats() (allOrders có thể
+      // chưa tải xong) — loadAll() sẽ tự vẽ lại đúng lúc dữ liệu sẵn sàng.
+      currentPeriod = 'all';
+      document.querySelectorAll('.period-btn').forEach(b=>{
+        b.classList.toggle('active', !!b.getAttribute('onclick')?.includes(`'all'`));
+      });
+    }
   } catch(e) {}
 })();
 
