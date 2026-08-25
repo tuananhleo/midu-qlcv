@@ -873,7 +873,7 @@ trường đó thuộc về người xử lý, không phải người gửi. Xem
       <div id="loading-state" class="flex justify-center py-12">
         <div class="flex items-center gap-3" style="color:var(--atext3)">
           <div class="w-5 h-5 border-2 border-t-indigo-400 rounded-full spinner" style="border-color:var(--aborder);border-top-color:#818cf8"></div>
-          <span class="text-sm">Đang tải...</span>
+          <span class="text-sm" id="loading-state-text">Đang tải...</span>
         </div>
       </div>
       <div id="list" class="hidden space-y-3 fade-up"></div>
@@ -3876,6 +3876,12 @@ document.addEventListener('keydown',e=>{
       document.querySelectorAll('.period-btn').forEach(b=>{
         b.classList.toggle('active', !!b.getAttribute('onclick')?.includes(`'all'`));
       });
+      // Đổi chữ ở spinner tải trang — phản hồi "load hơi chậm lúc bấm link từ Zalo" (2026-08-25):
+      // tốc độ tải thật ra không đổi (Content Order vẫn nằm trong nhóm tải nhanh, không chờ GAS
+      // chậm), nhưng trước đây chỉ hiện "Đang tải..." chung chung suốt lúc chờ đăng nhập + tải
+      // dữ liệu nên CẢM GIÁC như bị đứng/chậm. Nói rõ đang chờ gì để đỡ sốt ruột.
+      const lst = document.getElementById('loading-state-text');
+      if (lst) lst.textContent = 'Đang tìm việc từ link Zalo...';
     }
   } catch(e) {}
 })();
