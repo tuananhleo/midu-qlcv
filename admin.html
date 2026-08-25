@@ -2126,8 +2126,13 @@ function filterByStat(type) {
 // Task, VÀ Content Order/Content Task (đổi 2026-08-18, xem giải thích ở getFilteredRows()
 // — trước đây Content Order/Task cố ý cho cả team nhìn thấy hết, nay đổi theo yêu cầu thực tế).
 function _isAssignedToMe(assignedToStr){
-  const assigned=(assignedToStr||'').split(',').map(s=>s.trim());
-  return assigned.includes(currentUser?.displayName||'__none__');
+  // Dùng _normAssignee() để quy đổi tên tắt/alias (VD "Huy AI" ghi trong Content Order/Task)
+  // về đúng tên tài khoản đầy đủ trước khi so khớp — trước đây so khớp CHÍNH XÁC từng chữ nên
+  // đúng người phụ trách thật (tên bị ghi tắt) vẫn không thấy được việc của chính mình (phát
+  // hiện qua case Đặng Ngọc Huy/"Huy AI", 2026-08-25). _normAssignee() khai báo ở dưới trong
+  // file nhưng là function hoisted nên gọi được từ đây, không lo TDZ.
+  const assigned=(assignedToStr||'').split(',').map(s=>_normAssignee(s));
+  return assigned.includes(_normAssignee(currentUser?.displayName||'__none__'));
 }
 // Bộ lọc "Phụ trách" (chỉ admin/leader dùng, xem data-viewall-only) — chuẩn hoá tên qua
 // _normAssignee() giống hệt bảng "Theo người phụ trách" ở Báo cáo, để khớp được cả tên viết
