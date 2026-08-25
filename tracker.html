@@ -282,6 +282,18 @@
       </select>
       <span id="dept-link-out" class="flex flex-wrap items-center gap-1.5" style="color:var(--ttext3)"></span>
     </div>
+    <!-- Lấy link theo từ khoá + tháng — phục vụ nhu cầu "minh chứng kết quả" cho báo cáo KPI
+    (2026-08-25): thay vì dán từng link kết quả vào Excel, dán 1 link duy nhất trỏ vào đây, lọc
+    sẵn đúng kênh/dự án (qua ?kw=, tái dùng ô tìm kiếm có sẵn) + đúng tháng (?month=YYYY-MM, ép
+    kỳ về custom range đúng tháng đó, khác hẳn setPeriod() chỉ có "Tháng này/Tháng trước"). Xem
+    _applyKwMonthLink()/genKwMonthLink(). -->
+    <div class="flex flex-wrap items-center gap-2 text-xs rounded-lg px-3 py-2" style="background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.3)">
+      <span style="color:var(--ttext2);font-weight:600">🔗 Lấy link xem việc theo từ khoá + tháng:</span>
+      <input id="kw-link-input" type="text" class="cinp" placeholder="VD: Fanpage Midu MenaQ7" style="width:auto;min-width:170px;padding:5px 10px;font-size:.75rem">
+      <input id="kw-link-month" type="month" class="cinp" style="width:auto;padding:5px 10px;font-size:.75rem">
+      <button type="button" onclick="genKwMonthLink()" class="btn btn-ghost" style="padding:4px 10px;font-size:.72rem">Tạo link</button>
+      <span id="kw-link-out" class="flex flex-wrap items-center gap-1.5" style="color:var(--ttext3)"></span>
+    </div>
     <p class="text-xs" style="color:var(--ttext3)">💡 Muốn xem riêng công việc phòng mình đang tra cứu: gõ <b>tên bạn</b> vào ô tìm kiếm ở trên.</p>
     <!-- Kỳ thời gian — giữ hiện mặc định, hay dùng nhất -->
     <div class="flex flex-wrap items-center gap-1.5">
@@ -1010,6 +1022,16 @@ function copyDeptLink(url,btn){
   if(navigator.clipboard?.writeText) navigator.clipboard.writeText(url).then(done).catch(done);
   else done();
 }
+// Link "xem việc theo từ khoá + tháng" — tự lấy, không cần nhờ ai tạo tay (2026-08-25).
+function genKwMonthLink(){
+  const out=document.getElementById('kw-link-out');
+  const kwVal=(document.getElementById('kw-link-input').value||'').trim();
+  const monthVal=document.getElementById('kw-link-month').value; // đã đúng dạng YYYY-MM
+  if(!kwVal){ out.innerHTML='<span style="color:#f87171">Nhập từ khoá (tên kênh/dự án) trước đã</span>'; return; }
+  let url=location.origin+location.pathname+'?kw='+encodeURIComponent(kwVal.replace(/\s+/g,'-'));
+  if(monthVal) url+='&month='+monthVal;
+  out.innerHTML=`<span class="font-mono" style="word-break:break-all">${url}</span> <button type="button" onclick="copyDeptLink('${url}',this)" class="btn btn-ghost" style="padding:2px 8px;font-size:.7rem">📋 Copy</button>`;
+}
 
 function buildTypeChips() {
   const c=document.getElementById('type-chips'); if(!c) return;
@@ -1621,6 +1643,9 @@ function toggleFilterDetail(open){
 }
 // ── Page init ──────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', ()=>{
+  const _now=new Date();
+  const kwMonthEl=document.getElementById('kw-link-month');
+  if(kwMonthEl) kwMonthEl.value=`${_now.getFullYear()}-${String(_now.getMonth()+1).padStart(2,'0')}`;
   const urlP=new URLSearchParams(location.search);
   if(urlP.get('dept')){
     deptFilter=urlP.get('dept');
