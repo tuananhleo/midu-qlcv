@@ -2191,7 +2191,10 @@ function getFilteredRows(){
     if(filters.dept&&normDept(t.department)!==normDept(filters.dept)) return false;
     if(filters.status&&t.status!==filters.status) return false;
     if(filters.assignee && !_hasAssignee(t.assignedTo, filters.assignee)) return false;
-    if(kw&&!normVN(`${t.title||''}${t.projectName||''}${t.requester||''}${t.assignedTo||''}${t.adminNote||''}${t.department||''}${t.d_channel||''}${t._channel||''}`).includes(kw)) return false;
+    // t.id THIẾU ở đây trước đây — nên link "?id=..." từ thông báo Zalo (dùng đúng id dạng
+    // "lco-<mã>" của Content Order) không bao giờ tìm ra được Content Order/Task nào, dù đúng
+    // người đúng quyền đúng kỳ (phát hiện qua case thật lco-mt86qqh7y3ljth, 2026-08-25).
+    if(kw&&!normVN(`${t.title||''}${t.projectName||''}${t.requester||''}${t.assignedTo||''}${t.adminNote||''}${t.department||''}${t.d_channel||''}${t._channel||''}${t.id||''}`).includes(kw)) return false;
     return true;
   });
   return {rows, intRows};
