@@ -1890,6 +1890,18 @@ Mỗi field id chỉ cần trùng với field id ĐÃ CÓ ở bất kỳ loại 
 
 ---
 
+### Task #127 — Phản hồi "load hơi chậm" lúc bấm link Zalo vào admin.html
+
+**Yêu cầu:** "Ok rồi em, lưu vào tài liệu nhé, nhưng load hơi chậm" → làm rõ thêm: "Lúc bấm link từ Zalo vào".
+
+**Nguyên nhân/Phát hiện:** Rà lại chuỗi tải dữ liệu (`loadAll()`) — Content Order (loại chứa mã `lco-...`, đích của link Zalo) vốn đã nằm trong nhóm tải nhanh qua Cloudflare KV, không bị chặn bởi các lệnh gọi GAS chậm hơn (đã tối ưu ở Task #108, #113 trước đó) — không phát hiện thêm điểm nghẽn tốc độ tải THẬT SỰ nào mới. Nghi vấn chính là **cảm giác chậm** do màn hình chỉ hiện "Đang tải..." chung chung suốt lúc chờ (kể cả lúc chờ đăng nhập), không rõ đang chờ gì.
+
+**Fix:** Khi phát hiện `?id=` (vào từ link Zalo), đổi chữ ở spinner tải trang từ "Đang tải..." sang "Đang tìm việc từ link Zalo..." — chỉ là cải thiện cảm giác chờ đợi, không phải tối ưu tốc độ tải thật.
+
+**Xác nhận/Lưu ý:** Chưa xác định được nguyên nhân tốc độ tải thật sự (nếu có) — nghi vấn còn lại và đã hỏi người dùng xác nhận thêm: có thể do mở link ngay trong trình duyệt nội bộ của app Zalo khiến phiên đăng nhập không được nhớ (khác bộ nhớ trình duyệt thường dùng), phải đăng nhập lại mỗi lần bấm link — nếu đúng vậy thì đây là hạn chế của môi trường trình duyệt, không phải lỗi code, cần người dùng test thêm để xác nhận ở phiên sau.
+
+---
+
 ## 14. Liên kết nhanh
 
 | Tên | URL |
