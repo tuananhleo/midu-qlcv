@@ -1833,6 +1833,63 @@ Mỗi field id chỉ cần trùng với field id ĐÃ CÓ ở bất kỳ loại 
 
 ---
 
+### Task #123 — Bật thông báo Zalo cho Feedback/Hoàn thành + xác nhận đã xoá tiêu đề tĩnh trùng bên Smax
+
+**Yêu cầu:** "Cho bắn hết về nhóm chung nhé, các feedback và hoàn thành cho đến khi tách nhóm riêng" — sau đó xác nhận đã xoá dòng tĩnh "🧑 CÓ ORDER MỚI ANH EM ƠI" bên khối ZaloUser Message của Smax ("Anh xóa rồi nhé", kèm ảnh chỉ còn `{tgdk}` + `{thongtinlead}`).
+
+**Fix:** Đổi `ZALO_NOTIFY_STATUS_CHANGE` (admin.html) từ `false` sang `true` — mọi lần đổi trạng thái sang `feedback`/`hoan-thanh` giờ bắn tin thật, vẫn về đúng 1 nhóm chung hiện tại (do `ZALO_DEPT_GROUPS` còn rỗng).
+
+**Xác nhận/Lưu ý:** Đã test bằng cách chặn `fetch` giả lập trước khi bật cờ để xác nhận payload/đích gửi đúng, không bắn nhầm. Xác nhận với người dùng: hiện đã bắn đủ 3 loại sự kiện (order mới/feedback/hoàn thành) về đúng 1 nhóm chung.
+
+---
+
+### Task #124 — Fix bug: người phụ trách tên viết tắt (VD "Huy AI") không thấy được việc của chính mình
+
+**Nguyên nhân/Phát hiện:** `_isAssignedToMe()` (quyết định nhân viên có thấy 1 việc hay không) so khớp tên **chính xác từng chữ** với `currentUser.displayName`, không quy đổi qua bảng alias `_ASSIGNEE_ALIAS` (VD `'huy ai':'Đặng Ngọc Huy'`) như hàm `_hasAssignee()` (dùng cho bộ lọc "Phụ trách" của admin/leader) đã làm. Content Order/Task hay ghi tên tắt theo thói quen nhập liệu bên Lịch Content, nên đúng người phụ trách thật vẫn bị hệ thống coi là "không phải việc của tôi".
+
+**Fix:** `_isAssignedToMe()` dùng `_normAssignee()` để chuẩn hoá cả 2 vế trước khi so khớp — khớp được cả tên đầy đủ lẫn alias.
+
+**Xác nhận/Lưu ý:** Test trực tiếp trên bản live qua console: `_isAssignedToMe('Huy AI')` với `currentUser.displayName='Đặng Ngọc Huy'` trả về `true` sau fix (trước đó `false`).
+
+---
+
+### Task #125 — Fix triệt để: link "Xem chi tiết" từ thông báo Zalo không bao giờ tìm ra Content Order/Task
+
+**Yêu cầu:** "Bấm từ link Zalo vào vẫn lỗi" → sau khi fix Task #124 vẫn báo "vào mấy lần đều không được" → người dùng gửi nguyên văn tin Zalo thật để đối chiếu.
+
+**Nguyên nhân/Phát hiện:** Ngoài bug alias (Task #124), phát hiện thêm **2 lỗi liên hoàn** khiến deep-link `?id=<mã>` (điền sẵn ô tìm kiếm, cơ chế có từ trước — xem comment "DEEP LINK" trong admin.html) không bao giờ hoạt động cho Content Order/Task:
+1. Bộ lọc "Kỳ" mặc định "Tháng này" vẫn áp dụng khi vào từ link — việc có deadline ngoài tháng hiện tại bị lọc mất dù tìm đúng ID (dù trong case cụ thể này deadline vẫn nằm trong tháng nên không phải nguyên nhân chính, nhưng vẫn là lỗi thật cần sửa).
+2. **Nguyên nhân chính**: điều kiện so khớp từ khoá tìm kiếm cho Content Order/Content Task (trong `getFilteredRows()`, nhánh `intRows`) **hoàn toàn không có `t.id`** trong chuỗi so khớp — chỉ so tên dự án/người gửi/ghi chú/phòng ban... Nghĩa là tìm bằng đúng mã ID (kiểu link Zalo `?id=lco-...`) **không bao giờ** ra kết quả, bất kể đúng người, đúng quyền, đúng kỳ hay không. Bug này có từ trước, chỉ mới lộ ra vì thông báo Zalo (Task #122-123) bắt đầu gửi link `?id=` trỏ tới Content Order/Task (trước đó tính năng deep-link chủ yếu chỉ được dùng/test với đơn GAS thường, vốn có `o.id` trong chuỗi so khớp).
+
+**Fix:**
+- Deep-link `?id=`: tự chuyển `currentPeriod='all'` (bỏ lọc Kỳ) ngay khi phát hiện có `?id=` trong URL, cùng lúc với việc điền sẵn ô tìm kiếm — không gọi `render()`/`updateStats()` ngay (dữ liệu có thể chưa tải xong), để `loadAll()` tự vẽ lại đúng lúc.
+- Thêm `t.id` vào chuỗi so khớp từ khoá của nhánh `intRows` (Content Order/Task) trong `getFilteredRows()`.
+
+**Xác nhận/Lưu ý:** Test trực tiếp trên bản live (console, không cần đăng nhập) xác nhận cả 2 phần: điền đúng ID + tự chuyển kỳ "Tất cả". Test giả lập `getFilteredRows()` với dữ liệu mô phỏng đúng case thật (`lco-mt86qqh7y3ljth`, `assignedTo:'Đặng Ngọc Huy'`) xác nhận tìm ra đúng 1 kết quả sau khi có đủ cả 3 fix (Task #124 + 2 phần của Task #125). Người dùng xác nhận cuối cùng đã vào được ("Ok rồi em").
+
+---
+
+### Task #126 — Bắt đầu bàn tính năng tự động điền KPI theo mẫu công ty + thêm link "xem việc theo từ khoá + tháng" ở tracker.html
+
+**Yêu cầu:** "Còn 1 việc quan trọng nữa anh muốn trao đổi là dựa vào các công việc trong tháng, anh và các bạn cần làm KPI theo mẫu của công ty như này" (kèm link thư mục Drive chứa file KPI `.xlsx` riêng từng người, mẫu "KẾ HOẠCH CÔNG VIỆC CÁ NHÂN" của Midu MenaQ7).
+
+**Bối cảnh đã tìm hiểu (đọc trực tiếp nội dung file KPI thật qua Google Sheets, không cần đăng nhập — dùng cơ chế đọc network request `streamrows` của Sheets):**
+- Mẫu gồm bảng "Danh mục Công việc" (STT/Danh mục/Phối hợp/Mục tiêu KPI/Tỷ trọng % hoàn thành/Nội dung triển khai/Kế hoạch tháng/Minh chứng kết quả/Đề xuất hỗ trợ/Ghi chú) + bảng quy đổi % hoàn thành → hệ số lương năng suất + chuỗi ký duyệt.
+- Với **nhân viên**: đầu mục là mô tả công việc cố định theo vai trò — dễ khớp với order/task trong QLCV theo người phụ trách.
+- Với **trưởng phòng** (file thật của người dùng): đầu mục là **tên Dự án/Kênh** (VD "Dự án Smax", "Fanpage Midu MenaQ7", "Digital marketing", "Web midu.vn"...), không phải theo Loại order — vì công việc thực tế là duyệt/kiểm soát nhiều kênh cùng lúc, không phải tự thực hiện.
+- Xác nhận qua hỏi từng câu (theo yêu cầu người dùng — xem [[feedback-one-question-at-a-time]]): nhân viên tự bấm "Hoàn thành" trên hệ thống (không phải trưởng phòng), nên `completedBy` KHÔNG dùng được làm dấu vết "trưởng phòng đã duyệt".
+- Quyết định tạm: nhóm báo cáo theo **Kênh/Dự án** (không theo Loại order) để tránh 1 bài viết (Content+Thiết kế+Ads) bị xé lẻ vào nhiều mục khác nhau; riêng **Chạy Ads tách thành 1 mục ngang hàng "Digital marketing"** (đúng theo file thật hiện tại, không lồng vào từng kênh); mỗi Kênh/Dự án chỉ nên **1 dòng tổng hợp** (không liệt kê từng bài viết) để tránh cồng kềnh — số liệu %+tóm tắt tự tính, "Minh chứng kết quả" là 1 link duy nhất trỏ sang QLCV lọc sẵn đúng kênh+tháng, không dán từng link.
+- Việc ghi trực tiếp vào file Excel/Sheets cần quyền ghi (Google Sheets API/Apps Script) — người dùng sẽ tự quy chuẩn lại quyền chia sẻ các file KPI về 1 tài khoản trước khi làm bước này.
+- **Chưa chốt xong thiết kế** — còn đang trao đổi dở phần ánh xạ Kênh/Dự án ↔ order thật trong QLCV.
+
+**Đã làm (phần hạ tầng phục vụ ý tưởng "Minh chứng kết quả" = 1 link, làm trước để người dùng xem thử):**
+- tracker.html: thêm URL param `?kw=<từ khoá>&month=YYYY-MM` — `kw` tái dùng ô tìm kiếm có sẵn (gạch ngang tự đổi thành khoảng trắng để link không bị mã hoá `%20` xấu), `month` ép kỳ về đúng 1 tháng cụ thể (khác `setPeriod()` chỉ có "Tháng này/Tháng trước").
+- Thêm khối UI tự tạo link ngay trên trang (ô nhập từ khoá + chọn tháng + nút "Tạo link"/"Copy") — không cần nhờ ai tạo tay, mặc định sẵn tháng hiện tại.
+
+**Xác nhận/Lưu ý:** Tính năng link theo từ khoá+tháng đã test và push, người dùng đã xem thử. Toàn bộ phần tự động điền KPI (ánh xạ Kênh/Dự án, cách tính %, cơ chế ghi vào Sheets) **CHƯA triển khai code**, mới dừng ở bàn thiết kế — xem [[project-kpi-auto-fill]] để nắm tiếp tình trạng ở phiên sau.
+
+---
+
 ## 14. Liên kết nhanh
 
 | Tên | URL |
