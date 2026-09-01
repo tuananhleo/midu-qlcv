@@ -1902,6 +1902,20 @@ Mỗi field id chỉ cần trùng với field id ĐÃ CÓ ở bất kỳ loại 
 
 ---
 
+### Task #128 — Fix tận gốc: tin Zalo "order mới" bị trễ, dồn chung/lệch thứ tự với tin đổi trạng thái
+
+**Yêu cầu/Phản hồi:** người dùng gửi ảnh chụp Zalo thật cho thấy khi có order mới thì không thấy tin gì, chỉ tới khi order được xử lý xong (chuyển Feedback/Hoàn thành) mới bắn dồn cả tin "order mới" lẫn tin trạng thái cùng lúc — có lần cả loạt nhiều order dồn tin cùng lúc dù máy đã bật admin.html sẵn: "Đã bật máy nhưng vẫn bị kẹt tin, lâu lâu 1 phát sổ ra nhiều tin nhắn".
+
+**Nguyên nhân:** tin "🆕 CÓ ORDER MỚI" (`_notifyZaloContentOrder()` cũ trong `admin.html`) chỉ được bắn khi `admin.html` phát hiện 1 Content Order chưa từng mirror sang sheet — qua 1 trong 2 đường: (a) vòng đồng bộ định kỳ 90s (`_periodicContentSync`/`_autoSyncContent`/`loadAll`), hoặc (b) `_updateInternal()` lúc xử lý đổi trạng thái, gọi `_mirrorOrderToSheet()` như bước "đảm bảo đã mirror" trước khi ghi trạng thái mới. Cả 2 đường đều **phụ thuộc hoàn toàn vào việc có ai đang mở `admin.html`** — nếu order được tạo lúc không ai mở trang, tin bị treo tới khi có người mở/xử lý xong đơn mới vô tình kích qua đường (b), dồn chung với tin đổi trạng thái. Test thật xác nhận đúng cơ chế: mở `admin.html` thì tin bắn ngay lập tức — nhưng vẫn dồn tin khi nhiều order được tạo dồn dập và xử lý nhanh hơn tốc độ vòng quét tuần tự (mirror từng đơn một, không song song, để tránh quá tải GAS free tier).
+
+**Fix:** chuyển việc bắn tin "order mới" từ **polling phía admin** sang **bắn ngay tại nguồn**:
+- `Content-Da-kenh-1-file.html` (trang Content, nơi Kim Oanh/Khánh Huyền tạo order — bản mới nhất tại `Content Oanh/`, dùng Cloudflare KV, không phải bản cũ Supabase ở `WebCongViecContent/`) — thêm hàm `_notifyZaloNewOrder(order)` (dùng chung token/trigger Smax.ai với `order.html`/`admin.html`), gọi ngay trong `submitOrderRow()` sau khi `saveOrders()` thành công. Tin bắn ngay trong đúng trình duyệt của người tạo order, không cần đợi/không phụ thuộc `admin.html`.
+- `admin.html` — bỏ hẳn logic bắn tin khỏi `_mirrorOrderToSheet()` (xoá hàm `_notifyZaloContentOrder()` và chỗ gọi nó); hàm này giờ chỉ còn đúng 1 việc là ghi bản sao lưu order vào sheet Orders. Tin đổi trạng thái (`_notifyZaloStatusChange`, cho Feedback/Hoàn thành) giữ nguyên, không đổi — vốn không có vấn đề vì luôn có người đang thao tác ngay lúc bắn.
+
+**Xác nhận/Lưu ý:** trước khi giao đã parse thử toàn bộ script 2 file bằng Node (`new Function`) xác nhận không lỗi cú pháp, và grep xác nhận không trùng tên biến/hằng số nào với code có sẵn trong `Content-Da-kenh-1-file.html` — đoạn thêm vào có `try/catch` + `fetch().catch()` nên dù gọi Smax thất bại cũng không ảnh hưởng việc tạo order hay logic khác của trang Content. Rủi ro còn lại chưa kiểm chứng được: gọi Smax.ai từ origin `content-marketing.pages.dev` — trước giờ chỉ xác nhận origin `tuananhleo.github.io` (order.html/admin.html) không bị CORS chặn (Task #101), origin mới này chưa từng test, cần tạo 1 order thật để xác nhận tin tới nơi. Triển khai: `admin.html` đã git commit + push lên GitHub (tự deploy qua GitHub Pages); chưa chạy `firebase deploy --only hosting` vì môi trường không có Firebase CLI, cần tự chạy `2_push_and_deploy.bat` nếu còn dùng Firebase Hosting song song. `Content-Da-kenh-1-file.html` do bạn Oanh tự deploy lên `content-marketing.pages.dev` theo quy trình riêng — người dùng xác nhận Oanh đã deploy xong.
+
+---
+
 ## 14. Liên kết nhanh
 
 | Tên | URL |
