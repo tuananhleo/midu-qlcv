@@ -4400,12 +4400,16 @@ function _addHiddenId(id){ const s=_getHiddenIds(); s.add(id); localStorage.setI
 const KEY_MIRRORED_IDS = 'midu_mirrored_sheet_ids';
 function _getMirroredIds(){ try{return new Set(JSON.parse(localStorage.getItem(KEY_MIRRORED_IDS)||'[]'));}catch(e){return new Set();} }
 function _addMirroredId(id){ const s=_getMirroredIds(); s.add(id); localStorage.setItem(KEY_MIRRORED_IDS,JSON.stringify([...s])); }
-// Thông báo Zalo cho Order Content (trang Content, tab "Order") — cùng cơ chế/token với
-// order.html (xem giải thích ở đó), gọi thẳng từ trình duyệt vì GAS chặn UrlFetchApp ẩn danh.
-// Gắn vào đúng chỗ _mirrorOrderToSheet() xác nhận 1 order MỚI LẦN ĐẦU (đã chống trùng qua
-// _sheetOrderIds dùng chung mọi máy) — không tách hàm riêng theo dõi "mới" để tránh trùng
-// logic phát hiện mới. Chỉ áp dụng order._fromContentOrder (tab Order), KHÔNG áp dụng cho
-// content task thường (lịch bài đăng) hay việc nội bộ — 2 loại đó không phải "order" ai gửi.
+// Tin "CÓ ORDER MỚI" cho Order Content (trang Content, tab "Order") ĐÃ CHUYỂN sang bắn
+// thẳng từ chính trang Content (Content-Da-kenh-1-file.html, hàm _notifyZaloNewOrder(),
+// gọi ngay trong submitOrderRow() lúc tạo order) — không còn bắn từ đây nữa. Lý do: bắn từ
+// admin.html phụ thuộc có ai đang mở trang + tới lượt vòng quét định kỳ mới phát hiện được
+// order "mới lần đầu", nên nếu không ai mở admin.html đúng lúc order được tạo, tin bị trễ
+// tới khi có người mở/xử lý xong đơn — nhiều lần dồn chung với tin đổi trạng thái, thậm chí
+// dồn cả loạt khi nhiều order được tạo cùng lúc (phản hồi thật 2026-08-31/09-01, xem ảnh
+// chụp Zalo báo cùng lúc "ĐÃ HOÀN THÀNH" + "CÓ ORDER MỚI"). Bắn tại nguồn (đúng lúc, đúng
+// trình duyệt người tạo order) mới hết trễ/hết dồn. Các hằng số Smax dưới đây vẫn giữ lại vì
+// _sendZaloMessage()/_notifyZaloStatusChange() (đổi trạng thái feedback/hoàn thành) vẫn dùng.
 const SMAX_TRIGGER_URL='https://api.smax.ai/public/bizs/diemptccmidu/triggers/6a7463a948305a18ab496150';
 const SMAX_TRIGGER_TOKEN='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0cmlnZ2VyX2lkIjoiNmE3NDYzYTk0ODMwNWExOGFiNDk2MTUwIiwiaWF0IjoxNzg2MDEyNTg1LCJleHAiOjMxNzMzMDQ1NDk4NX0.8eoStSRXskfu8evOn_y17MUMIgHt3DppwRSxl0rIuwM';
 const ZALO_NOTIFY_CUSTOMER_ID='zlw1390913189117079730';
@@ -4422,8 +4426,9 @@ const ADMIN_SELF_URL='https://tuananhleo.github.io/midu-qlcv/admin.html';
 // hành vi hiện tại cho tới khi điền dữ liệu thật vào đây, chỉ cần điền, KHÔNG cần sửa code nơi
 // khác. Lưu ý: khối "ZaloUser Message" bên Smax hiện có dòng chữ tĩnh "🧑 CÓ ORDER MỚI ANH EM
 // ƠI" — cần XOÁ dòng đó khi copy sang trigger riêng từng phòng, chỉ giữ lại {thongtinlead}, vì
-// tiêu đề giờ đã chuyển vào code (xem _notifyZaloContentOrder()/_notifyZaloStatusChange() dưới
-// đây), tự đổi theo đúng loại sự kiện (order mới/feedback/hoàn thành) — nếu để cả 2 sẽ bị lặp.
+// tiêu đề giờ đã chuyển vào code (xem _notifyZaloStatusChange() dưới đây; tin "order mới" giờ
+// bắn từ Content-Da-kenh-1-file.html, không còn ở admin.html), tự đổi theo đúng loại sự kiện
+// (feedback/hoàn thành) — nếu để cả 2 sẽ bị lặp.
 const ZALO_DEPT_GROUPS = {
   // 'Phòng CSKH': { triggerUrl:'https://api.smax.ai/public/bizs/.../triggers/...', token:'...', customerId:'zlw...', pageId:'zlw...' },
 };
@@ -4445,25 +4450,6 @@ function _sendZaloMessage(department, lines){
       body:JSON.stringify({customer:{id:dest.customerId,page_id:dest.pageId},attrs:[{name:'thongtinlead',value:lines.join('\n')}]})
     }).catch(()=>{});
   }catch(e){}
-}
-function _notifyZaloContentOrder(order){
-  const typeLabel=TYPE_MAP[order.type]||order.type||'Khác';
-  const dlStr=(order.deadline||'')+(order.deadlineTime?' '+order.deadlineTime:'');
-  const lines=[
-    // Tiêu đề trước đây gõ tĩnh trong khối "ZaloUser Message" bên Smax — chuyển vào đây để tự
-    // đổi theo loại sự kiện, nhớ xoá dòng tĩnh tương ứng bên Smax (xem giải thích ở
-    // ZALO_DEPT_GROUPS phía trên). Nội dung đã thống nhất 2026-08-18, còn có thể chỉnh lại sau.
-    '🆕 CÓ ORDER MỚI ANH EM ƠI',
-    typeLabel+' — '+(order.projectName||order.title||'(chưa đặt tên)'),
-    'Người gửi: '+(order.requester||'–')+' · '+(order.department||'–'),
-    // Order từ trang Content thường đã chọn sẵn người phụ trách ngay lúc tạo (field
-    // "person" bên Content) — khác với order.html (chưa có ai phụ trách lúc mới gửi).
-    'Người phụ trách: '+(order.assignedTo||'–'),
-    'Deadline: '+(dlStr||'chưa có'),
-    'Nguồn: Lịch Content',
-    'Xem chi tiết: '+ADMIN_SELF_URL+'?id='+encodeURIComponent(order.id),
-  ];
-  _sendZaloMessage(order.department, lines);
 }
 // ── Thông báo Zalo khi ĐỔI TRẠNG THÁI — khung chờ bật (2026-08-18) ───────────────
 // Yêu cầu: "hiện chỉ thông báo về việc order, sau sẽ thông báo khi chuyển trạng thái nữa, khi
@@ -4513,11 +4499,9 @@ async function _mirrorOrderToSheet(order){
     const data=await resp.json();
     if(data && !data.error){
       _addMirroredId(order.id); _sheetOrderIds.add(order.id);
-      // isNew:false = GAS tự phát hiện ID này đã có dòng rồi (chặn ghi trùng phía server, xem
-      // addOrderData() trong MIDU_MKT_Script.gs) — không phải lần ghi đầu, KHÔNG bắn lại Zalo.
-      // isNew undefined (GAS bản cũ chưa deploy lại) vẫn coi là mới, giữ hành vi cũ cho tới khi
-      // deploy bản GAS mới (2026-08-18, phản hồi thật "Bị lặp tin thông báo này").
-      if(order._fromContentOrder && data.isNew!==false) _notifyZaloContentOrder(order);
+      // Không còn bắn Zalo "order mới" ở đây nữa — đã chuyển sang bắn thẳng từ trang Content
+      // lúc tạo order (xem _notifyZaloNewOrder() trong Content-Da-kenh-1-file.html). Hàm này
+      // giờ chỉ còn đúng 1 việc: ghi bản sao lưu vào sheet Orders.
     }
   }catch(e){ console.warn('[Mirror→Sheet] lỗi ghi mới:', e.message); }
 }
