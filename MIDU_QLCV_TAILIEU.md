@@ -1962,6 +1962,18 @@ Các file gộp 1 file (`Content-Da-kenh-1-file.html`) nằm rải rác trên c�
 
 ---
 
+### Task #132 — Fix bug: "Chờ feedback" từ trang Content không bao giờ tự động Hoàn thành sau 24h
+
+**Yêu cầu/Phát hiện:** người dùng hỏi "Nhưng ở bên trang content các đầu việc này đã đánh dấu hoàn thành chưa" về các Content Order đang hiện trễ deadline. Kiểm tra trực tiếp dữ liệu Content (Cloudflare KV) xác nhận: KHÔNG, chưa được đánh dấu Hoàn thành thật — 16 việc trễ chia làm 2 nhóm: 10 việc kẹt ở trạng thái "Chờ feedback" (có việc từ tận 21/7/2026, treo hàng TUẦN), 6 việc "Chưa làm" (chưa ai bắt đầu, backlog thật).
+
+**Nguyên nhân (nhóm "Chờ feedback"):** hệ thống vốn đã có cơ chế tự động chuyển "Chờ feedback" → "Hoàn thành" sau 24h không phản hồi (`_autoCompleteFeedback24h()`) — nhưng cơ chế này dựa vào mốc thời gian `_feedbackAt`, và mốc này CHỈ được ghi trong `_updateInternal()`, tức chỉ khi có người đổi trạng thái ngay trong `admin.html`. Nếu Kim Oanh/Khánh Huyền tự chuyển "Chờ feedback" thẳng trên trang Content (không qua admin.html — đúng là trường hợp phổ biến), không có override nào được tạo trong `internalTasks`, nên `_feedbackAt` không bao giờ có giá trị → không bao giờ tự động hoàn thành, treo mãi. Cùng loại lỗi kiến trúc đã gặp nhiều lần ở các Task #128-131: logic tự động chỉ hoạt động khi thao tác đi qua đúng `admin.html`, không tính trường hợp thao tác trực tiếp bên Content.
+
+**Fix:** thêm hàm `_backfillFeedbackTimestamps()` — với mỗi Content Order đang ở trạng thái "feedback" mà chưa có mốc `_feedbackAt` (dù đã có override trong `internalTasks` hay chưa từng có), tự ghi nhận thời điểm hiện tại làm mốc bắt đầu đếm 24h (tạo mới override nếu chưa có, cập nhật nếu thiếu mốc). Chấp nhận đánh đổi: mốc này là "lần đầu admin.html/tracker nhận thấy trạng thái Chờ feedback", không phải thời điểm gốc thật bên Content (Cloudflare KV không lưu mốc thời gian đổi trạng thái) — lệch vài chục phút tới 90s so với thực tế, không đáng kể so với việc bị treo cả tuần như hiện tại. Gọi hàm này ngay trước `_autoCompleteFeedback24h()` ở cả `loadAll()` và `_periodicContentSync()` — trước đây `_autoCompleteFeedback24h()` chỉ chạy đúng 1 lần lúc tải trang, giờ chạy cả trong vòng đồng bộ nền 90s, không cần đợi ai load lại cả trang mới dọn được.
+
+**Xác nhận/Lưu ý:** đã parse thử toàn bộ script bằng Node xác nhận không lỗi cú pháp, đã commit + push lên GitHub (`69ccc6b`), tự deploy qua GitHub Pages. Giới hạn: 10 việc đã kẹt từ trước sẽ tính lại mốc 24h kể từ lúc fix chạy lần đầu (không hoàn thành ngay lập tức) — tự động Hoàn thành trong vòng 24h sau khi có ai mở admin.html hoặc vòng đồng bộ nền chạy lần đầu sau deploy. 6 việc "Chưa làm" là backlog thật, không tự động được, cần người phụ trách xử lý tay.
+
+---
+
 ## 14. Liên kết nhanh
 
 | Tên | URL |
@@ -1974,7 +1986,6 @@ Các file gộp 1 file (`Content-Da-kenh-1-file.html`) nằm rải rác trên c�
 | GAS backend URL | https://script.google.com/macros/s/AKfycbyYgHkB8bngq9SQ23TACimx9svMpl1ZPZw8Yo3PC0YRYMoER5indo9ULZlAgldIKLMH/exec |
 | Lịch Content — dữ liệu qua Cloudflare KV (`/api/kv`, `/api/img`), KHÔNG còn dùng Supabase từ 2026-08-11 (xem Task #106) | https://content-marketing.pages.dev/ |
 | Lịch Content — board Khánh Huyền | https://content-marketing.pages.dev/#ws=khanh-huyen |
-| Lịch Content — GitHub repo THẬT (nguồn deploy Cloudflare Pages, xem Task #129 — KHÔNG phải file gộp `Content-Da-kenh-1-file.html` trên máy) | https://github.com/ngkimoanhcontent-dear/web-content-midu |
 | Supabase dashboard (project cũ, đã ngừng dùng cho Lịch Content — có thể còn dữ liệu lịch sử) | https://supabase.com/dashboard/project/loqcqtuouagzaqwdmhji |
 
 ### Tracker — link riêng theo phòng ban (Task #116)
