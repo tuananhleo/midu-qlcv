@@ -867,6 +867,7 @@ trường đó thuộc về người xử lý, không phải người gửi. Xem
               <span id="realtime-dot" style="width:7px;height:7px;border-radius:50%;background:#f97316;display:inline-block;transition:.3s"></span>Live
             </span>
             <button type="button" id="sync-content-btn" onclick="syncFromContent()" class="btn btn-ghost" title="Đồng bộ đầu việc từ Lịch Content">↻ Lịch Content</button>
+            <button type="button" id="resync-status-btn" onclick="_resyncAllContentOrderStatus()" class="btn btn-ghost" title="Ghi lại đúng trạng thái Content Order (Hoàn thành/Feedback...) vào sheet Orders — sửa các dòng bị lệch do trước đây chỉ cập nhật khi có người đổi trạng thái qua admin.html">🔄 Đồng bộ trạng thái</button>
           </div>
         </div>
       </div>
@@ -4523,6 +4524,42 @@ async function _mirrorUpdateSheet(id, fields){
 async function _mirrorAllSequential(items){
   for(const it of items){ await _mirrorOrderToSheet(it); }
 }
+// ── Đồng bộ lại trạng thái Content Order/Task vào sheet Orders ─────────────────
+// Phát hiện thật (2026-09-07): _mirrorUpdateSheet() chỉ được gọi khi có người đổi trạng thái
+// NGAY TRONG admin.html (_updateInternal) — nếu ai đó đánh dấu Hoàn thành trực tiếp bên trang
+// Content mà không có ai mở admin.html để "chạm" vào đúng đơn đó, sheet Orders (bản sao lưu)
+// vẫn giữ trạng thái cũ mãi mãi. Kiểm tra dữ liệu thật: 35/89 Content Order bị lệch kiểu này.
+// Không ảnh hưởng số "Trễ deadline" hiển thị trên admin/tracker (2 trang đó đọc trạng thái
+// thời gian thực từ Content, không dùng sheet cho việc hiển thị) — chỉ ảnh hưởng bản sao lưu,
+// nhưng vẫn nên sửa cho sạch dữ liệu.
+const KEY_LAST_MIRRORED_STATUS = 'midu_last_mirrored_status';
+function _getLastMirroredStatusMap(){ try{return JSON.parse(localStorage.getItem(KEY_LAST_MIRRORED_STATUS)||'{}');}catch(e){return {};} }
+function _setLastMirroredStatus(id,status){ const m=_getLastMirroredStatusMap(); m[id]=status; localStorage.setItem(KEY_LAST_MIRRORED_STATUS,JSON.stringify(m)); }
+// silent=true: chỉ đồng bộ ITEM nào trạng thái đã đổi so với lần đồng bộ gần nhất (dùng cho
+// vòng lặp định kỳ, tránh ghi lại toàn bộ mỗi 90s không cần thiết). silent=false (nút bấm tay):
+// đồng bộ LẠI HẾT, không quan tâm cache — để chắc chắn dọn sạch mọi lệch cũ còn sót.
+async function _resyncContentOrderStatus(items, silent){
+  const lastMap = silent ? _getLastMirroredStatusMap() : {};
+  let count = 0;
+  for(const t of items){
+    if(!t?.id) continue;
+    if(silent && lastMap[t.id] === t.status) continue;
+    await _mirrorUpdateSheet(t.id, {status:t.status, linkResult:t.linkResult||'', adminNote:t.adminNote||''});
+    _setLastMirroredStatus(t.id, t.status);
+    count++;
+  }
+  return count;
+}
+async function _resyncAllContentOrderStatus(){
+  const btn=document.getElementById('resync-status-btn');
+  if(btn){btn.disabled=true;btn.textContent='⏳ Đang đồng bộ...';}
+  try{
+    const n1 = await _resyncContentOrderStatus(contentOrders, false);
+    const n2 = await _resyncContentOrderStatus(contentTasks, false);
+    showToast(`Đã đồng bộ lại trạng thái ${n1+n2} việc vào sheet Orders`,'success');
+  }catch(e){ showToast('Lỗi đồng bộ trạng thái: '+e.message,'error'); }
+  finally{ if(btn){btn.disabled=false;btn.textContent='🔄 Đồng bộ trạng thái';} }
+}
 
 // Vá lỗi font "double UTF-8" (UTF-8 bị đọc nhầm thành Latin-1/Windows-1252 rồi mã hoá lại
 // UTF-8 lần 2) — phát hiện ở dữ liệu board Khánh Huyền bên trang Content (2026-08-11), nguồn
@@ -4836,6 +4873,9 @@ async function _autoSyncContent(){
     await _refreshSheetOrderIds();
     _mirrorAllSequential(contentOrders);
     _mirrorAllSequential(contentTasks);
+    _resyncContentOrderStatus(contentOrders, true);
+    _resyncContentOrderStatus(contentTasks, true);
+    _checkAndNotifyOverdue();
     showToast(`Lịch Content: ${contentOrders.length} order`,'success');
   }catch(e){
     console.error(e); showToast('Lỗi: '+e.message,'error');
@@ -4862,6 +4902,9 @@ async function _periodicContentSync(){
     await _refreshSheetOrderIds();
     _mirrorAllSequential(contentOrders);
     _mirrorAllSequential(contentTasks);
+    _resyncContentOrderStatus(contentOrders, true);
+    _resyncContentOrderStatus(contentTasks, true);
+    _checkAndNotifyOverdue();
   }catch(e){ console.warn('[periodic content sync]', e.message); }
 }
 // ── Auto-complete feedback sau 24h ─────────────────────────────
@@ -4904,6 +4947,60 @@ async function _autoCompleteFeedback24h() {
     updateStats(); render();
     showToast(`Tự động hoàn thành ${toComplete.length+staleFeedback.length} đơn feedback quá 24h`);
   }
+}
+
+// ── Cảnh báo Zalo khi 1 việc VỪA chuyển sang trễ deadline ──────────────────────
+// Phát hiện thật (2026-09-07): 225/278 order thường + nhiều Content Order bị trễ deadline mà
+// không ai để ý, vì trước giờ không có gì chủ động báo — chỉ lộ ra khi có người vào xem báo cáo.
+// Bắn tin ngay lúc phát hiện (không đợi ai hỏi), gắn tên người phụ trách rõ ràng để đúng người
+// biết việc của mình đang trễ. Chỉ bắn ĐÚNG 1 LẦN cho mỗi việc (đánh dấu qua localStorage,
+// KEY_OVERDUE_NOTIFIED) — không nhắc lại mỗi vòng đồng bộ, tránh spam nhóm chung mỗi ngày cho
+// cùng 1 việc còn trễ. Giới hạn đã biết: cũng như _autoCompleteFeedback24h(), chỉ chạy được khi
+// có ai đang mở admin.html (không có tiến trình nền độc lập) — chấp nhận giới hạn này giống các
+// cơ chế tương tự đã có trong hệ thống.
+const KEY_OVERDUE_NOTIFIED = 'midu_overdue_notified_ids';
+function _getOverdueNotifiedIds(){ try{return new Set(JSON.parse(localStorage.getItem(KEY_OVERDUE_NOTIFIED)||'[]'));}catch(e){return new Set();} }
+function _addOverdueNotifiedId(id){ const s=_getOverdueNotifiedIds(); s.add(id); localStorage.setItem(KEY_OVERDUE_NOTIFIED,JSON.stringify([...s])); }
+function _notifyZaloOverdue(o){
+  const typeLabel = TYPE_MAP[o.type]||o.type||'Khác';
+  const dl = parseDl(o);
+  const daysLate = dl ? Math.round((today - dl)/(1000*60*60*24)) : null;
+  const lines = [
+    '⏰ TRỄ DEADLINE',
+    typeLabel+' — '+(o.projectName||o.title||'(chưa đặt tên)'),
+    'Người phụ trách: '+(o.assignedTo||'–'),
+    'Deadline: '+(o.deadline||'–')+(daysLate!=null?` (trễ ${daysLate} ngày)`:''),
+    'Xem chi tiết: '+ADMIN_SELF_URL+'?id='+encodeURIComponent(o.id),
+  ];
+  _sendZaloMessage(o.department, lines);
+}
+function _checkAndNotifyOverdue(){
+  // Dùng dữ liệu GỐC (allOrders/contentOrders/internalTasks), KHÔNG dùng getFilteredRows() —
+  // hàm đó lọc theo quyền xem của người đang đăng nhập (viewAll/assignedTo), nếu 1 nhân viên
+  // thường (không phải admin) đang mở trang thì sẽ bỏ sót việc trễ của người khác.
+  const all = [...allOrders, ...contentOrders, ...internalTasks];
+  const currentlyOverdue = all.filter(o=>{
+    if(!o?.id || o.status==='hoan-thanh' || o.status==='huy') return false;
+    const dl = parseDl(o);
+    return dl && dl < today;
+  });
+  // QUAN TRỌNG — lần đầu tiên bật tính năng này (chưa từng lưu KEY_OVERDUE_NOTIFIED): backlog cũ
+  // (~225 việc thật lúc 2026-09-07) chỉ âm thầm đánh dấu "đã biết", KHÔNG bắn tin hàng loạt —
+  // chỉ báo cho việc MỚI trễ từ đây trở đi. Thiếu bước này sẽ bắn spam hàng trăm tin cùng lúc
+  // ngay lần đầu admin.html chạy đoạn code này.
+  if(localStorage.getItem(KEY_OVERDUE_NOTIFIED) === null){
+    currentlyOverdue.forEach(o=>_addOverdueNotifiedId(o.id));
+    return 0;
+  }
+  const notified = _getOverdueNotifiedIds();
+  let count = 0;
+  currentlyOverdue.forEach(o=>{
+    if(notified.has(o.id)) return;
+    _notifyZaloOverdue(o);
+    _addOverdueNotifiedId(o.id);
+    count++;
+  });
+  return count;
 }
 
 function syncFromContent(){ _autoSyncContent(); }
