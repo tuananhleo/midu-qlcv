@@ -1932,6 +1932,7 @@ async function loadAll(notify=false) {
   }
   _dataReady = true; // cả đơn GAS lẫn Content đã cùng ở bản mới nhất — an toàn để hiện số tổng
   try { updateStats(); buildDeptChips(); buildTypeChips(); renderStatusChips(); buildAssigneeChips(); render(); } catch(e) { console.error('[loadAll] final render error:', e); }
+  _backfillFeedbackTimestamps();
   _autoCompleteFeedback24h();
   if (document.getElementById('tab-report').classList.contains('hidden') === false) {
     loadChartJs(renderReport);
@@ -4904,8 +4905,40 @@ async function _periodicContentSync(){
     _mirrorAllSequential(contentTasks);
     _resyncContentOrderStatus(contentOrders, true);
     _resyncContentOrderStatus(contentTasks, true);
+    _backfillFeedbackTimestamps();
+    _autoCompleteFeedback24h();
     _checkAndNotifyOverdue();
   }catch(e){ console.warn('[periodic content sync]', e.message); }
+}
+// ── Vá lỗ hổng: Content Order chuyển "Chờ feedback" TRỰC TIẾP bên trang Content (không qua
+// admin.html) không bao giờ được tự động Hoàn thành sau 24h ──────────────────────────
+// Phát hiện thật (2026-09-09): rà dữ liệu Content thấy 10 order kẹt "Chờ feedback" hàng TUẦN
+// (có việc từ 21/7), dù _autoCompleteFeedback24h() bên dưới đáng lẽ tự dọn sau 24h không phản
+// hồi. Nguyên nhân: mốc thời gian _feedbackAt chỉ được ghi trong _updateInternal() — tức CHỈ
+// khi có người đổi trạng thái ngay trong admin.html. Nếu Kim Oanh/Khánh Huyền tự chuyển "Chờ
+// feedback" thẳng trên trang Content (không qua admin.html), không có override nào trong
+// internalTasks được tạo → _feedbackAt không bao giờ có giá trị → không bao giờ tự hoàn thành.
+// Content (Cloudflare KV) không lưu mốc thời gian đổi trạng thái nên không lấy lại được đúng
+// thời điểm gốc — chấp nhận dùng mốc "lần đầu admin.html/tracker nhận thấy trạng thái Chờ
+// feedback" làm gốc tính 24h (thiệt hơn thực tế vài chục phút tới 90s, không đáng kể so với
+// việc bị treo cả tuần như hiện tại).
+function _backfillFeedbackTimestamps(){
+  contentOrders.forEach(co=>{
+    if(co.status!=='feedback') return;
+    let ov=internalTasks.find(t=>t._contentOrderId===co._contentOrderId);
+    if(ov){
+      if(!ov._feedbackAt){ ov._feedbackAt=new Date().toISOString(); co._feedbackAt=ov._feedbackAt; _saveInternal(); }
+      return;
+    }
+    ov={id:co.id,_internal:true,_fromContentOrder:true,_contentOrderId:co._contentOrderId,
+        title:co.title,assignedTo:co.assignedTo,deadline:co.deadline,deadlineTime:co.deadlineTime,
+        plannedDate:co.deadline,status:co.status,linkResult:co.linkResult||'',
+        adminNote:co.adminNote,priority:co.priority,type:_LC_TO_GAS[co._rawType]||'khac',department:'Marketing – Truyền thông',
+        createdBy:co.createdBy,_feedbackAt:new Date().toISOString(),completedBy:'',resultBy:''};
+    internalTasks.push(ov);
+    co._feedbackAt=ov._feedbackAt;
+    _saveInternal();
+  });
 }
 // ── Auto-complete feedback sau 24h ─────────────────────────────
 async function _autoCompleteFeedback24h() {
