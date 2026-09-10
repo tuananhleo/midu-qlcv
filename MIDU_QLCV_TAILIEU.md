@@ -1992,6 +1992,18 @@ Các file gộp 1 file (`Content-Da-kenh-1-file.html`) nằm rải rác trên c�
 
 ---
 
+### Task #134 — Fix bug: bắn lặp tin Zalo "Hoàn thành" khi nhiều tab admin.html cùng quét trúng 1 đơn qua 24h Chờ feedback
+
+**Phản hồi thật (2026-09-10, kèm ảnh chụp Zalo):** cùng 1 đơn ("Thiết kế — Fanpage Midu MenaQ7 — Thông báo Lịch nghỉ lễ 2/9", id `lco-mt2mugmyhx90uv`) bị bắn 4 tin "✅ ĐÃ HOÀN THÀNH" giống hệt nhau, đúng cùng 1 giây (2026-09-10 15:23:54). Đây là đơn nằm trong nhóm 11 Content Order "Chờ feedback" mà fix Task #132 (backfill mốc `_feedbackAt`) dự kiến sẽ tự động hoàn thành trong 24h.
+
+**Nguyên nhân:** `_autoCompleteFeedback24h()` (mở rộng chạy định kỳ 90s từ Task #132) không có cơ chế chống trùng khi CÓ NHIỀU TAB/PHIÊN `admin.html` cùng mở — mỗi tab độc lập tải dữ liệu, độc lập thấy đơn đã quá 24h Chờ feedback, và độc lập tự hoàn thành + gọi `_notifyZaloStatusChange()`. Guard cũ (`fields.status!==oldCoStatus` trong `_updateInternal`) chỉ so sánh với trạng thái ĐÃ TẢI SẴN trong bộ nhớ của CHÍNH PHIÊN ĐÓ — không phát hiện được rằng 1 phiên khác vừa xử lý xong, vì mỗi tab có bản sao dữ liệu riêng, không đồng bộ real-time với nhau. Khả năng cao nguyên nhân là trình duyệt tự khôi phục lại nhiều tab `admin.html` cũ cùng lúc (VD sau khi khởi động lại máy), khiến `loadAll()` của nhiều tab chạy trùng gần như cùng 1 giây.
+
+**Fix:** thêm cờ đánh dấu "đã tự hoàn thành + đã bắn tin" lưu `localStorage` (`KEY_AUTO24H_NOTIFIED`) trong `_autoCompleteFeedback24h()` — kiểm tra trước khi thêm vào danh sách xử lý, và đánh dấu NGAY (đồng bộ, trước khi gọi `fetch` bất đồng bộ) để giảm tối đa khe hở race trong cùng 1 tab. Áp dụng cho cả 2 nhánh: order thường qua sheet (`toComplete`) và Content Order/Task/việc nội bộ (`staleFeedback`).
+
+**Xác nhận/Giới hạn:** đã parse thử toàn bộ script bằng Node xác nhận không lỗi cú pháp, commit + push (`db20d9f`), xác nhận đã lên GitHub Pages live (grep thấy `KEY_AUTO24H_NOTIFIED` trong bản tải về từ tuananhleo.github.io). Giới hạn đã biết: cờ lưu trong `localStorage` nên chỉ chống trùng được các tab/phiên CÙNG 1 trình duyệt (đúng kịch bản nhiều khả năng nhất ở đây) — CHƯA chống được nếu 2 người ở 2 máy/trình duyệt khác nhau cùng lúc quét trúng đúng 1 đơn trong cùng khung giờ rất hẹp (xác suất cực thấp trong thực tế, chấp nhận rủi ro còn lại này).
+
+---
+
 ## 14. Liên kết nhanh
 
 | Tên | URL |
