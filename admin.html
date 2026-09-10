@@ -1932,7 +1932,6 @@ async function loadAll(notify=false) {
   }
   _dataReady = true; // cả đơn GAS lẫn Content đã cùng ở bản mới nhất — an toàn để hiện số tổng
   try { updateStats(); buildDeptChips(); buildTypeChips(); renderStatusChips(); buildAssigneeChips(); render(); } catch(e) { console.error('[loadAll] final render error:', e); }
-  _backfillFeedbackTimestamps();
   _autoCompleteFeedback24h();
   if (document.getElementById('tab-report').classList.contains('hidden') === false) {
     loadChartJs(renderReport);
@@ -4905,8 +4904,6 @@ async function _periodicContentSync(){
     _mirrorAllSequential(contentTasks);
     _resyncContentOrderStatus(contentOrders, true);
     _resyncContentOrderStatus(contentTasks, true);
-    _backfillFeedbackTimestamps();
-    _autoCompleteFeedback24h();
     _checkAndNotifyOverdue();
   }catch(e){ console.warn('[periodic content sync]', e.message); }
 }
@@ -4941,11 +4938,24 @@ function _backfillFeedbackTimestamps(){
   });
 }
 // ── Auto-complete feedback sau 24h ─────────────────────────────
+// Phản hồi thật (2026-09-10): cùng 1 đơn bị bắn 4 tin "✅ ĐÃ HOÀN THÀNH" giống hệt nhau, đúng
+// cùng 1 giây — do nhiều tab/phiên admin.html cùng mở (VD trình duyệt khôi phục lại nhiều tab
+// cũ cùng lúc sau khi khởi động lại máy) đều độc lập quét thấy cùng 1 đơn đã quá 24h Chờ
+// feedback và cùng tự hoàn thành + bắn tin — không phiên nào biết phiên kia đã xử lý, vì
+// _updateInternal() chỉ so sánh với oldStatus trong bộ nhớ CỦA CHÍNH PHIÊN ĐÓ (đã tải từ trước,
+// không phải bản mới nhất). Vá bằng cờ đánh dấu "đã tự hoàn thành" lưu localStorage — chỉ chặn
+// được các tab/phiên CÙNG 1 trình duyệt (đúng kịch bản khả năng cao nhất ở đây), chưa chặn được
+// nếu 2 người ở 2 máy khác nhau cùng lúc quét trúng đúng 1 giây (xác suất rất thấp, chấp nhận).
+const KEY_AUTO24H_NOTIFIED = 'midu_auto24h_notified_ids';
+function _getAuto24hNotifiedIds(){ try{return new Set(JSON.parse(localStorage.getItem(KEY_AUTO24H_NOTIFIED)||'[]'));}catch(e){return new Set();} }
+function _addAuto24hNotifiedId(id){ const s=_getAuto24hNotifiedIds(); s.add(id); localStorage.setItem(KEY_AUTO24H_NOTIFIED,JSON.stringify([...s])); }
 async function _autoCompleteFeedback24h() {
   const now = Date.now();
+  const notified = _getAuto24hNotifiedIds();
   const toComplete = allOrders.filter(o => {
     if(o.status !== 'feedback') return false;
     if(!o.resultAt) return false;
+    if(notified.has(o.id)) return false;
     // resultAt dạng 'dd/mm/yyyy, HH:MM:SS' (vi-VN locale)
     try {
       const parts = o.resultAt.match(/(\d+)\/(\d+)\/(\d+),?\s*(\d+):(\d+)/);
@@ -4956,6 +4966,7 @@ async function _autoCompleteFeedback24h() {
     } catch(e) { return false; }
   });
   for(const o of toComplete) {
+    _addAuto24hNotifiedId(o.id); // đánh dấu NGAY trước khi gọi async, giảm tối đa khe hở race
     try {
       await fetch(getGasUrl(),{method:'POST',body:JSON.stringify({
         action:'updateOrder', id:o.id,
@@ -4974,8 +4985,8 @@ async function _autoCompleteFeedback24h() {
   // Order/việc nội bộ có thể để trống. Gọi lại _updateInternal() để tái dùng đúng luồng ghi ngược
   // Supabase (LC Order) + mirror sheet (việc nội bộ) đã có sẵn, tránh trùng lặp logic.
   const staleFeedback = [...contentOrders, ...internalTasks.filter(t=>!t._fromContentOrder)]
-    .filter(t => t.status==='feedback' && t._feedbackAt && (now - new Date(t._feedbackAt).getTime()) >= 24*60*60*1000);
-  staleFeedback.forEach(t => _updateInternal(t.id, {status:'hoan-thanh', completedBy:'Hệ thống (24h)'}));
+    .filter(t => t.status==='feedback' && t._feedbackAt && !notified.has(t.id) && (now - new Date(t._feedbackAt).getTime()) >= 24*60*60*1000);
+  staleFeedback.forEach(t => { _addAuto24hNotifiedId(t.id); _updateInternal(t.id, {status:'hoan-thanh', completedBy:'Hệ thống (24h)'}); });
   if(toComplete.length || staleFeedback.length) {
     updateStats(); render();
     showToast(`Tự động hoàn thành ${toComplete.length+staleFeedback.length} đơn feedback quá 24h`);
