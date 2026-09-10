@@ -1974,6 +1974,24 @@ Các file gộp 1 file (`Content-Da-kenh-1-file.html`) nằm rải rác trên c�
 
 ---
 
+### Task #133 — Dọn dứt điểm backlog "trễ deadline" bằng đối chiếu căn cứ thật từ Content (không đoán mò)
+
+**Yêu cầu:** "Chắc chắn chưa, em tự test đi" (đã test `_backfillFeedbackTimestamps` bằng cách trích nguyên văn code từ bản live, mô phỏng qua Node — 14/14 kiểm tra pass, bao gồm cả tính idempotent không reset mốc 24h mỗi lần chạy lại). Sau đó: "Sao cho k hiện trễ deadline nữa, việc nào hoàn thành rồi thì cho hoàn thành đi em" → "Anh xác nhận là đã xong nhé" + "Và lấy căn cứ từ trang content" → "Đúng như ý 1 nhé" (đối chiếu theo đúng dự án/nội dung khớp với bài đã đăng thật bên Content, không tự đoán).
+
+**Phát hiện quan trọng — đính chính số liệu Task #131:** rà lại toàn bộ sheet Orders (467 dòng) phát hiện bị nhầm phân loại — sheet gồm 3 loại trộn lẫn theo tiền tố ID: `lco-` (Content Order, 135 dòng), `cont-` (Content Task — bài đăng lịch Content, mirror qua `_mirrorAllSequential(contentTasks)`, 328 dòng), và order THẬT SỰ qua order.html (chỉ đúng **4 dòng** trong toàn hệ thống). Con số "225 rồi 145 order thường trễ" báo ở Task #131 thực chất phần lớn là Content Task (`cont-`) bị gọi nhầm là "order thường qua order.html" — vì cả 2 đều không có tiền tố `lco-` nên lọt chung vào 1 rổ "not lco-". Order.html THẬT SỰ đang trễ chỉ đúng 2 dòng.
+
+**Đối chiếu bằng chứng thật:** Content Task (`cont-`) cũng có nguồn dữ liệu thời gian thực riêng (`content-plan-tasks-v2`, khác `content-plan-orders-v1` của Content Order) — đối chiếu 118 dòng `cont-` đang trễ (sau khi loại 25 dòng trùng lặp thật trong sheet) theo đúng task id (bỏ tiền tố `cont-kh-` trước, `cont-` sau — 1 số dòng có cả 2 dạng tuỳ workspace) với trạng thái thật: 26 dòng "Đã đăng" thật (có căn cứ) → Hoàn thành; 6 dòng vẫn active thật → giữ nguyên; 86 dòng KHÔNG còn tồn tại trong Content nữa (đã bị xoá khỏi lịch, chỉ còn bản sao lưu cũ trong sheet).
+
+**Quyết định cho 86 dòng "đã xoá khỏi Content":** "Chốt là tất cả những công việc của tháng 9 đổ về trước thì chuyển là hoàn thành, công việc của tháng 9 thì tạm giữ lại để lấy đúng trạng thái từ trang content" — deadline < 1/9/2026: 75 dòng → Hoàn thành cùng đợt; deadline ≥ 1/9/2026: 11 dòng → giữ nguyên.
+
+**Thực thi:** tổng 101 dòng (26 xác nhận Đã đăng + 75 đã xoá khỏi Content trước tháng 9) đánh dấu Hoàn thành qua GAS action `updateOrder` (`completedBy`: "Xác nhận thủ công (dọn backlog trễ deadline 2026-09-10)"). Việc ghi cần token đăng nhập mà không có sẵn — dùng Claude in Chrome: người dùng tự đăng nhập `admin.html` trong trình duyệt thật, sau đó chạy script tuần tự (không song song, tránh quá tải GAS free tier) ngay trong phiên đã đăng nhập đó, không cần xin/nhập mật khẩu. 1 lỗi tạm thời do timeout, thử lại thành công ngay.
+
+**Xác nhận:** tải lại trực tiếp sheet Orders sau khi ghi, đối chiếu đủ 102/102 ID (101 + 1 thử lại) đã có `status: hoan-thanh` — xác nhận ghi đúng 100% bằng dữ liệu thật, không chỉ dựa vào phản hồi API lúc ghi.
+
+**Lưu ý quan trọng cho các lần rà soát "trễ deadline" sau này:** PHẢI phân loại đúng 3 nhóm theo tiền tố ID sheet (`lco-`/`cont-`/còn lại) trước khi tính toán — không được gộp `cont-` (Content Task) chung với order.html thật như đã nhầm ở Task #131. Cả `lco-` và `cont-` đều có nguồn dữ liệu Content thời gian thực riêng để đối chiếu bằng chứng khách quan trước khi tự động hoàn thành; order.html thật thì KHÔNG có nguồn đối chiếu độc lập nào, không áp dụng được cách này.
+
+---
+
 ## 14. Liên kết nhanh
 
 | Tên | URL |
