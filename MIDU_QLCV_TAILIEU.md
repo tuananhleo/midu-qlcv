@@ -2004,6 +2004,29 @@ Các file gộp 1 file (`Content-Da-kenh-1-file.html`) nằm rải rác trên c�
 
 ---
 
+### Task #135 — Fix triệt để bug bắn lặp tin Zalo "Hoàn thành": khoá đồng thời phía server (GAS), không chỉ dựa vào localStorage
+
+**Bối cảnh:** Task #134 (hôm qua) đã fix bằng cờ `localStorage` — nhưng hôm nay (2026-09-11) lại xảy ra tiếp, lần này 3 tin trùng cho 1 đơn KHÁC (Lê Ngọc Huy — "Chụp X-quang đánh giá tuổi xương") cùng 1 giây (07:58:53). Xác nhận đúng giới hạn đã ghi ở Task #134: fix `localStorage` chỉ chặn được các tab CÙNG 1 trình duyệt — không chặn được khi NHIỀU MÁY/TRÌNH DUYỆT KHÁC NHAU cùng lúc quét trúng 1 đơn (localStorage không chia sẻ được giữa các máy).
+
+**Yêu cầu/Câu hỏi:** người dùng hỏi lại có phải đổi cách bắn tin Zalo sang qua Apps Script không (nhắc lại sự cố Task #101 — GAS bị chặn `UrlFetchApp.fetch` khi gọi ẩn danh ra Smax.ai, "trước cách đó làm rồi mà lỗi k được"). Đã làm rõ: đây là 2 việc khác nhau hoàn toàn — Task #101 là GAS gọi RA NGOÀI (Smax.ai) bị chặn; lần này chỉ sửa phần GAS ghi vào chính Google Sheet của nó (không gọi ra ngoài, không liên quan gì UrlFetchApp) — việc bắn tin Zalo vẫn giữ nguyên ở trình duyệt như cũ, không đổi.
+
+**Fix (đúng nguồn gốc, ở server thay vì client):** sửa `updateOrderData()` trong `MIDU_MKT_Script.gs`:
+1. Bọc toàn bộ hàm trong `LockService.getScriptLock()` (mẫu đã dùng sẵn ở `addOrderData()` cho chống trùng lúc tạo mới, xem Task #79/#80) — đảm bảo mọi request ghi vào sheet đều phải xếp hàng qua đúng 1 điểm duy nhất, dù đến từ máy nào.
+2. Trước khi ghi, nếu `updates.status === 'hoan-thanh'`, đọc trạng thái HIỆN TẠI của đúng dòng đó — nếu đã là `hoan-thanh` rồi (nghĩa là có request khác vừa ghi xong, dù cách nhau vài mili-giây) thì trả về `{success:true, alreadyDone:true}` thay vì ghi đè.
+
+Phía `admin.html`:
+- `_mirrorUpdateSheet()` đổi từ fire-and-forget thành trả về JSON response đã parse (để nơi gọi biết được `alreadyDone`).
+- `_updateInternal()` đổi thành `async`, `await` kết quả `_mirrorUpdateSheet()` trước khi quyết định gọi `_notifyZaloStatusChange()` — chỉ bắn tin nếu KHÔNG phải `alreadyDone`. Áp dụng cho cả nhánh Content Order (`lco-`) và việc nội bộ thường.
+- `_autoCompleteFeedback24h()`'s vòng lặp order thường (`toComplete`) — parse response, chỉ bắn tin nếu không `alreadyDone`.
+
+**Triển khai:** GAS không deploy qua git — dùng Claude in Chrome (trình duyệt thật, đã đăng nhập Google) mở đúng project "Phần mềm QLCV" tại script.google.com, thay code trực tiếp qua Monaco Editor API (`window.monaco.editor.getModels()` + so khớp và thay đúng 1 lần bằng `String.replace`, xác nhận `occurrences===1` trước khi ghi — an toàn hơn gõ phím mô phỏng vào file lớn), lưu (Ctrl+S), rồi vào "Triển khai → Quản lý các tùy chọn triển khai" → chọn "Phiên bản mới" cho deployment ĐANG HOẠT ĐỘNG (giữ nguyên ID triển khai/URL cũ) → Triển khai (Phiên bản 27, 08:15 11/9/2026). `admin.html` deploy như thường qua git push + GitHub Pages.
+
+**Xác nhận/Lưu ý:** đã parse thử cú pháp cả 2 file bằng Node (không lỗi). Gọi thử `action=getOrders` sau khi deploy GAS, xác nhận endpoint vẫn trả dữ liệu bình thường (621KB, đúng cấu trúc). Chưa test trực tiếp kịch bản 2 request đồng thời thật (cần nhiều máy thật cùng lúc), nhưng logic khoá + kiểm tra trạng thái trước khi ghi là cách chuẩn để đảm bảo đúng, không phụ thuộc suy đoán.
+
+**Lưu ý quan trọng — phân biệt rõ 2 việc để tránh nhầm lẫn về sau:** (1) GAS gọi RA NGOÀI (Smax.ai) để bắn tin Zalo: đã thử và THẤT BẠI vĩnh viễn (Task #101, do GAS chặn UrlFetchApp ẩn danh) — không bao giờ nên thử lại hướng này; (2) GAS đọc/ghi CHÍNH sheet của nó (không gọi ra ngoài): hoạt động bình thường, có thể dùng `LockService` để đảm bảo đúng khi có nhiều request đồng thời — đây là cách đã dùng ở Task này.
+
+---
+
 ## 14. Liên kết nhanh
 
 | Tên | URL |
