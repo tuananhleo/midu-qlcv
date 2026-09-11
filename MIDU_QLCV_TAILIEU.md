@@ -2027,6 +2027,26 @@ Phía `admin.html`:
 
 ---
 
+### Task #136 — Mở rộng "mọi thông báo Zalo chỉ bắn 1 lần": fix nốt tin "Trễ deadline" bị lặp + rà soát bổ sung 2 chỗ thiếu guard
+
+**Bối cảnh:** ngay sau khi fix xong Task #135 (tin Hoàn thành), người dùng gửi ảnh chụp 3 tin "⏰ TRỄ DEADLINE" giống hệt nhau cùng 1 giây (08:32:44) cho cùng 1 đơn (`lco-mttx18vhpk1p3r` — Lê Ngọc Huy). Đây là tin cảnh báo thêm ở Task #131, cơ chế chống trùng khi đó CHỈ dùng `localStorage` (`KEY_OVERDUE_NOTIFIED`) — đúng lỗi kiến trúc y hệt Task #134: không chặn được khi nhiều máy khác nhau cùng lúc quét trúng 1 đơn.
+
+**Yêu cầu:** "Tất cả các thông báo đều chỉ 1 lần thôi nhé" — mở rộng phạm vi, rà soát TẤT CẢ nơi bắn `_notifyZaloStatusChange` xem có thiếu guard `alreadyDone` hay không, không chỉ sửa đúng lỗi vừa gặp.
+
+**Fix 1 — Tin "Trễ deadline" (khác cơ chế lưu so với Task #135 vì không có "trạng thái ghi" để so sánh):** tin này do QUÉT PHÁT HIỆN (không gắn với 1 lần ghi/update cụ thể nào) nên không tái dùng được cách đọc-cột-trạng-thái của `updateOrderData`. Thêm action mới `claimOverdueNotify` trong `MIDU_MKT_Script.gs` (hàm `claimOverdueNotifyData(id)`) — dùng `LockService` + `PropertiesService` (bộ nhớ key-value BỀN VỮNG của GAS, không có hạn hết hạn như `CacheService`) để mỗi đơn chỉ được "nhận quyền" bắn tin (`claimed:true`) đúng 1 lần, dù bao nhiêu máy cùng hỏi cùng lúc. `_checkAndNotifyOverdue()` (admin.html) đổi thành `async`, gọi `_claimOverdueNotify(id)` trước khi bắn tin — chỉ bắn nếu server xác nhận `claimed:true`. `localStorage` giữ lại làm bộ lọc nhanh, không còn là nơi quyết định cuối.
+
+**Fix 2 — rà soát bổ sung:** phát hiện 2 chỗ gọi `_notifyZaloStatusChange` từ luồng lưu thủ công qua UI (`saveRow`/`saveEdit` cho order thường qua sheet, không đi qua `_updateInternal`) chưa có guard `alreadyDone` dù GAS đã trả field này từ Task #135 — thêm `&& !d.alreadyDone` vào cả 2 điều kiện.
+
+**Triển khai:** GAS deploy qua Monaco Editor như Task #135 (Phiên bản 28, 08:39 11/9/2026, cùng deployment ID/URL). Lưu ý: ngay sau deploy, GAS có ĐỘ TRỄ LAN TRUYỀN — gọi thử action mới ngay lập tức trả lỗi "Unknown action" dù đã deploy xong, phải đợi ~30s mới ổn định (xác nhận bằng 4 lần gọi liên tiếp cho kết quả nhất quán) — cần nhớ luôn chờ + xác nhận ổn định sau mỗi lần deploy GAS, không tin ngay kết quả gọi thử đầu tiên. `admin.html` deploy qua git push + GitHub Pages (commit `d2763dc`).
+
+**Seed backlog (tránh spam khi tính năng mới lên):** tự tính lại danh sách 21 việc đang trễ thật (2 order.html thật + 19 Content Order theo trạng thái LIVE từ Content — KHÔNG gồm Content Task `cont-`, đúng thiết kế Task #105 rằng lịch bài đăng không phải "order" nên không nhận thông báo trễ) và gọi `claimOverdueNotify` cho từng ID qua đúng phiên đăng nhập thật (chỉ "xí phần", không bắn tin) — xác nhận cả 21 đều trả `claimed:false` sau khi seed, nghĩa là admin.html mới không bắn dồn 21 tin ngay khi lên live.
+
+**Xác nhận:** đã parse thử cú pháp cả 2 file (Node, không lỗi). Test thật khoá đồng thời cho action Hoàn thành (Task #135, 5 request cùng lúc → đúng 1 thành công, 4 báo `alreadyDone`) — cùng cơ chế `LockService` áp dụng cho `claimOverdueNotify` nên tin tưởng hoạt động tương tự, dù chưa test riêng action này bằng request đồng thời thật.
+
+**Lưu ý quan trọng cho việc thêm thông báo mới sau này:** MỌI thông báo Zalo dạng "quét phát hiện rồi bắn" (không gắn với 1 lần ghi dữ liệu cụ thể) đều cần cơ chế "xin quyền" phía server kiểu `claimOverdueNotify` — không được chỉ dựa vào `localStorage` phía trình duyệt, vì không chặn được đa máy. Thông báo gắn với 1 lần ghi dữ liệu (VD đổi trạng thái) thì tận dụng luôn phản hồi ghi đó (`alreadyDone`) theo mẫu Task #135, không cần thêm action riêng.
+
+---
+
 ## 14. Liên kết nhanh
 
 | Tên | URL |
