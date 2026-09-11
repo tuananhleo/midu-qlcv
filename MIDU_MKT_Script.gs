@@ -308,6 +308,7 @@ function doPost(e) {
 
     if (action === 'addOrder')      return respond(addOrderData(data.order));
     if (action === 'updateOrder')   return respond(updateOrderData(data.id, data.updates));
+    if (action === 'claimOverdueNotify') return respond(claimOverdueNotifyData(data.id));
     if (action === 'updateLichTT')  return respond(updateLichTTEntryData(data.id, data.updates));
     if (action === 'splitProjectAI') return respond(splitProjectAI(data.description));
 
@@ -597,6 +598,28 @@ function updateOrderData(id, updates) {
       sheet.getRange(sheetRow, colIdx + 1).setValue(val);
     });
     return { success: true };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// Task #136: cảnh báo "⏰ TRỄ DEADLINE" (admin.html, _checkAndNotifyOverdue) trước đây chỉ
+// chống trùng bằng localStorage của trình duyệt — không chặn được khi nhiều máy khác nhau
+// cùng lúc quét trúng 1 đơn (đúng lỗi đã gặp ở Task #134/#135 cho tin "Hoàn thành", giờ lặp
+// lại cho tin "Trễ deadline"). Dùng PropertiesService (bộ nhớ key-value bền vững của GAS,
+// không có hạn hết hạn như CacheService) + LockService để đảm bảo mỗi đơn CHỈ ĐƯỢC "nhận
+// quyền" bắn tin đúng 1 lần duy nhất, bất kể bao nhiêu máy cùng hỏi cùng lúc. Không phải sheet
+// column vì đây không phải dữ liệu nghiệp vụ, chỉ là cờ "đã bắn tin chưa" nội bộ.
+function claimOverdueNotifyData(id) {
+  if (!id) return { error: 'Thiếu id' };
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const key = 'ovd_' + id;
+    if (props.getProperty(key)) return { success: true, claimed: false };
+    props.setProperty(key, new Date().toISOString());
+    return { success: true, claimed: true };
   } finally {
     lock.releaseLock();
   }

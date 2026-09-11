@@ -2857,7 +2857,9 @@ async function saveRow(id) {
     Object.assign(o,fields); render(); updateStats();
     showToast('✓ Đã lưu — '+(o.projectName||id));
     fbUpsertOrder(o); // mirror to Firebase (fire-and-forget)
-    if(fields.status && fields.status!==oldStatus) _notifyZaloStatusChange(o, fields.status);
+    // Task #136: GAS đã khoá LockService cho status='hoan-thanh' — nếu máy khác/đơn khác vừa
+    // ghi trước (alreadyDone), không bắn tin trùng nữa.
+    if(fields.status && fields.status!==oldStatus && !d.alreadyDone) _notifyZaloStatusChange(o, fields.status);
   } catch(e) {
     showToast('Lỗi: '+e.message,'error');
     btn.disabled=false; btn.textContent='💾 Lưu';
@@ -2982,7 +2984,8 @@ async function saveEdit(){
     Object.assign(o,updates); closeEdit(); render(); updateStats();
     showToast('✓ Đã lưu — '+(o.projectName||editId));
     fbUpsertOrder(o); // mirror to Firebase (fire-and-forget)
-    if(updates.status && updates.status!==oldStatus) _notifyZaloStatusChange(o, updates.status);
+    // Task #136: xem giải thích ở saveRow() — không bắn tin trùng nếu GAS báo alreadyDone.
+    if(updates.status && updates.status!==oldStatus && !d.alreadyDone) _notifyZaloStatusChange(o, updates.status);
   } catch(e){
     showToast('Lỗi: '+e.message,'error');
     btn.disabled=false; btn.textContent='💾 Lưu thay đổi';
@@ -5006,14 +5009,26 @@ async function _autoCompleteFeedback24h() {
 // Phát hiện thật (2026-09-07): 225/278 order thường + nhiều Content Order bị trễ deadline mà
 // không ai để ý, vì trước giờ không có gì chủ động báo — chỉ lộ ra khi có người vào xem báo cáo.
 // Bắn tin ngay lúc phát hiện (không đợi ai hỏi), gắn tên người phụ trách rõ ràng để đúng người
-// biết việc của mình đang trễ. Chỉ bắn ĐÚNG 1 LẦN cho mỗi việc (đánh dấu qua localStorage,
-// KEY_OVERDUE_NOTIFIED) — không nhắc lại mỗi vòng đồng bộ, tránh spam nhóm chung mỗi ngày cho
-// cùng 1 việc còn trễ. Giới hạn đã biết: cũng như _autoCompleteFeedback24h(), chỉ chạy được khi
-// có ai đang mở admin.html (không có tiến trình nền độc lập) — chấp nhận giới hạn này giống các
-// cơ chế tương tự đã có trong hệ thống.
+// biết việc của mình đang trễ.
+//
+// SỬA (Task #136, 2026-09-11): bản đầu chỉ chống trùng bằng localStorage — bị bắn lặp 3 tin
+// giống hệt nhau cùng 1 giây khi nhiều máy khác nhau cùng lúc quét trúng 1 đơn (đúng lỗi đã gặp
+// ở Task #134/#135 cho tin "Hoàn thành", nay lặp lại cho tin "Trễ deadline"). Chuyển sang "xin
+// quyền" phía server (`action=claimOverdueNotify`, khoá bằng LockService + PropertiesService
+// trong GAS — xem `claimOverdueNotifyData()`) — chỉ máy nào ĐƯỢC server xác nhận `claimed:true`
+// mới được bắn tin, các máy khác dù cùng lúc cũng chỉ nhận `claimed:false` và im lặng. localStorage
+// giữ lại như bộ lọc nhanh (tránh gọi server lại cho việc đã biết chắc từng bắn), không còn là
+// nơi quyết định cuối cùng. Giới hạn còn lại: chỉ chạy được khi có ai đang mở admin.html.
 const KEY_OVERDUE_NOTIFIED = 'midu_overdue_notified_ids';
 function _getOverdueNotifiedIds(){ try{return new Set(JSON.parse(localStorage.getItem(KEY_OVERDUE_NOTIFIED)||'[]'));}catch(e){return new Set();} }
 function _addOverdueNotifiedId(id){ const s=_getOverdueNotifiedIds(); s.add(id); localStorage.setItem(KEY_OVERDUE_NOTIFIED,JSON.stringify([...s])); }
+async function _claimOverdueNotify(id){
+  try{
+    const r = await fetch(getGasUrl(),{method:'POST',body:JSON.stringify({action:'claimOverdueNotify', id})});
+    const d = await r.json();
+    return !!(d && d.claimed);
+  }catch(e){ return false; } // lỗi mạng: thà bỏ lỡ 1 tin còn hơn bắn nhầm khi không chắc
+}
 function _notifyZaloOverdue(o){
   const typeLabel = TYPE_MAP[o.type]||o.type||'Khác';
   const dl = parseDl(o);
@@ -5027,7 +5042,7 @@ function _notifyZaloOverdue(o){
   ];
   _sendZaloMessage(o.department, lines);
 }
-function _checkAndNotifyOverdue(){
+async function _checkAndNotifyOverdue(){
   // Dùng dữ liệu GỐC (allOrders/contentOrders/internalTasks), KHÔNG dùng getFilteredRows() —
   // hàm đó lọc theo quyền xem của người đang đăng nhập (viewAll/assignedTo), nếu 1 nhân viên
   // thường (không phải admin) đang mở trang thì sẽ bỏ sót việc trễ của người khác.
@@ -5037,22 +5052,16 @@ function _checkAndNotifyOverdue(){
     const dl = parseDl(o);
     return dl && dl < today;
   });
-  // QUAN TRỌNG — lần đầu tiên bật tính năng này (chưa từng lưu KEY_OVERDUE_NOTIFIED): backlog cũ
-  // (~225 việc thật lúc 2026-09-07) chỉ âm thầm đánh dấu "đã biết", KHÔNG bắn tin hàng loạt —
-  // chỉ báo cho việc MỚI trễ từ đây trở đi. Thiếu bước này sẽ bắn spam hàng trăm tin cùng lúc
-  // ngay lần đầu admin.html chạy đoạn code này.
-  if(localStorage.getItem(KEY_OVERDUE_NOTIFIED) === null){
-    currentlyOverdue.forEach(o=>_addOverdueNotifiedId(o.id));
-    return 0;
-  }
   const notified = _getOverdueNotifiedIds();
   let count = 0;
-  currentlyOverdue.forEach(o=>{
-    if(notified.has(o.id)) return;
+  for(const o of currentlyOverdue){
+    if(notified.has(o.id)) continue; // đã biết chắc máy này từng bắn, khỏi hỏi server lại
+    const claimed = await _claimOverdueNotify(o.id);
+    _addOverdueNotifiedId(o.id); // dù claimed hay không cũng nhớ cục bộ, khỏi hỏi lại lần sau
+    if(!claimed) continue; // máy khác đã bắn rồi (hoặc đã seed từ trước) — im lặng
     _notifyZaloOverdue(o);
-    _addOverdueNotifiedId(o.id);
     count++;
-  });
+  }
   return count;
 }
 
