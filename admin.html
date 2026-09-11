@@ -1300,7 +1300,7 @@ function _newInternal(data){
   };
   internalTasks.push(t); _saveInternal(); _mirrorOrderToSheet(t); return t;
 }
-function _updateInternal(id,fields){
+async function _updateInternal(id,fields){
   // Content orders: cập nhật trong contentOrders và lưu override vào internalTasks
   if(id.startsWith('lco-')){
     const co=contentOrders.find(x=>x.id===id);
@@ -1340,8 +1340,10 @@ function _updateInternal(id,fields){
     const lcStatus=({'chua-lam':'Chưa làm','dang-xu-ly':'Đang làm','feedback':'Chờ feedback','hoan-thanh':'Hoàn thành'})[co.status]||'Chưa làm';
     _writeBackContentOrder(co._contentOrderId, co.linkResult||'', lcStatus, co._ws);
     _mirrorOrderToSheet(co); // nếu chưa từng mirror thì ghi mới; nếu rồi thì no-op (đã có guard trong hàm)
-    _mirrorUpdateSheet(co.id, fields);
-    if(fields.status && fields.status!==oldCoStatus) _notifyZaloStatusChange(co, fields.status);
+    // Task #135: chờ phản hồi GAS (đã khoá LockService phía server) trước khi bắn tin — nếu
+    // máy khác đã ghi Hoàn thành trước (alreadyDone:true) thì KHÔNG bắn tin trùng nữa.
+    const _mres = await _mirrorUpdateSheet(co.id, fields);
+    if(fields.status && fields.status!==oldCoStatus && !(_mres && _mres.alreadyDone)) _notifyZaloStatusChange(co, fields.status);
     return;
   }
   const t=internalTasks.find(x=>x.id===id); if(!t) return;
@@ -1359,8 +1361,8 @@ function _updateInternal(id,fields){
   if(fields.status&&fields.status!=='hoan-thanh') fields.completedBy='';
   const oldTStatus=t.status;
   Object.assign(t,fields); _saveInternal();
-  _mirrorUpdateSheet(t.id, fields);
-  if(fields.status && fields.status!==oldTStatus) _notifyZaloStatusChange(t, fields.status);
+  const _mres2 = await _mirrorUpdateSheet(t.id, fields);
+  if(fields.status && fields.status!==oldTStatus && !(_mres2 && _mres2.alreadyDone)) _notifyZaloStatusChange(t, fields.status);
 }
 _loadInternal();
 
@@ -4507,15 +4509,19 @@ async function _mirrorOrderToSheet(order){
   }catch(e){ console.warn('[Mirror→Sheet] lỗi ghi mới:', e.message); }
 }
 async function _mirrorUpdateSheet(id, fields){
-  if(!id) return;
+  if(!id) return null;
   // Chấp nhận cả trường hợp dòng đã tồn tại trong sheet do trình duyệt KHÁC mirror (tự chữa
   // flag cục bộ luôn) — không chỉ dựa vào KEY_MIRRORED_IDS của riêng máy này.
   if(!_getMirroredIds().has(id)){
-    if(!_sheetOrderIds.has(id)) return; // chưa từng có dòng nào trong sheet để update
+    if(!_sheetOrderIds.has(id)) return null; // chưa từng có dòng nào trong sheet để update
     _addMirroredId(id);
   }
-  try{ await fetch(getGasUrl(),{method:'POST',body:JSON.stringify({action:'updateOrder', id, updates:fields})}); }
-  catch(e){ console.warn('[Mirror→Sheet] lỗi update:', e.message); }
+  // Trả về kết quả GAS (Task #135) — để nơi gọi biết `alreadyDone:true` khi máy khác đã ghi
+  // Hoàn thành trước đó (chống LockService phía GAS), tránh bắn tin Zalo trùng lần nữa.
+  try{
+    const resp = await fetch(getGasUrl(),{method:'POST',body:JSON.stringify({action:'updateOrder', id, updates:fields})});
+    return await resp.json();
+  }catch(e){ console.warn('[Mirror→Sheet] lỗi update:', e.message); return null; }
 }
 // Ghi TUẦN TỰ (không song song) — trước đây dùng .forEach bắn hết mọi request cùng lúc,
 // GAS free tier giới hạn số lượt thực thi đồng thời nên khi có vài chục item (content
@@ -4968,13 +4974,16 @@ async function _autoCompleteFeedback24h() {
   for(const o of toComplete) {
     _addAuto24hNotifiedId(o.id); // đánh dấu NGAY trước khi gọi async, giảm tối đa khe hở race
     try {
-      await fetch(getGasUrl(),{method:'POST',body:JSON.stringify({
+      const _r24 = await fetch(getGasUrl(),{method:'POST',body:JSON.stringify({
         action:'updateOrder', id:o.id,
         updates:{ status:'hoan-thanh', completedAt: new Date().toLocaleDateString('vi-VN'),
           completedBy:'Hệ thống (24h)' }
       })});
+      const _d24 = await _r24.json();
       o.status = 'hoan-thanh';
-      _notifyZaloStatusChange(o, 'hoan-thanh');
+      // Task #135: GAS đã khoá LockService — nếu máy khác vừa ghi Hoàn thành trước (alreadyDone),
+      // không bắn tin trùng nữa.
+      if(!(_d24 && _d24.alreadyDone)) _notifyZaloStatusChange(o, 'hoan-thanh');
     } catch(e) { console.warn('[auto24h]', e); }
   }
   // Task #97: mở rộng sang Content Order (LC, override lưu trong internalTasks) + việc nội bộ

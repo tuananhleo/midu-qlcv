@@ -546,33 +546,60 @@ function addOrderData(order) {
 }
 
 function updateOrderData(id, updates) {
-  const sheet = getOrCreateSheet();
-  const headerMap = getHeaderMap(sheet);
-  const schema = loadSchema();
+  // Khoá cả script (Task #134/#135): nhiều máy/tab admin.html cùng tự động chuyển 1 đơn sang
+  // Hoàn thành sau 24h Chờ feedback (mỗi máy quét độc lập, không biết máy khác đã xử lý) —
+  // từng bắn trùng 3-4 tin Zalo giống hệt nhau cùng 1 giây vì mỗi trình duyệt chỉ tự chống
+  // trùng được bằng localStorage của chính nó, không chia sẻ được giữa các máy khác nhau.
+  // LockService là nơi DUY NHẤT mọi máy đều phải đi qua khi ghi, nên dùng nó để đảm bảo chỉ
+  // đúng 1 request thấy trạng thái CŨ THẬT — các request đến sau (dù cách nhau vài mili-giây)
+  // sẽ thấy dòng đã Hoàn thành rồi và trả về alreadyDone:true để client biết KHÔNG bắn tin nữa.
+  // Không đụng gì tới việc bắn tin Zalo (vẫn ở trình duyệt như cũ) — chỉ thêm bước "hỏi server
+  // trước khi bắn" để biết có phải mình là người xử lý đầu tiên hay không.
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const sheet = getOrCreateSheet();
+    const headerMap = getHeaderMap(sheet);
+    const schema = loadSchema();
 
-  const idColIdx = headerMap['ID'];
-  if (idColIdx === undefined) return { error: 'Không tìm thấy cột ID' };
+    const idColIdx = headerMap['ID'];
+    if (idColIdx === undefined) return { error: 'Không tìm thấy cột ID' };
 
-  const lastRow = sheet.getLastRow();
-  if (lastRow <= 1) return { error: 'Không có dữ liệu' };
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) return { error: 'Không có dữ liệu' };
 
-  const idValues = sheet.getRange(2, idColIdx + 1, lastRow - 1, 1).getValues().flat();
-  const rowIdx = idValues.indexOf(id);
-  if (rowIdx < 0) return { error: 'Không tìm thấy order: ' + id };
+    const idValues = sheet.getRange(2, idColIdx + 1, lastRow - 1, 1).getValues().flat();
+    const rowIdx = idValues.indexOf(id);
+    if (rowIdx < 0) return { error: 'Không tìm thấy order: ' + id };
 
-  const sheetRow = rowIdx + 2;
-  Object.keys(updates).forEach(key => {
-    const colsIdx = COLS.indexOf(key);
-    const header = schema[key] || (colsIdx >= 0 ? HEADERS[colsIdx] : null);
-    if (!header) return;
-    const colIdx = headerMap[header];
-    if (colIdx === undefined) return;
-    let val = updates[key];
-    if (val === null || val === undefined) val = '';
-    else val = String(val);
-    sheet.getRange(sheetRow, colIdx + 1).setValue(val);
-  });
-  return { success: true };
+    const sheetRow = rowIdx + 2;
+
+    if (updates.status === 'hoan-thanh') {
+      const statusHeader = schema['status'] || HEADERS[COLS.indexOf('status')];
+      const statusColIdx = headerMap[statusHeader];
+      if (statusColIdx !== undefined) {
+        const currentStatus = sheet.getRange(sheetRow, statusColIdx + 1).getValue();
+        if (String(currentStatus) === 'hoan-thanh') {
+          return { success: true, alreadyDone: true };
+        }
+      }
+    }
+
+    Object.keys(updates).forEach(key => {
+      const colsIdx = COLS.indexOf(key);
+      const header = schema[key] || (colsIdx >= 0 ? HEADERS[colsIdx] : null);
+      if (!header) return;
+      const colIdx = headerMap[header];
+      if (colIdx === undefined) return;
+      let val = updates[key];
+      if (val === null || val === undefined) val = '';
+      else val = String(val);
+      sheet.getRange(sheetRow, colIdx + 1).setValue(val);
+    });
+    return { success: true };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function deleteOrderData(id) {
