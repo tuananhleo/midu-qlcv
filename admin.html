@@ -1047,6 +1047,29 @@ const KEY_CACHE     = 'midu_mkt_orders_cache';
 const KEY_CT_CACHE  = 'midu_ct_cache'; // cache contentTasks — thiếu cái này khiến reload tạm mất card "Lịch Content" vài giây
 const KEY_FB        = 'midu_mkt_fb_config';
 const DEFAULT_GAS  = 'https://script.google.com/macros/s/AKfycbyYgHkB8bngq9SQ23TACimx9svMpl1ZPZw8Yo3PC0YRYMoER5indo9ULZlAgldIKLMH/exec';
+// Task #137 — phát hiện thật (2026-09-11): dù đã fix xong chống trùng tin Zalo (Task #134-136),
+// vẫn có tab bắn tới 10 tin trùng cho 1 đơn — vì tab đó đã mở TỪ TRƯỚC lúc deploy các bản vá,
+// code JS trong bộ nhớ tab vẫn là bản CŨ (không hề biết gì về alreadyDone/claimOverdueNotify),
+// nên bug cũ tái diễn y hệt dù server đã đúng. Đây là rủi ro cho MỌI lần deploy code sau này,
+// không riêng lần này — cần tab tự phát hiện có bản mới và tự tải lại, không phụ thuộc ai đó
+// nhớ bấm F5. APP_VERSION đổi mỗi lần deploy đáng kể — vòng đồng bộ định kỳ tự so với bản đang
+// chạy thật trên GitHub Pages, khác thì cảnh báo rồi tự tải lại sau vài giây.
+const APP_VERSION = '2026-09-11T09:00';
+let _versionCheckInFlight = false;
+async function _checkAppVersion(){
+  if(_versionCheckInFlight) return;
+  _versionCheckInFlight = true;
+  try{
+    const resp = await fetch('https://tuananhleo.github.io/midu-qlcv/admin.html?vcheck='+Date.now(), {cache:'no-store'});
+    const text = await resp.text();
+    const m = text.match(/const APP_VERSION\s*=\s*'([^']+)'/);
+    if(m && m[1] && m[1] !== APP_VERSION){
+      showToast('⚠️ Có bản cập nhật mới — tự động tải lại trang sau 5 giây để tránh bỏ lỡ bản vá lỗi...','error');
+      setTimeout(()=>{ location.reload(); }, 5000);
+    }
+  }catch(e){ /* lỗi mạng — bỏ qua, thử lại ở vòng đồng bộ 90s kế tiếp */ }
+  finally{ _versionCheckInFlight = false; }
+}
 const DEFAULT_ASGN = ['Lê Ngọc Huy','Trọng Trung','Trung Kiên','Nguyên'];
 const DEFAULT_DEPTS = ['Kinh doanh','Kế toán – Tài chính','Nhân sự','Vận hành','Ban Giám đốc','Marketing – Truyền thông','Kho – Logistics','Khác'];
 
@@ -4913,7 +4936,10 @@ async function _periodicContentSync(){
     _mirrorAllSequential(contentTasks);
     _resyncContentOrderStatus(contentOrders, true);
     _resyncContentOrderStatus(contentTasks, true);
+    _backfillFeedbackTimestamps();
+    _autoCompleteFeedback24h();
     _checkAndNotifyOverdue();
+    _checkAppVersion();
   }catch(e){ console.warn('[periodic content sync]', e.message); }
 }
 // ── Vá lỗ hổng: Content Order chuyển "Chờ feedback" TRỰC TIẾP bên trang Content (không qua
