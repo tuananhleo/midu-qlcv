@@ -2095,6 +2095,20 @@ Phía `admin.html`:
 
 ---
 
+### Task #140 — Làm rõ "Kết quả" không bắt buộc phải là link
+
+**Yêu cầu:** ngay sau Task #139, người dùng lưu ý cần nói rõ cho nhân viên biết: nếu công việc không có link (VD việc hành chính, việc nội bộ không ra sản phẩm dạng link) thì có thể điền "Đã xong"/"Đã làm" thay vì bắt ép phải có URL thật.
+
+**Vấn đề:** nhãn field trước giờ ghi cứng "**Link kết quả**" + placeholder mẫu "https://..." ở cả 6 chỗ nhập (modal sửa order thật, modal thêm/sửa việc nội bộ, card order thật, card Lịch Content, card Lịch truyền thông) — khiến nhân viên hiểu nhầm bắt buộc phải dán 1 URL thật thì mới hợp lệ. Trong khi validation (Task #139 vừa thêm, và validation cũ ở saveRow/saveEdit) trên thực tế CHỈ kiểm tra chuỗi không rỗng, không hề ép định dạng URL — chữ "Đã xong" gõ vào vẫn được chấp nhận từ trước, chỉ là giao diện không nói rõ nên không ai dám thử.
+
+**Fix:** đổi nhãn "Link kết quả" → "**Kết quả**" ở cả 5 vị trí input; đổi placeholder ở cả 6 ô nhập thành `"https://... hoặc ghi 'Đã xong'/'Đã làm' nếu không có link (nhiều link thì mỗi link 1 dòng)"`; đổi cả 4 thông báo lỗi (guard Task #139 + saveRow/saveEdit sẵn có) thành `"❌ Cần điền Kết quả trước khi chuyển sang Hoàn thành — nếu không có link thì ghi 'Đã xong'/'Đã làm'"`. Không đổi tên field `linkResult` trong code/dữ liệu (chỉ đổi phần hiển thị cho người dùng) để không phải sửa dây chuyền khắp nơi đang dùng tên field này.
+
+**Triển khai:** `admin.html`, deploy qua git push + GitHub Pages, commit `1650b94`.
+
+**Xác nhận:** trích JS ra `node --check`, cú pháp hợp lệ; Grep lại toàn bộ nhãn/placeholder/thông báo sau khi ghi, khớp đúng 5 nhãn + 6 placeholder + 4 thông báo đã đổi, không sót chỗ nào.
+
+---
+
 ## 14. Liên kết nhanh
 
 | Tên | URL |
