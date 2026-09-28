@@ -4570,13 +4570,28 @@ function _setLastMirroredStatus(id,status){ const m=_getLastMirroredStatusMap();
 // silent=true: chỉ đồng bộ ITEM nào trạng thái đã đổi so với lần đồng bộ gần nhất (dùng cho
 // vòng lặp định kỳ, tránh ghi lại toàn bộ mỗi 90s không cần thiết). silent=false (nút bấm tay):
 // đồng bộ LẠI HẾT, không quan tâm cache — để chắc chắn dọn sạch mọi lệch cũ còn sót.
+// Phát hiện thật (2026-09-28): việc đã Hoàn thành (completedBy đã ghi vào sheet) bị đổi
+// TRỰC TIẾP bên trang Content về trạng thái khác (VD "Đang xử lý") mà không qua admin.html
+// (không đi qua _updateInternal → không có quy tắc completedBy='' khi status!=='hoan-thanh').
+// Hàm này trước đây chỉ gửi {status, linkResult, adminNote} lên GAS — updateOrderData() bên
+// server CHỈ ghi đúng những cột có trong updates, nên completedBy/completedAt/resultBy/resultAt
+// cũ vẫn còn sót lại trong sheet dù trạng thái thật đã không còn là "Hoàn thành" nữa (dữ liệu
+// sheet nhìn mâu thuẫn: đang xử lý nhưng vẫn có tên người "hoàn thành"). Việc báo lại "Trễ
+// deadline" cho các việc này là ĐÚNG (việc thật đã bị mở lại, quá hạn) — không phải bắn trùng —
+// nhưng sheet cần dọn sạch dấu vết hoàn thành cũ cho khỏi gây hiểu lầm.
 async function _resyncContentOrderStatus(items, silent){
   const lastMap = silent ? _getLastMirroredStatusMap() : {};
   let count = 0;
   for(const t of items){
     if(!t?.id) continue;
     if(silent && lastMap[t.id] === t.status) continue;
-    await _mirrorUpdateSheet(t.id, {status:t.status, linkResult:t.linkResult||'', adminNote:t.adminNote||''});
+    const fields = {status:t.status, linkResult:t.linkResult||'', adminNote:t.adminNote||''};
+    if(t.status==='hoan-thanh'){
+      fields.completedBy = t.completedBy||'';
+    }else{
+      fields.completedBy=''; fields.completedAt=''; fields.resultBy=''; fields.resultAt='';
+    }
+    await _mirrorUpdateSheet(t.id, fields);
     _setLastMirroredStatus(t.id, t.status);
     count++;
   }

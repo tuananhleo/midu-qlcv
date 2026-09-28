@@ -2047,6 +2047,40 @@ Phía `admin.html`:
 
 ---
 
+### Task #137 — Fix mất lệnh gọi auto-complete-24h trong vòng lặp đồng bộ định kỳ (bị mất do sự cố ổ đĩa) + thêm auto-detect bản deploy mới để tự reload
+
+**Bối cảnh:** rà lại `_periodicContentSync()` (vòng lặp chạy nền mỗi ~90s) thì phát hiện 2 lệnh gọi `_backfillFeedbackTimestamps()` và `_autoCompleteFeedback24h()` (thêm ở Task #132/#135) đã biến mất khỏi hàm này — chỉ còn tồn tại trong `loadAll()` (chạy 1 lần lúc tải trang). Gần như chắc chắn do sự cố ghi đè trên ổ Z: (WebDAV) đã gặp nhiều lần trong phiên làm việc này — 1 lần edit đã xác nhận có mặt sau đó biến mất.
+
+**Hậu quả nếu không fix:** việc "Chờ feedback" quá 24h chỉ được tự động chuyển Hoàn thành khi có ai đó tải lại trang admin.html (loadAll chạy) — nếu không ai mở lại trang, việc kẹt "Chờ feedback" vô thời hạn dù đã quá 24h thật.
+
+**Fix:** thêm lại đúng 2 lệnh gọi vào `_periodicContentSync()` (admin.html), đặt sau `_resyncContentOrderStatus` và trước `_checkAndNotifyOverdue()`.
+
+**Thêm mới — tự phát hiện bản deploy mới, tự tải lại trang:** để tránh lặp lại chính lớp lỗi "tab cũ chạy code cũ" đã gây ra nhiều bug lặp tin Zalo trong phiên này (Task #134/#135/#136), thêm hằng `APP_VERSION` (mốc thời gian) ở đầu file + hàm `_checkAppVersion()` — gọi định kỳ trong `_periodicContentSync()`, tự `fetch` lại chính trang admin.html từ GitHub Pages (`cache:'no-store'`), so `APP_VERSION` của bản mới tải với bản đang chạy trong tab, nếu khác thì báo toast cảnh báo rồi tự `location.reload()` sau 5 giây. Từ nay mỗi lần deploy code mới phải tự nhớ đổi giá trị `APP_VERSION` thì cơ chế này mới nhận ra bản mới.
+
+**Triển khai:** `admin.html` deploy qua git push + GitHub Pages, commit `9828758`.
+
+**Xác nhận:** `git push` báo thành công (`4af778b..9828758  main -> main`) — nhưng KHÔNG xác minh được bản build live trên GitHub Pages do máy gặp sự cố mạng cục bộ lúc đó (`curl` tới CDN của GitHub Pages liên tục timeout/trả về nội dung cụt, trong khi mạng chung vẫn dùng bình thường) — đã báo thật với người dùng, không nhận vơ là đã xác minh xong.
+
+---
+
+### Task #138 — Fix bug: việc đã "Hoàn thành" (đã bắn tin Zalo) sau đó lại bắn thêm tin "Trễ deadline"
+
+**Yêu cầu:** người dùng phản ánh thấy có việc đã đánh dấu Hoàn thành và đã nhận tin Zalo "ĐÃ HOÀN THÀNH", nhưng sau đó lại nhận thêm tin "⏰ TRỄ DEADLINE" cho đúng việc đó — hỏi có phải do ai đó chỉ đổi trạng thái mà không ghi kết quả (`linkResult`) hay không.
+
+**Điều tra bằng dữ liệu thật:** tải trực tiếp dữ liệu từ GAS (`action=getOrders`, 540 dòng), lọc các việc đang KHÔNG ở trạng thái Hoàn thành/Hủy, đã quá deadline, nhưng vẫn còn sót dấu vết Hoàn thành cũ (`completedBy` có tên người thật). Tìm được đúng 3 Content Order (`lco-mtuz65ng6brd0d`, `lco-muamg2p0nbit7l`, `lco-muf927aq1yq8g3`, đều của Đỗ Thùy Linh) đang ở trạng thái `dang-xu-ly` nhưng sheet backup vẫn còn `completedBy` từ lần Hoàn thành trước, còn `resultBy`/`resultAt`/`linkResult` đều rỗng.
+
+**Nguyên nhân gốc rễ:** `_resyncContentOrderStatus()` (admin.html, vòng lặp đồng bộ định kỳ mang trạng thái THẬT từ trang Content — nguồn chân lý — ghi đè vào sheet Orders làm bản sao lưu) chỉ gửi lên GAS 3 field `{status, linkResult, adminNote}`. Hàm `updateOrderData()` phía GAS CHỈ ghi đúng những cột có trong `updates` gửi lên (`Object.keys(updates).forEach`), không đụng tới cột khác — nên khi 1 việc từng được đánh dấu Hoàn thành qua admin.html (ghi `completedBy`) rồi sau đó bị đổi/mở lại trạng thái khác NGAY BÊN TRANG CONTENT (không qua admin.html — đường duy nhất có sẵn quy tắc tự xoá `completedBy` khi status khác Hoàn thành, xem `_updateInternal`), lệnh đồng bộ định kỳ chỉ cập nhật đúng cột `status` trong sheet, để sót lại `completedBy` cũ — sheet backup nhìn mâu thuẫn (đang xử lý nhưng vẫn ghi tên người "đã hoàn thành").
+
+**Quan trọng — đây KHÔNG phải lỗi bắn trùng tin:** việc đã bị mở lại (trạng thái thật quay về `dang-xu-ly`) và đã quá deadline thì báo lại "Trễ deadline" là ĐÚNG hành vi thiết kế (việc thật sự chưa xong, quá hạn) — `_checkAndNotifyOverdue()` đọc trạng thái LIVE (không đọc sheet) nên không hề bị ảnh hưởng bởi `completedBy` sót lại. Vấn đề thật chỉ là DỮ LIỆU SHEET BACKUP bị bẩn/mâu thuẫn, gây hiểu lầm khi xem lại lịch sử.
+
+**Fix:** sửa `_resyncContentOrderStatus()` — khi trạng thái đồng bộ KHÔNG phải `hoan-thanh`, chủ động gửi thêm `completedBy:'' , completedAt:'', resultBy:'', resultAt:''` để xoá sạch dấu vết Hoàn thành cũ trong sheet; khi trạng thái LÀ `hoan-thanh` thì giữ nguyên `completedBy` hiện có. Cùng quy tắc đã áp dụng đúng ở `_updateInternal()`, giờ áp dụng thêm cho đường đồng bộ định kỳ (đường trước đây bị bỏ sót).
+
+**Triển khai:** `admin.html`, deploy qua git push + GitHub Pages.
+
+**Xác nhận:** đã đọc lại đúng đoạn code vừa sửa qua Grep sau khi ghi (đề phòng ổ Z: ghi đè âm thầm như từng gặp) — khớp nội dung mong muốn.
+
+---
+
 ## 14. Liên kết nhanh
 
 | Tên | URL |
