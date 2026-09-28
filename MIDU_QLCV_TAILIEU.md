@@ -2081,6 +2081,20 @@ Phía `admin.html`:
 
 ---
 
+### Task #139 — Chặn chuyển thẳng trạng thái "Hoàn thành" khi chưa có Link kết quả (Content Order + việc nội bộ)
+
+**Yêu cầu:** tiếp nối Task #138 — người dùng hỏi "nếu người dùng chỉ cập nhật trạng thái mà không ghi kết quả vào thì sẽ bị thế đúng không", rồi yêu cầu xử lý gốc: không cho phép chuyển thẳng trạng thái lên Hoàn thành khi chưa có kết quả, chuyển mà chưa có kết quả thì không ghi nhận và phải có thông báo hướng dẫn.
+
+**Rà soát phát hiện:** quy tắc "bắt buộc có Link kết quả mới cho Hoàn thành" đã có sẵn ở `saveRow()` (dòng 2854) và `saveEdit()` (dòng 2962) — nhưng đó là 2 hàm chỉ dùng cho order thật (`allOrders`, lưu qua sheet GAS). Hàm dùng chung cho Content Order (`lco-`) và việc nội bộ — `_updateInternal()` — KHÔNG có quy tắc này. 3 đường gọi thẳng vào `_updateInternal()` đều hở: dropdown đổi nhanh trạng thái `intUpdateStatus()` (dòng 2540), lưu nhanh thẻ Lịch Content `_saveLcCard()` (dòng 2751), và modal sửa việc nội bộ `saveInternalTask()` (dòng 5164) — cả 3 đều cho phép chọn thẳng "Hoàn thành" mà không cần Link kết quả. Đây chính là đường hở tạo ra tình huống Task #138 (Content Order của Đỗ Thùy Linh có `completedBy` nhưng không có `linkResult`).
+
+**Fix:** thêm guard ngay trong `_updateInternal()` (2 nhánh — Content Order và việc nội bộ thuần) — tính Link kết quả HIỆU LỰC (`fields.linkResult` nếu có gửi lên, không thì lấy từ dữ liệu hiện tại của việc đó) và nếu trạng thái đích là `hoan-thanh` mà Link kết quả hiệu lực rỗng thì: báo toast `❌ Cần nhập Link kết quả trước khi chuyển sang Hoàn thành` và `return` ngay, không lưu gì cả — đúng mẫu thông báo đã dùng ở `saveRow`/`saveEdit`. Đặt guard NGAY SAU khi đã tính xong Link kết quả hiệu lực nhưng TRƯỚC mọi thao tác ghi (Object.assign, mirror sheet, bắn Zalo) nên chặn được ở mọi đường gọi chung 1 chỗ, không cần vá riêng từng nơi. Không ảnh hưởng `_autoCompleteFeedback24h()` (tự đóng feedback sau 24h) vì việc đó chỉ tự hoàn thành khi đã ở trạng thái "Chờ feedback" — điều kiện vào trạng thái đó vốn đã bắt buộc có Link kết quả từ trước.
+
+**Triển khai:** `admin.html`, deploy qua git push + GitHub Pages, commit `006fbeb`.
+
+**Xác nhận:** trích toàn bộ JS trong thẻ `<script>` ra file riêng, chạy `node --check` báo cú pháp hợp lệ; đọc lại 2 đoạn guard vừa thêm qua Grep sau khi ghi để chắc chắn ổ Z: không âm thầm hoàn tác.
+
+---
+
 ## 14. Liên kết nhanh
 
 | Tên | URL |
