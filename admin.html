@@ -1343,6 +1343,16 @@ async function _updateInternal(id,fields){
       if(fields.linkResult&&!ov.resultBy){fields.resultBy=currentUser?.displayName||'Admin';fields.resultAt=new Date().toLocaleString('vi-VN',{hour12:false});}
       if(!fields.linkResult){fields.completedAt='';fields.resultBy='';fields.resultAt='';}
     }
+    // Bắt buộc phải có Link kết quả mới cho chuyển "Hoàn thành" — đồng bộ quy tắc với
+    // saveRow/saveEdit (Task #138 phát hiện: đường tắt intUpdateStatus/_saveLcCard/modal
+    // sửa việc nội bộ gọi thẳng _updateInternal, chưa hề có guard này). Không áp dụng cho
+    // _autoCompleteFeedback24h() vì hàm đó chỉ tự đóng việc đã có sẵn Link kết quả từ trước
+    // (đã ở trạng thái "Chờ feedback" — điều kiện để vào đó đã bắt buộc có Link kết quả).
+    const _effLr = ('linkResult' in fields) ? fields.linkResult : (ov.linkResult||co.linkResult||'');
+    if((fields.status||co.status)==='hoan-thanh' && !String(_effLr||'').trim()){
+      showToast('❌ Cần nhập Link kết quả trước khi chuyển sang Hoàn thành','error');
+      return;
+    }
     // 1. Có người phân công + chưa làm → dang-xu-ly
     if(fields.assignedTo && (fields.status||ov.status)==='chua-lam') fields.status='dang-xu-ly';
     // 2. Có kết quả + chưa feedback/hoàn thành → feedback
@@ -1377,6 +1387,13 @@ async function _updateInternal(id,fields){
     if(fields.linkResult && (t.status==='dang-xu-ly'||fields.status==='dang-xu-ly') && !fields.status){
       fields.status='feedback';
     }
+  }
+  // Bắt buộc phải có Link kết quả mới cho chuyển "Hoàn thành" (xem giải thích ở nhánh co
+  // phía trên, Task #138) — áp dụng chung cho việc nội bộ thuần (không phải Content Order).
+  const _effLrT = ('linkResult' in fields) ? fields.linkResult : (t.linkResult||'');
+  if((fields.status||t.status)==='hoan-thanh' && !String(_effLrT||'').trim()){
+    showToast('❌ Cần nhập Link kết quả trước khi chuyển sang Hoàn thành','error');
+    return;
   }
   if(fields.status==='feedback'&&!t._feedbackAt) fields._feedbackAt=new Date().toISOString();
   if(fields.status&&fields.status!=='feedback') fields._feedbackAt='';
