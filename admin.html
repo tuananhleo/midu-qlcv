@@ -515,7 +515,7 @@ trường đó thuộc về người xử lý, không phải người gửi. Xem
         <div class="col-span-2"><label>Trạng thái</label>
           <select id="e-status" class="inp"></select>
         </div>
-        <div class="col-span-2"><label>Link kết quả</label><textarea id="e-linkResult" class="inp" rows="2" style="resize:vertical" placeholder="https://... (nhiều link thì mỗi link 1 dòng)"></textarea></div>
+        <div class="col-span-2"><label>Kết quả</label><textarea id="e-linkResult" class="inp" rows="2" style="resize:vertical" placeholder="https://... hoặc ghi 'Đã xong'/'Đã làm' nếu không có link (nhiều link thì mỗi link 1 dòng)"></textarea></div>
 
         <div class="col-span-2"><label>Ghi chú admin <span style="font-weight:400;text-transform:none;color:var(--atext3)">(nội bộ, không hiện tracker)</span></label><input id="e-adminNote" type="text" class="inp"></div>
       </div>
@@ -736,8 +736,8 @@ trường đó thuộc về người xử lý, không phải người gửi. Xem
         <select id="int-priority" class="inp"></select>
       </div>
       <div class="col-span-2">
-        <label>Link kết quả</label>
-        <textarea id="int-link" class="inp" rows="2" style="resize:vertical" placeholder="https://... (nhiều link thì mỗi link 1 dòng)" oninput="intAutoStatus()"></textarea>
+        <label>Kết quả</label>
+        <textarea id="int-link" class="inp" rows="2" style="resize:vertical" placeholder="https://... hoặc ghi 'Đã xong'/'Đã làm' nếu không có link (nhiều link thì mỗi link 1 dòng)" oninput="intAutoStatus()"></textarea>
       </div>
       <div class="col-span-2">
         <label>Ghi chú</label>
@@ -1350,7 +1350,7 @@ async function _updateInternal(id,fields){
     // (đã ở trạng thái "Chờ feedback" — điều kiện để vào đó đã bắt buộc có Link kết quả).
     const _effLr = ('linkResult' in fields) ? fields.linkResult : (ov.linkResult||co.linkResult||'');
     if((fields.status||co.status)==='hoan-thanh' && !String(_effLr||'').trim()){
-      showToast('❌ Cần nhập Link kết quả trước khi chuyển sang Hoàn thành','error');
+      showToast('❌ Cần điền Kết quả trước khi chuyển sang Hoàn thành — nếu không có link thì ghi \'Đã xong\'/\'Đã làm\'','error');
       return;
     }
     // 1. Có người phân công + chưa làm → dang-xu-ly
@@ -1392,7 +1392,7 @@ async function _updateInternal(id,fields){
   // phía trên, Task #138) — áp dụng chung cho việc nội bộ thuần (không phải Content Order).
   const _effLrT = ('linkResult' in fields) ? fields.linkResult : (t.linkResult||'');
   if((fields.status||t.status)==='hoan-thanh' && !String(_effLrT||'').trim()){
-    showToast('❌ Cần nhập Link kết quả trước khi chuyển sang Hoàn thành','error');
+    showToast('❌ Cần điền Kết quả trước khi chuyển sang Hoàn thành — nếu không có link thì ghi \'Đã xong\'/\'Đã làm\'','error');
     return;
   }
   if(fields.status==='feedback'&&!t._feedbackAt) fields._feedbackAt=new Date().toISOString();
@@ -2537,8 +2537,8 @@ function renderCard(o, inGroup=false) {
           ${statusConfig.map(s=>`<option value="${s.id}"${o.status===s.id?' selected':''}>${s.icon||''} ${s.label}</option>`).join('')}
         </select>
       </div>
-      <div style="min-width:200px;flex:2"><label>Link kết quả</label>
-        <textarea id="link-${o.id}" placeholder="https://... (nhiều link thì mỗi link 1 dòng)" class="cinp" rows="2" style="resize:vertical" oninput="autoStatus('${o.id}')">${escapeHtml(o.linkResult||'')}</textarea>
+      <div style="min-width:200px;flex:2"><label>Kết quả</label>
+        <textarea id="link-${o.id}" placeholder="https://... hoặc ghi 'Đã xong'/'Đã làm' nếu không có link (nhiều link thì mỗi link 1 dòng)" class="cinp" rows="2" style="resize:vertical" oninput="autoStatus('${o.id}')">${escapeHtml(o.linkResult||'')}</textarea>
       </div>
 
       <div style="min-width:130px;flex:1"><label>Ghi chú admin</label>
@@ -2640,8 +2640,8 @@ function renderIntCard(t){
         <div style="min-width:130px"><label>Trạng thái</label>
           <select class="cinp" id="${lcId}_stat">${statusOpts}</select>
         </div>
-        <div style="min-width:200px;flex:2"><label>Link kết quả</label>
-          <textarea id="${lcId}_link" class="cinp" rows="2" style="resize:vertical" placeholder="https://... (nhiều link thì mỗi link 1 dòng)">${escapeHtml(t.linkResult||'')}</textarea>
+        <div style="min-width:200px;flex:2"><label>Kết quả</label>
+          <textarea id="${lcId}_link" class="cinp" rows="2" style="resize:vertical" placeholder="https://... hoặc ghi 'Đã xong'/'Đã làm' nếu không có link (nhiều link thì mỗi link 1 dòng)">${escapeHtml(t.linkResult||'')}</textarea>
         </div>
         <div class="flex-shrink-0 flex gap-1.5 items-end">
           <div><label>&nbsp;</label><button type="button" onclick="_saveLcCard('${t.id}','${lcId}')" class="btn btn-primary">💾 Lưu</button></div>
@@ -2685,8 +2685,8 @@ function renderIntCard(t){
         <div style="min-width:130px"><label>Trạng thái</label>
           <select class="cinp" id="${lttId}_stat">${statusOpts}</select>
         </div>
-        <div style="min-width:200px;flex:2"><label>Link kết quả</label>
-          <textarea id="${lttId}_link" class="cinp" rows="2" style="resize:vertical" placeholder="https://... (nhiều link thì mỗi link 1 dòng)">${escapeHtml(t.linkResult||'')}</textarea>
+        <div style="min-width:200px;flex:2"><label>Kết quả</label>
+          <textarea id="${lttId}_link" class="cinp" rows="2" style="resize:vertical" placeholder="https://... hoặc ghi 'Đã xong'/'Đã làm' nếu không có link (nhiều link thì mỗi link 1 dòng)">${escapeHtml(t.linkResult||'')}</textarea>
         </div>
         <div class="flex-shrink-0 flex gap-1.5 items-end">
           <div><label>&nbsp;</label><button type="button" onclick="_saveLichTTCard('${t.id}','${lttId}')" class="btn btn-primary">💾 Lưu</button></div>
@@ -2869,7 +2869,7 @@ async function saveRow(id) {
   // _autoCompleteFeedback24h() — hàm đó gọi thẳng action updateOrder, không qua đây,
   // vì mục đích khác: tự đóng feedback không phản hồi sau 24h, không cần link kết quả).
   if(fields.status==='hoan-thanh' && !fields.linkResult){
-    showToast('❌ Cần nhập Link kết quả trước khi chuyển sang Hoàn thành','error');
+    showToast('❌ Cần điền Kết quả trước khi chuyển sang Hoàn thành — nếu không có link thì ghi \'Đã xong\'/\'Đã làm\'','error');
     document.getElementById('link-'+id)?.focus();
     return;
   }
@@ -2977,7 +2977,7 @@ async function saveEdit(){
     adminNote:document.getElementById('e-adminNote').value,
   };
   if(updates.status==='hoan-thanh' && !updates.linkResult){
-    showToast('❌ Cần nhập Link kết quả trước khi chuyển sang Hoàn thành','error');
+    showToast('❌ Cần điền Kết quả trước khi chuyển sang Hoàn thành — nếu không có link thì ghi \'Đã xong\'/\'Đã làm\'','error');
     document.getElementById('e-linkResult')?.focus();
     return;
   }
