@@ -1,5 +1,5 @@
 # MIDU QLCV — Tài liệu hệ thống
-> Cập nhật lần cuối: 24/07/2026  
+> Cập nhật lần cuối: 29/09/2026 (Task #140)  
 > Tác giả: Tuan Anh Leo (nguyentuananh.maps@gmail.com)
 
 ---
