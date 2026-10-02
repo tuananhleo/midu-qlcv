@@ -1546,6 +1546,7 @@ function closeContentTaskDetail(){
 async function loadContentOrders(channelsReady){
   try{
     const hidden=_getHiddenIds();
+    let _healedOverrides=0; // Task #141 — đếm số override localStorage được chữa (xem bên dưới)
     // Mỗi board có try/catch riêng: 1 board lỗi không được kéo sập order của board còn lại.
     const perSource=await Promise.all(CONTENT_SOURCES.map(async src=>{
      try{
@@ -1565,6 +1566,16 @@ async function loadContentOrders(channelsReady){
         // Task #97: xem giải thích đầy đủ ở admin.html — override cục bộ không tự đồng bộ lại,
         // nên cho trạng thái Hoàn thành từ Content luôn thắng override chưa hoàn thành.
         const resolvedStatus=(intStatus==='hoan-thanh' && saved && saved.status!=='hoan-thanh')?intStatus:(saved?.status||autoStatus);
+        // Task #141 (2026-10-02): chữa thẳng bản override ôi trong localStorage, không chỉ che ở
+        // tầng hiển thị như Task #97. KEY_INTERNAL dùng CHUNG với admin.html trên cùng trình
+        // duyệt, nên bản ôi để lại đây chính là bản làm admin.html bắn nhầm tin "⏰ TRỄ DEADLINE"
+        // cho việc đã xong (case thật ADS-261001-024). Máy nào chỉ mở tracker cũng tự dọn được.
+        // Xem giải thích đầy đủ ở admin.html, _loadContentOrders().
+        if(intStatus==='hoan-thanh' && saved && saved.status!=='hoan-thanh'){
+          saved.status='hoan-thanh'; saved._feedbackAt='';
+          if(!saved.linkResult) saved.linkResult=o.deliverableLink||'';
+          _healedOverrides++;
+        }
         const det=o.details||{};
         const refLink=o.refLink||det.refLink||det.creativeLink||det.mediaLink||'';
         return {
@@ -1595,6 +1606,9 @@ async function loadContentOrders(channelsReady){
      }catch(e){ console.warn('[ContentOrders]',src.name,e.message); return []; }
     }));
     contentOrders=perSource.flat();
+    // Task #141 — ghi lại localStorage sau khi chữa override ôi (tracker không có _saveInternal
+    // riêng như admin.html, ghi thẳng vào KEY_INTERNAL dùng chung).
+    if(_healedOverrides){ try{ localStorage.setItem(KEY_INTERNAL, JSON.stringify(internalTasks)); }catch(_e){} }
   // Cache để load nhanh lần sau
   try { localStorage.setItem(KEY_CO_CACHE, JSON.stringify(contentOrders)); } catch(_e) {}
   }catch(e){console.warn('[loadContentOrders]',e.message);}

@@ -4761,6 +4761,7 @@ const _LC_ORDER_TYPES=[
 ];
 async function _loadContentOrders(){
   const hidden=_getHiddenIds();
+  let _healedOverrides=0; // Task #141 — đếm số override localStorage được chữa (xem bên dưới)
   // Mỗi board có try/catch riêng: 1 board lỗi không được kéo sập order của board còn lại.
   const perSource=await Promise.all(_CONTENT_SOURCES.map(async src=>{
    try{
@@ -4783,6 +4784,20 @@ async function _loadContentOrders(){
       // VA-260713-013: Content ghi "Hoàn thành" nhưng admin vẫn hiện "Đang xử lý"). Cho trạng thái
       // cuối (Hoàn thành) từ Content luôn thắng override chưa hoàn thành.
       const resolvedStatus=(intStatus==='hoan-thanh' && saved && saved.status!=='hoan-thanh')?intStatus:(saved?.status||autoStatus);
+      // Task #141 (2026-10-02): Task #97 mới chỉ CHE lỗi ở tầng hiển thị — `resolvedStatus` tính
+      // đúng mỗi lần nạp, nhưng bản override trong internalTasks (localStorage) vẫn giữ nguyên
+      // trạng thái cũ vĩnh viễn. Bản ôi đó là dữ liệu THẬT với mọi hàm khác đọc thẳng
+      // internalTasks — đã gây bắn nhầm tin "⏰ TRỄ DEADLINE" cho việc đã xong (xem
+      // _checkAndNotifyOverdue) và làm modal sửa hiện trạng thái cũ (xem openEditInternal).
+      // Thay vì đi vá từng nơi đọc, chữa thẳng tận gốc: Content đã chốt "Hoàn thành" thì ghi đè
+      // luôn vào override và lưu lại. Chỉ tự chữa cho trạng thái CUỐI (hoan-thanh) — các trạng
+      // thái giữa chừng vẫn để override thắng như cũ, vì admin.html có thể vừa đổi xong mà
+      // write-back về trang Content chưa kịp hoàn tất.
+      if(intStatus==='hoan-thanh' && saved && saved.status!=='hoan-thanh'){
+        saved.status='hoan-thanh'; saved._feedbackAt='';
+        if(!saved.linkResult) saved.linkResult=o.deliverableLink||'';
+        _healedOverrides++;
+      }
       // Build brief từ o.details
       const det=o.details||{};
       const DETAIL_LABELS={format:'Định dạng',quantity:'Số lượng',textContent:'Chữ cần có',idea:'Ý tưởng',
@@ -4828,6 +4843,7 @@ async function _loadContentOrders(){
    }catch(e){ console.warn('[ContentOrders]',src.name,e.message); return []; }
   }));
   contentOrders=perSource.flat();
+  if(_healedOverrides) _saveInternal(); // Task #141 — ghi lại localStorage sau khi chữa override ôi
   // Cache để load nhanh lần sau
   try { localStorage.setItem(KEY_CO_CACHE, JSON.stringify(contentOrders)); } catch(e) {}
   // Mirror sang sheet Orders KHÔNG gọi ở đây nữa (Task #80) — xem ghi chú ở _loadContentTasks().
@@ -5104,7 +5120,29 @@ async function _checkAndNotifyOverdue(){
   // Dùng dữ liệu GỐC (allOrders/contentOrders/internalTasks), KHÔNG dùng getFilteredRows() —
   // hàm đó lọc theo quyền xem của người đang đăng nhập (viewAll/assignedTo), nếu 1 nhân viên
   // thường (không phải admin) đang mở trang thì sẽ bỏ sót việc trễ của người khác.
-  const all = [...allOrders, ...contentOrders, ...internalTasks];
+  //
+  // SỬA (Task #141, 2026-10-02): bắn nhầm "TRỄ DEADLINE" cho việc ĐÃ HOÀN THÀNH. Case thật:
+  // ADS-261001-024 "Midu - CON TRAI HAY CON GÁI DỄ THỪA CÂN HƠN" (lco-mup7eov0bujfx9) — bên
+  // trang Content trạng thái là "Hoàn thành", vậy mà 10:23 ngày 2/10 vẫn bị bắn tin trễ, Đỗ
+  // Thuỳ Linh phản hồi ngay "xong rồi, trễ đâu". Nguyên nhân: mỗi Content Order có thể tồn tại
+  // 2 BẢN trong `all` — bản live đúng (contentOrders, đọc mới từ trang Content mỗi lần sync) và
+  // bản override cũ trong internalTasks (`_fromContentOrder:true`, CÙNG id "lco-..."). Bản
+  // override chỉ nằm trong localStorage của riêng máy đó và KHÔNG BAO GIỜ được đồng bộ lại: nó
+  // sinh ra lúc việc còn dở (vd _backfillFeedbackTimestamps() tạo khi đơn vào "Chờ feedback",
+  // hoặc lúc ai đó sửa trong admin.html), rồi nếu việc được hoàn thành THẲNG trên trang Content
+  // (không qua admin.html của máy này) thì override vẫn giữ nguyên trạng thái cũ mãi mãi.
+  // Hiển thị trên giao diện không lộ ra vì _loadContentOrders() đã có `resolvedStatus` (Task #97)
+  // cho trạng thái Hoàn thành từ Content thắng override, và mọi chỗ render/quét khác đều đã lọc
+  // `!t._fromContentOrder` (xem getFilteredRows ~dòng 2207, _autoCompleteFeedback24h ~dòng 5057)
+  // — DUY NHẤT hàm này quên lọc, nên nó đọc trúng bản override ôi và tưởng việc còn dang dở.
+  // Hai lớp chặn: (1) bỏ bản override Content Order khỏi danh sách quét; (2) gộp theo id, bản
+  // live từ contentOrders ghi đè mọi bản sao cũ trùng id (phòng cả dòng sao lưu trong sheet nếu
+  // vì lý do nào đó lọt qua _isMirrorRow).
+  const _byId = new Map();
+  for(const o of [...allOrders, ...internalTasks.filter(t=>!t._fromContentOrder), ...contentOrders]){
+    if(o?.id) _byId.set(o.id, o); // set sau ghi đè set trước → contentOrders (live) thắng
+  }
+  const all = [..._byId.values()];
   const currentlyOverdue = all.filter(o=>{
     if(!o?.id || o.status==='hoan-thanh' || o.status==='huy') return false;
     const dl = parseDl(o);
@@ -5147,7 +5185,12 @@ function openAddInternal(contentOrderId=''){
   document.getElementById('int-modal').classList.remove('hidden');
 }
 function openEditInternal(id){
-  const t=[...internalTasks,...contentOrders].find(x=>x.id===id); if(!t) return;
+  // Task #141: contentOrders đứng TRƯỚC internalTasks. Trước đây internalTasks đứng trước nên
+  // với id "lco-..." bản override cũ trong localStorage luôn thắng — mở modal sửa 1 Content Order
+  // đã Hoàn thành bên trang Content vẫn hiện trạng thái/kết quả cũ, bấm Lưu là đẩy ngược trạng
+  // thái cũ đó về trang Content. Bản trong contentOrders mới là bản đã gộp đúng (Content + phần
+  // override hợp lệ, xem `resolvedStatus` trong _loadContentOrders).
+  const t=[...contentOrders,...internalTasks].find(x=>x.id===id); if(!t) return;
   _editingIntId = id;
   document.getElementById('int-modal-title').textContent = '✏️ Sửa việc nội bộ';
   document.getElementById('int-edit-id').value = id;

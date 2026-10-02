@@ -1,5 +1,5 @@
 # MIDU QLCV — Tài liệu hệ thống
-> Cập nhật lần cuối: 29/09/2026 (Task #140)  
+> Cập nhật lần cuối: 02/10/2026 (Task #141)  
 > Tác giả: Tuan Anh Leo (nguyentuananh.maps@gmail.com)
 
 ---
@@ -2106,6 +2106,31 @@ Phía `admin.html`:
 **Triển khai:** `admin.html`, deploy qua git push + GitHub Pages, commit `1650b94`.
 
 **Xác nhận:** trích JS ra `node --check`, cú pháp hợp lệ; Grep lại toàn bộ nhãn/placeholder/thông báo sau khi ghi, khớp đúng 5 nhãn + 6 placeholder + 4 thông báo đã đổi, không sót chỗ nào.
+
+---
+
+### Task #141 — Fix bug: bắn tin "⏰ TRỄ DEADLINE" cho Content Order ĐÃ Hoàn thành (bản override ôi trong localStorage)
+
+**Yêu cầu:** người dùng gửi ảnh chụp nhóm Zalo lúc 2026-10-02 10:23 — bot bắn tin "⏰ TRỄ DEADLINE · Chạy Ads — Midu - CON TRAI HAY CON GÁI DỄ THỪA CÂN HƠN · Người phụ trách: Đỗ Thùy Linh · Deadline: 2026-10-01 (trễ 1 ngày)", Đỗ Thùy Linh phản hồi ngay sau 1 phút: *"xong rồi, trễ đâu"*. Câu hỏi: "Sao vẫn báo trễ deadline trong khi hoàn thành rồi". Yêu cầu tiếp theo: "Em làm đi, phải hết lỗi".
+
+**Điều tra bằng dữ liệu thật:** tải trực tiếp KV của trang Content (`content-plan-orders-v1--khanh-huyen`) và tìm đúng bản ghi `mup7eov0bujfx9` (mã `ADS-261001-024`). Kết quả: `status: "Hoàn thành"`, `deliverableLink: "Đã làm"`, `person: "Đỗ Thùy Linh"`, `deadline: "2026-10-01"` → Linh nói đúng, việc đã xong thật, lỗi nằm ở phần mềm. (Khác hẳn Task #138: lần đó trạng thái live đúng là chưa xong nên tin trễ là ĐÚNG, chỉ sheet backup bẩn; lần này trạng thái live đã Hoàn thành mà vẫn bắn tin.)
+
+**Nguyên nhân gốc rễ:** mỗi Content Order có thể tồn tại **2 bản cùng một id `lco-...`** trong bộ nhớ admin.html:
+1. Bản live trong `contentOrders` — đọc mới từ trang Content mỗi lần sync, trạng thái đúng (`hoan-thanh`).
+2. Bản override trong `internalTasks` (`_fromContentOrder:true`) — CHỈ nằm trong localStorage của riêng từng máy và **không bao giờ được đồng bộ lại**. Bản này sinh ra lúc việc còn dang dở (`_backfillFeedbackTimestamps()` tự tạo khi đơn vào "Chờ feedback", hoặc `_updateInternal()` tạo khi có người sửa trong admin.html). Nếu sau đó việc được đánh dấu Hoàn thành THẲNG trên trang Content (không qua admin.html của chính máy đó), bản override giữ nguyên trạng thái cũ (`feedback`) vĩnh viễn.
+
+Giao diện không lộ ra lỗi này vì `resolvedStatus` (Task #97) đã cho trạng thái Hoàn thành từ Content thắng override mỗi lần nạp, và mọi chỗ render/quét khác đều đã lọc `!t._fromContentOrder` (`getFilteredRows()`, `_autoCompleteFeedback24h()`). **Duy nhất `_checkAndNotifyOverdue()` quên lọc** — nó gộp thẳng `[...allOrders, ...contentOrders, ...internalTasks]`, đọc trúng bản override ôi (status `feedback`, deadline 2026-10-01 < hôm nay) và bắn tin. Nói cách khác Task #97 mới chỉ CHE lỗi ở tầng hiển thị, dữ liệu ôi vẫn còn nguyên trong localStorage và tiếp tục gây hại ở các đường đọc thẳng `internalTasks`.
+
+**Fix (3 lớp, `admin.html` + `tracker.html`):**
+1. **Chữa tận gốc dữ liệu ôi** — trong `_loadContentOrders()` (admin.html) và `loadContentOrders()` (tracker.html): khi trang Content đã chốt `Hoàn thành` mà bản override còn trạng thái khác, ghi đè luôn vào override (`status='hoan-thanh'`, xoá `_feedbackAt`, lấy `linkResult` từ `deliverableLink` nếu đang rỗng) rồi lưu lại localStorage — thay vì chỉ tính `resolvedStatus` cho riêng lần hiển thị đó. Chỉ tự chữa cho trạng thái CUỐI (`hoan-thanh`); các trạng thái giữa chừng vẫn để override thắng như cũ, vì admin.html có thể vừa đổi xong mà write-back về trang Content chưa kịp hoàn tất. Thêm vào cả tracker.html vì 2 trang dùng CHUNG key localStorage `midu_internal_tasks` — máy nào chỉ mở tracker cũng tự dọn được.
+2. **Chặn ở đúng nơi gây lỗi** — `_checkAndNotifyOverdue()`: bỏ bản override Content Order khỏi danh sách quét (`internalTasks.filter(t=>!t._fromContentOrder)`, thống nhất với các hàm khác trong file), đồng thời gộp theo id bằng `Map` để bản live từ `contentOrders` ghi đè mọi bản sao trùng id — phòng cả dòng sao lưu trong sheet nếu vì lý do nào đó lọt qua bộ lọc `_isMirrorRow`.
+3. **Fix kèm 1 lỗi cùng gốc** — `openEditInternal()` trước đây tìm theo thứ tự `[...internalTasks, ...contentOrders]` nên với id `lco-...` bản override ôi luôn thắng: mở modal sửa 1 Content Order đã Hoàn thành bên trang Content vẫn hiện trạng thái/kết quả cũ, bấm Lưu là đẩy ngược trạng thái cũ đó về trang Content. Đảo lại thành `[...contentOrders, ...internalTasks]`.
+
+**Triển khai:** `admin.html` + `tracker.html`, deploy qua git push + GitHub Pages.
+
+**Xác nhận:** viết 2 bộ test Node chạy trên MÃ NGUỒN THẬT trích thẳng từ `admin.html` (không chép tay lại logic): bộ 1 gồm 7 ca cho `_checkAndNotifyOverdue()` (ca thật Content đã Hoàn thành + override kẹt `feedback`; dòng sao lưu trùng id; việc trễ thật vẫn phải báo — Content Order/việc nội bộ/order thường; deadline hôm nay chưa trễ; trạng thái Huỷ không báo), bộ 2 gồm 4 ca cho cơ chế tự chữa override. Chạy ngược 2 bộ test này trên bản code CŨ (`git show HEAD:admin.html`): bộ 1 fail đúng 2 ca tái hiện chính xác lỗi đã gặp (ca dòng sao lưu còn lộ ra bắn **2 tin trùng** — đúng triệu chứng bắn lặp của Task #136), bộ 2 fail cả 4 ca. Chạy trên bản đã sửa: 11/11 ca đều đúng. Ngoài ra trích toàn bộ JS của cả 2 file chạy kiểm tra cú pháp — hợp lệ.
+
+**Lưu ý còn tồn đọng:** `_checkAndNotifyOverdue()` vẫn chỉ chạy khi có người đang mở admin.html (giới hạn đã ghi từ Task #136, chưa đổi). Biến `today` được tính 1 lần lúc nạp trang (`const today` dòng ~1516) — tab để mở nhiều ngày liên tục sẽ dùng ngày cũ, làm tin trễ bị bắn MUỘN (không bắn nhầm), chưa sửa trong task này.
 
 ---
 
