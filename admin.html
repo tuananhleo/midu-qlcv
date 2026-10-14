@@ -5103,6 +5103,23 @@ async function _claimOverdueNotify(id){
     return !!(d && d.claimed);
   }catch(e){ return false; } // lỗi mạng: thà bỏ lỡ 1 tin còn hơn bắn nhầm khi không chắc
 }
+// ── CÔNG TẮC TẠM DỪNG tin "⏰ TRỄ DEADLINE" ───────────────────────────────────
+// Yêu cầu thật (2026-10-14): "Cho tạm dừng cái bắn tin cho anh nhé, spam nhiều quá" — kèm ảnh
+// chụp nhóm Zalo nhận liên tiếp 3 tin TRỄ DEADLINE lúc 08:29:01 / 08:29:04 / 08:29:07 (3 đơn
+// KHÁC nhau, không phải bắn trùng — là tồn đọng thật bị dồn bắn một lượt). Đã chốt phạm vi với
+// anh: CHỈ tắt loại tin này, 2 loại còn lại giữ nguyên (ZALO_NOTIFY_STATUS_CHANGE cho
+// feedback/hoàn thành ở trên, và tin "CÓ ORDER MỚI" bắn từ trang Content/order.html) — vì 2
+// loại đó bắn đúng lúc có sự kiện thật, không dồn cục.
+//
+// ĐỂ BẬT LẠI: đổi false → true rồi deploy (git push, GitHub Pages). Đặt cờ ở ĐẦU
+// _checkAndNotifyOverdue() chứ không phải trong _notifyZaloOverdue(), để lúc tạm dừng KHÔNG hề
+// đụng tới cơ chế "xin quyền bắn 1 lần duy nhất" (claimOverdueNotify phía GAS + localStorage,
+// Task #136) — nếu để nó vẫn chạy rồi mới chặn ở bước gửi thì toàn bộ việc đang trễ sẽ bị âm
+// thầm tiêu mất suất bắn, bật lại cũng không bao giờ được báo nữa.
+// LƯU Ý khi bật lại: mọi việc đang trễ tồn đọng sẽ được bắn dồn một lượt (đúng hiện tượng vừa
+// gặp). Muốn bật lại mà không bị dồn thì phải "đánh dấu đã báo" cho toàn bộ tồn đọng trước —
+// chưa làm, xem Task #142.
+const ZALO_NOTIFY_OVERDUE = false;
 function _notifyZaloOverdue(o){
   const typeLabel = TYPE_MAP[o.type]||o.type||'Khác';
   const dl = parseDl(o);
@@ -5117,6 +5134,7 @@ function _notifyZaloOverdue(o){
   _sendZaloMessage(o.department, lines);
 }
 async function _checkAndNotifyOverdue(){
+  if(!ZALO_NOTIFY_OVERDUE) return 0; // tạm dừng theo yêu cầu 2026-10-14 — xem ZALO_NOTIFY_OVERDUE
   // Dùng dữ liệu GỐC (allOrders/contentOrders/internalTasks), KHÔNG dùng getFilteredRows() —
   // hàm đó lọc theo quyền xem của người đang đăng nhập (viewAll/assignedTo), nếu 1 nhân viên
   // thường (không phải admin) đang mở trang thì sẽ bỏ sót việc trễ của người khác.

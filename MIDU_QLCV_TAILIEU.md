@@ -1,5 +1,5 @@
 # MIDU QLCV — Tài liệu hệ thống
-> Cập nhật lần cuối: 02/10/2026 (Task #141)  
+> Cập nhật lần cuối: 14/10/2026 (Task #142)  
 > Tác giả: Tuan Anh Leo (nguyentuananh.maps@gmail.com)
 
 ---
@@ -2131,6 +2131,26 @@ Giao diện không lộ ra lỗi này vì `resolvedStatus` (Task #97) đã cho t
 **Xác nhận:** viết 2 bộ test Node chạy trên MÃ NGUỒN THẬT trích thẳng từ `admin.html` (không chép tay lại logic): bộ 1 gồm 7 ca cho `_checkAndNotifyOverdue()` (ca thật Content đã Hoàn thành + override kẹt `feedback`; dòng sao lưu trùng id; việc trễ thật vẫn phải báo — Content Order/việc nội bộ/order thường; deadline hôm nay chưa trễ; trạng thái Huỷ không báo), bộ 2 gồm 4 ca cho cơ chế tự chữa override. Chạy ngược 2 bộ test này trên bản code CŨ (`git show HEAD:admin.html`): bộ 1 fail đúng 2 ca tái hiện chính xác lỗi đã gặp (ca dòng sao lưu còn lộ ra bắn **2 tin trùng** — đúng triệu chứng bắn lặp của Task #136), bộ 2 fail cả 4 ca. Chạy trên bản đã sửa: 11/11 ca đều đúng. Ngoài ra trích toàn bộ JS của cả 2 file chạy kiểm tra cú pháp — hợp lệ.
 
 **Lưu ý còn tồn đọng:** `_checkAndNotifyOverdue()` vẫn chỉ chạy khi có người đang mở admin.html (giới hạn đã ghi từ Task #136, chưa đổi). Biến `today` được tính 1 lần lúc nạp trang (`const today` dòng ~1516) — tab để mở nhiều ngày liên tục sẽ dùng ngày cũ, làm tin trễ bị bắn MUỘN (không bắn nhầm), chưa sửa trong task này.
+
+---
+
+### Task #142 — Tạm dừng tin Zalo "⏰ TRỄ DEADLINE" (công tắc `ZALO_NOTIFY_OVERDUE`)
+
+**Yêu cầu:** "Cho tạm dừng cái bắn tin cho anh nhé, spam nhiều quá" — kèm ảnh chụp nhóm Zalo "Đi đầu xu hướng :))" nhận liên tiếp các tin TRỄ DEADLINE lúc 08:29:01 / 08:29:04 / 08:29:07 ngày 2026-10-14 (`lco-mv52w8jzkyus36` Chạy Ads Zalo Quầy, `lco-mv63gmbxmqch1z` Lịch T.Thông Zalo CCL MTL, `lco-mv63oaylys2rds` Chạy Ads TV PĐ).
+
+**Làm rõ phạm vi trước khi sửa:** hệ thống có 3 loại tin Zalo — (1) ⏰ TRỄ DEADLINE (`_notifyZaloOverdue`, admin.html), (2) ✅ ĐÃ HOÀN THÀNH / 💬 CHỜ FEEDBACK (`_notifyZaloStatusChange`, cờ `ZALO_NOTIFY_STATUS_CHANGE`), (3) 🧑 CÓ ORDER MỚI (`_notifyZaloNewOrder`, bắn từ trang Content/order.html). Đã hỏi và anh chốt: **chỉ tắt loại (1)**, 2 loại còn lại giữ nguyên vì chúng bắn đúng lúc có sự kiện thật, không dồn cục.
+
+**Lưu ý về bản chất đợt spam này:** 3 tin trên là 3 ĐƠN KHÁC NHAU, không phải bắn trùng — tức không phải lỗi lặp tin như Task #134/#135/#136, cũng không phải báo nhầm việc đã xong như Task #141. Đây là tồn đọng trễ deadline thật bị dồn bắn một lượt ngay khi có người mở admin.html (cơ chế quét chỉ chạy khi có người mở trang, xem giới hạn ghi ở Task #136).
+
+**Fix:** thêm hằng `ZALO_NOTIFY_OVERDUE = false` (admin.html, đặt ngay trên `_notifyZaloOverdue()`, cùng kiểu với `ZALO_NOTIFY_STATUS_CHANGE` sẵn có) và chặn bằng `if(!ZALO_NOTIFY_OVERDUE) return 0;` ở **dòng đầu `_checkAndNotifyOverdue()`**. Bật lại chỉ cần đổi `false` → `true` rồi push.
+
+**Vì sao chặn ở `_checkAndNotifyOverdue()` chứ không chặn trong `_notifyZaloOverdue()`:** nếu để hàm quét vẫn chạy rồi mới chặn ở bước gửi, mỗi việc đang trễ vẫn bị "xin quyền bắn" thành công (`claimOverdueNotify` ghi `ovd_<id>` vào PropertiesService phía GAS + `_addOverdueNotifiedId` ghi localStorage — cơ chế 1-lần-duy-nhất của Task #136) rồi vứt tin đi. Suất bắn là VĨNH VIỄN, không có hạn hết hạn — nên toàn bộ việc đang trễ sẽ âm thầm mất suất, bật lại cũng không bao giờ được báo nữa. Chặn ở đầu hàm thì trạng thái "đã báo" không hề bị đụng tới, tạm dừng đúng nghĩa tạm dừng.
+
+**Triển khai:** `admin.html`, deploy qua git push + GitHub Pages.
+
+**Xác nhận:** chạy bộ test Node trên mã nguồn thật trích từ `admin.html` — 7 ca × 2 trạng thái công tắc = 14 ca đều đúng: khi TẮT thì không ca nào bắn tin (kể cả 3 đơn thật trong ảnh chụp), khi BẬT thì giữ nguyên đúng hành vi của Task #141 (3 đơn thật vẫn báo; việc đã Hoàn thành + override ôi vẫn im; deadline hôm nay/trạng thái Huỷ vẫn im). Test đọc luôn giá trị thật của hằng trong file và báo lỗi nếu nó không phải `false`. Kiểm tra cú pháp toàn bộ JS — hợp lệ. Grep xác nhận `ZALO_NOTIFY_STATUS_CHANGE` vẫn `true` và `_notifyZaloNewOrder` trong `order.html` không bị đụng; `git status` chỉ có `admin.html` thay đổi.
+
+**Còn tồn đọng cần nhớ khi bật lại:** mọi việc đang trễ tồn đọng sẽ được bắn dồn một lượt đúng như hiện tượng vừa gặp. Muốn bật lại êm thì phải "đánh dấu đã báo" (seed `ovd_<id>`) cho toàn bộ tồn đọng tại thời điểm bật — CHƯA làm. Hai hạn chế cũ vẫn nguyên: chỉ quét khi có người mở admin.html (Task #136), và biến `today` tính 1 lần lúc nạp trang nên tab mở nhiều ngày sẽ báo muộn (Task #141).
 
 ---
 
